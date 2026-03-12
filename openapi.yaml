@@ -65,6 +65,8 @@ paths:
                 $ref: '#/components/schemas/APIResponseLogin'
         '401':
           description: Неверные учетные данные
+        '429':
+          description: Пользователь или IP-адрес временно заблокированы из-за неудачных попыток входа
 
   /v1/auth/refresh:
     post:
@@ -156,9 +158,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/APIResponseUserList'
 
   /users/{id}:
     get:
@@ -174,7 +174,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/APIResponseUser'
         '404':
           description: Не найдено
 
@@ -197,7 +197,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/APIResponseUser'
         '403':
           description: Доступ запрещен
         '404':
@@ -227,7 +227,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/APIResponseUser'
         '400':
           description: Некорректный файл
 
@@ -1015,9 +1015,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Meeting'
+                $ref: '#/components/schemas/APIResponseMeetings'
 
     post:
       tags: [Meetings]
@@ -1036,7 +1034,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Meeting'
+                $ref: '#/components/schemas/APIResponseMeetingDetails'
 
   /meetings/{meetingId}:
     get:
@@ -1052,7 +1050,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MeetingDetails'
+                $ref: '#/components/schemas/APIResponseMeetingDetails'
 
     patch:
       tags: [Meetings]
@@ -1073,7 +1071,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Meeting'
+                $ref: '#/components/schemas/APIResponseMeeting'
 
     delete:
       tags: [Meetings]
@@ -1100,9 +1098,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/MeetingParticipant'
+                $ref: '#/components/schemas/APIResponseParticipants'
 
     post:
       tags: [Meetings]
@@ -1780,6 +1776,37 @@ components:
         message:
           type: string
 
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        avatar_url:
+          type: string
+          nullable: true
+
+    UserListData:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserResponse'
+
+    UserData:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
     APIError:
       type: object
       properties:
@@ -1832,10 +1859,33 @@ components:
           $ref: '#/components/schemas/APIError'
           nullable: true
 
-    UpdateUserProfileRequest:
+    APIResponseUserList:
       type: object
       properties:
-        fullName:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/UserListData'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseUser:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/UserData'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    UpdateUserProfileRequest:
+      type: object
+      required: [full_name, email]
+      properties:
+        full_name:
           type: string
         email:
           type: string
@@ -2464,6 +2514,76 @@ components:
         status:
           type: string
           enum: [pending, accepted, declined]
+
+    MeetingsData:
+      type: object
+      properties:
+        meetings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Meeting'
+
+    MeetingDetailsData:
+      type: object
+      properties:
+        meeting:
+          $ref: '#/components/schemas/Meeting'
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingParticipant'
+
+    APIResponseMeetings:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/MeetingsData'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseMeeting:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            meeting:
+              $ref: '#/components/schemas/Meeting'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseMeetingDetails:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/MeetingDetailsData'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseParticipants:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            participants:
+              type: array
+              items:
+                $ref: '#/components/schemas/MeetingParticipant'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
 
     CreateMeetingRequest:
       type: object

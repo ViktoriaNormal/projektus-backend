@@ -8,7 +8,7 @@ import (
 	"projektus-backend/internal/api/middleware"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -25,6 +25,29 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler) *gin.Eng
 			{
 				protected.POST("/change-password", authHandler.ChangePassword)
 			}
+		}
+
+		users := v1.Group("/users")
+		users.Use(middleware.AuthMiddleware(cfg))
+		{
+			users.GET("", userHandler.SearchUsers)
+			users.GET("/:id", userHandler.GetUser)
+			users.PATCH("/:id", userHandler.UpdateUser)
+			users.PUT("/:id/avatar", userHandler.UpdateAvatar)
+		}
+
+		meetings := v1.Group("/meetings")
+		meetings.Use(middleware.AuthMiddleware(cfg))
+		{
+			meetings.GET("", meetingHandler.ListUserMeetings)
+			meetings.POST("", meetingHandler.CreateMeeting)
+			meetings.GET("/:meetingId", meetingHandler.GetMeeting)
+			meetings.PATCH("/:meetingId", meetingHandler.UpdateMeeting)
+			meetings.DELETE("/:meetingId", meetingHandler.CancelMeeting)
+
+			meetings.GET("/:meetingId/participants", meetingHandler.ListParticipants)
+			meetings.POST("/:meetingId/participants", meetingHandler.AddParticipants)
+			meetings.POST("/:meetingId/response", meetingHandler.RespondToInvitation)
 		}
 	}
 

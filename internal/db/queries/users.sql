@@ -28,3 +28,30 @@ WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $2;
 
+-- name: UpdateUserProfile :exec
+UPDATE users
+SET full_name = $2,
+    email     = $3,
+    updated_at = NOW()
+WHERE id = $1;
+
+-- name: UpdateUserAvatar :exec
+UPDATE users
+SET avatar_url = $2,
+    updated_at = NOW()
+WHERE id = $1;
+
+-- name: SearchUsers :many
+SELECT *
+FROM users
+WHERE (username ILIKE '%' || $1 || '%'
+   OR email ILIKE '%' || $1 || '%'
+   OR full_name ILIKE '%' || $1 || '%')
+ORDER BY full_name
+LIMIT $2 OFFSET $3;
+
+-- name: ListAllUserIDs :many
+SELECT id
+FROM users;
+
+

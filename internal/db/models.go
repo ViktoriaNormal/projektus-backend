@@ -30,6 +30,64 @@ type LoginAttempt struct {
 	AttemptedAt time.Time      `json:"attempted_at"`
 }
 
+type Meeting struct {
+	ID          uuid.UUID      `json:"id"`
+	ProjectID   uuid.NullUUID  `json:"project_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	MeetingType string         `json:"meeting_type"`
+	StartTime   time.Time      `json:"start_time"`
+	EndTime     time.Time      `json:"end_time"`
+	CreatedBy   uuid.UUID      `json:"created_by"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	CanceledAt  sql.NullTime   `json:"canceled_at"`
+}
+
+type MeetingParticipant struct {
+	ID        uuid.UUID `json:"id"`
+	MeetingID uuid.UUID `json:"meeting_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type MeetingReminder struct {
+	ID           uuid.UUID    `json:"id"`
+	MeetingID    uuid.UUID    `json:"meeting_id"`
+	UserID       uuid.UUID    `json:"user_id"`
+	Channel      string       `json:"channel"`
+	ReminderTime time.Time    `json:"reminder_time"`
+	SentAt       sql.NullTime `json:"sent_at"`
+}
+
+type Notification struct {
+	ID          uuid.UUID             `json:"id"`
+	UserID      uuid.UUID             `json:"user_id"`
+	EventType   string                `json:"event_type"`
+	Channel     string                `json:"channel"`
+	Title       string                `json:"title"`
+	Body        sql.NullString        `json:"body"`
+	Payload     pqtype.NullRawMessage `json:"payload"`
+	IsRead      bool                  `json:"is_read"`
+	CreatedAt   time.Time             `json:"created_at"`
+	ReadAt      sql.NullTime          `json:"read_at"`
+	EmailStatus sql.NullString        `json:"email_status"`
+	EmailSentAt sql.NullTime          `json:"email_sent_at"`
+}
+
+type NotificationSetting struct {
+	ID                    uuid.UUID     `json:"id"`
+	UserID                uuid.UUID     `json:"user_id"`
+	EventType             string        `json:"event_type"`
+	InSystem              bool          `json:"in_system"`
+	InEmail               bool          `json:"in_email"`
+	ReminderOffsetMinutes sql.NullInt32 `json:"reminder_offset_minutes"`
+	CreatedAt             time.Time     `json:"created_at"`
+	UpdatedAt             time.Time     `json:"updated_at"`
+}
+
 type PasswordHistory struct {
 	ID           uuid.UUID `json:"id"`
 	UserID       uuid.UUID `json:"user_id"`

@@ -18,6 +18,10 @@ type UserRepository interface {
 	UpdatePassword(ctx context.Context, userID, newHash string) error
 	InsertPasswordHistory(ctx context.Context, userID, hash string) error
 	GetLastPasswordHashes(ctx context.Context, userID string, limit int32) ([]string, error)
+	UpdateProfile(ctx context.Context, userID, fullName, email string) error
+	UpdateAvatar(ctx context.Context, userID, avatarURL string) error
+	SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error)
+	ListAllUserIDs(ctx context.Context) ([]string, error)
 }
 
 type userRepository struct {
@@ -103,6 +107,59 @@ func (r *userRepository) GetLastPasswordHashes(ctx context.Context, userID strin
 		UserID: uid,
 		Limit:  limit,
 	})
+}
+
+func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, email string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	return r.q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
+		ID:       uid,
+		FullName: fullName,
+		Email:    email,
+	})
+}
+
+func (r *userRepository) UpdateAvatar(ctx context.Context, userID, avatarURL string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	return r.q.UpdateUserAvatar(ctx, db.UpdateUserAvatarParams{
+		ID:        uid,
+		AvatarUrl: sql.NullString{String: avatarURL, Valid: true},
+	})
+}
+
+func (r *userRepository) SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error) {
+	param := sql.NullString{String: query, Valid: query != ""}
+	rows, err := r.q.SearchUsers(ctx, db.SearchUsersParams{
+		Column1: param,
+		Limit:   limit,
+		Offset:  offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.User, len(rows))
+	for i, u := range rows {
+		d := mapDBUserToDomain(u)
+		result[i] = *d
+	}
+	return result, nil
+}
+
+func (r *userRepository) ListAllUserIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.q.ListAllUserIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, len(rows))
+	for i, id := range rows {
+		result[i] = id.String()
+	}
+	return result, nil
 }
 
 func mapDBUserToDomain(u db.User) *domain.User {
