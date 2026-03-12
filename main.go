@@ -35,10 +35,13 @@ func main() {
 	authRepo := repositories.NewAuthRepository(queries)
 	notificationRepo := repositories.NewNotificationRepository(queries)
 	meetingRepo := repositories.NewMeetingRepository(queries)
+	roleRepo := repositories.NewRoleRepository(queries)
 
+	roleSvc := services.NewRoleService(roleRepo)
+	permissionSvc := services.NewPermissionService(roleSvc)
 	passwordSvc := services.NewPasswordService()
 	rateLimitSvc := services.NewRateLimitService(cfg, authRepo)
-	authSvc := services.NewAuthService(cfg, userRepo, authRepo, passwordSvc, rateLimitSvc)
+	authSvc := services.NewAuthService(cfg, userRepo, authRepo, passwordSvc, rateLimitSvc, roleSvc)
 
 	authHandler := handlers.NewAuthHandler(authSvc)
 	userSvc := services.NewUserService(userRepo)
@@ -47,7 +50,9 @@ func main() {
 	meetingSvc := services.NewMeetingService(meetingRepo, notificationSvc)
 	meetingHandler := handlers.NewMeetingHandler(meetingSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler)
+	roleHandler := handlers.NewRoleHandler(roleSvc)
+
+	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

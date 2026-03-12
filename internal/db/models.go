@@ -95,6 +95,13 @@ type PasswordHistory struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type Permission struct {
+	ID          uuid.UUID      `json:"id"`
+	Code        string         `json:"code"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID    `json:"id"`
 	UserID    uuid.UUID    `json:"user_id"`
@@ -102,6 +109,26 @@ type RefreshToken struct {
 	ExpiresAt time.Time    `json:"expires_at"`
 	RevokedAt sql.NullTime `json:"revoked_at"`
 	CreatedAt time.Time    `json:"created_at"`
+}
+
+type Role struct {
+	ID          uuid.UUID      `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	Scope       string         `json:"scope"`
+	ProjectID   uuid.NullUUID  `json:"project_id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type RolePermission struct {
+	RoleID       uuid.UUID `json:"role_id"`
+	PermissionID uuid.UUID `json:"permission_id"`
+}
+
+type RoleUser struct {
+	RoleID uuid.UUID `json:"role_id"`
+	UserID uuid.UUID `json:"user_id"`
 }
 
 type User struct {

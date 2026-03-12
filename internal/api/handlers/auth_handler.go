@@ -82,6 +82,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Пока возвращаем только токены и пользователя, без явного списка ролей.
 	writeSuccess(c, dto.AuthResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,

@@ -8,5 +8,6 @@ var (
 	ErrInvalidInput   = errors.New("invalid input")
 	ErrConflict       = errors.New("conflict")
 	ErrInvalidMeeting = errors.New("invalid meeting")
+	ErrForbidden      = errors.New("forbidden")
 )
 

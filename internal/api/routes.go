@@ -6,9 +6,10 @@ import (
 	"projektus-backend/config"
 	"projektus-backend/internal/api/handlers"
 	"projektus-backend/internal/api/middleware"
+	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -48,6 +49,25 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			meetings.GET("/:meetingId/participants", meetingHandler.ListParticipants)
 			meetings.POST("/:meetingId/participants", meetingHandler.AddParticipants)
 			meetings.POST("/:meetingId/response", meetingHandler.RespondToInvitation)
+		}
+
+		admin := v1.Group("/admin")
+		admin.Use(middleware.AuthMiddleware(cfg), middleware.RequireSystemPermission(services.SystemPermissionManageRoles, permissionSvc))
+		{
+			roles := admin.Group("/roles")
+			{
+				roles.GET("", roleHandler.ListSystemRoles)
+				roles.POST("", roleHandler.CreateSystemRole)
+				roles.GET("/:roleId", roleHandler.GetRole)
+				roles.PUT("/:roleId", roleHandler.UpdateSystemRole)
+				roles.DELETE("/:roleId", roleHandler.DeleteRole)
+			}
+
+			adminUsers := admin.Group("/users")
+			{
+				adminUsers.GET("/:userId/roles", roleHandler.GetUserRoles)
+				adminUsers.POST("/:userId/roles", roleHandler.AssignUserRoles)
+			}
 		}
 	}
 

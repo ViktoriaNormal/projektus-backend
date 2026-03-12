@@ -27,6 +27,7 @@ type authService struct {
 	authRepo  repositories.AuthRepository
 	passwords PasswordService
 	rateLimit RateLimitService
+	roleSvc   *RoleService
 }
 
 func NewAuthService(
@@ -35,6 +36,7 @@ func NewAuthService(
 	authRepo repositories.AuthRepository,
 	passwords PasswordService,
 	rateLimit RateLimitService,
+	roleSvc *RoleService,
 ) AuthService {
 	return &authService{
 		cfg:       cfg,
@@ -42,6 +44,7 @@ func NewAuthService(
 		authRepo:  authRepo,
 		passwords: passwords,
 		rateLimit: rateLimit,
+		roleSvc:   roleSvc,
 	}
 }
 

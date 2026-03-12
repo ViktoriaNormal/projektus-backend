@@ -26,9 +26,10 @@ type ChangePasswordRequest struct {
 }
 
 type AuthResponse struct {
-	AccessToken  string      `json:"access_token"`
-	RefreshToken string      `json:"refresh_token"`
-	User         interface{} `json:"user"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	User         interface{}   `json:"user"`
+	Roles        []RoleResponse `json:"roles,omitempty"`
 }
 
 type APIError struct {

@@ -49,7 +49,7 @@ paths:
   /v1/auth/login:
     post:
       tags: [Auth]
-      summary: Аутентификация пользователя и выдача токена
+      summary: Аутентификация пользователя и выдача токена с ролями
       requestBody:
         required: true
         content:
@@ -63,6 +63,136 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/APIResponseLogin'
+  /v1/admin/roles:
+    get:
+      tags: [Admin]
+      summary: Получить список системных ролей
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список системных ролей
+    post:
+      tags: [Admin]
+      summary: Создать новую системную роль
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Роль успешно создана
+
+  /v1/admin/roles/{roleId}:
+    get:
+      tags: [Admin]
+      summary: Получить системную роль по идентификатору
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: roleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Роль найдена
+    put:
+      tags: [Admin]
+      summary: Обновить системную роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: roleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Роль обновлена
+    delete:
+      tags: [Admin]
+      summary: Удалить системную роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: roleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Роль удалена
+
+  /v1/admin/users/{userId}/roles:
+    get:
+      tags: [Admin]
+      summary: Получить системные роли пользователя
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список системных ролей пользователя
+    post:
+      tags: [Admin]
+      summary: Назначить системные роли пользователю
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Роли пользователя обновлены
         '401':
           description: Неверные учетные данные
         '429':
@@ -1755,6 +1885,11 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/User'
+        roles:
+          type: array
+          description: Список системных ролей пользователя
+          items:
+            type: string
 
     RefreshData:
       type: object
