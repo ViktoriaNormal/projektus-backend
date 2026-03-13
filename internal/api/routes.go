@@ -95,6 +95,17 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			tasks.GET("/:taskId", taskHandler.GetTask)
 			tasks.PATCH("/:taskId", taskHandler.UpdateTask)
 			tasks.DELETE("/:taskId", taskHandler.DeleteTask)
+
+			tasks.GET("/:taskId/watchers", taskHandler.ListWatchers)
+			tasks.POST("/:taskId/watchers", taskHandler.AddWatcher)
+
+			tasks.GET("/:taskId/dependencies", taskHandler.ListDependencies)
+			tasks.POST("/:taskId/dependencies", taskHandler.AddDependency)
+
+			tasks.GET("/:taskId/checklists", taskHandler.ListChecklists)
+			tasks.POST("/:taskId/checklists", taskHandler.CreateChecklist)
+			tasks.POST("/checklists/:checklistId/items", taskHandler.AddChecklistItem)
+			tasks.PATCH("/checklist-items/:itemId/status", taskHandler.SetChecklistItemStatus)
 		}
 
 		admin := v1.Group("/admin")

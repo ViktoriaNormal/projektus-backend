@@ -12,6 +12,110 @@ import (
 	"github.com/google/uuid"
 )
 
+const addTaskDependency = `-- name: AddTaskDependency :one
+
+INSERT INTO task_dependencies (task_id, depends_on_task_id, dependency_type)
+VALUES ($1, $2, $3)
+RETURNING id, task_id, depends_on_task_id, dependency_type, created_at
+`
+
+type AddTaskDependencyParams struct {
+	TaskID          uuid.UUID `json:"task_id"`
+	DependsOnTaskID uuid.UUID `json:"depends_on_task_id"`
+	DependencyType  string    `json:"dependency_type"`
+}
+
+// Dependencies
+func (q *Queries) AddTaskDependency(ctx context.Context, arg AddTaskDependencyParams) (TaskDependency, error) {
+	row := q.db.QueryRowContext(ctx, addTaskDependency, arg.TaskID, arg.DependsOnTaskID, arg.DependencyType)
+	var i TaskDependency
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.DependsOnTaskID,
+		&i.DependencyType,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const addTaskWatcher = `-- name: AddTaskWatcher :one
+
+INSERT INTO task_watchers (task_id, project_member_id)
+VALUES ($1, $2)
+ON CONFLICT (task_id, project_member_id) DO NOTHING
+RETURNING id, task_id, project_member_id, created_at
+`
+
+type AddTaskWatcherParams struct {
+	TaskID          uuid.UUID `json:"task_id"`
+	ProjectMemberID uuid.UUID `json:"project_member_id"`
+}
+
+// Watchers
+func (q *Queries) AddTaskWatcher(ctx context.Context, arg AddTaskWatcherParams) (TaskWatcher, error) {
+	row := q.db.QueryRowContext(ctx, addTaskWatcher, arg.TaskID, arg.ProjectMemberID)
+	var i TaskWatcher
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.ProjectMemberID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createChecklist = `-- name: CreateChecklist :one
+
+INSERT INTO task_checklists (task_id, name)
+VALUES ($1, $2)
+RETURNING id, task_id, name, created_at
+`
+
+type CreateChecklistParams struct {
+	TaskID uuid.UUID `json:"task_id"`
+	Name   string    `json:"name"`
+}
+
+// Checklists
+func (q *Queries) CreateChecklist(ctx context.Context, arg CreateChecklistParams) (TaskChecklist, error) {
+	row := q.db.QueryRowContext(ctx, createChecklist, arg.TaskID, arg.Name)
+	var i TaskChecklist
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createChecklistItem = `-- name: CreateChecklistItem :one
+INSERT INTO checklist_items (checklist_id, content, "order")
+VALUES ($1, $2, $3)
+RETURNING id, checklist_id, content, is_checked, "order", created_at
+`
+
+type CreateChecklistItemParams struct {
+	ChecklistID uuid.UUID `json:"checklist_id"`
+	Content     string    `json:"content"`
+	Order       int16     `json:"order"`
+}
+
+func (q *Queries) CreateChecklistItem(ctx context.Context, arg CreateChecklistItemParams) (ChecklistItem, error) {
+	row := q.db.QueryRowContext(ctx, createChecklistItem, arg.ChecklistID, arg.Content, arg.Order)
+	var i ChecklistItem
+	err := row.Scan(
+		&i.ID,
+		&i.ChecklistID,
+		&i.Content,
+		&i.IsChecked,
+		&i.Order,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createTask = `-- name: CreateTask :one
 
 INSERT INTO tasks (key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id)
@@ -92,6 +196,43 @@ func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 	return i, err
 }
 
+const listChecklistItems = `-- name: ListChecklistItems :many
+SELECT id, checklist_id, content, is_checked, "order", created_at
+FROM checklist_items
+WHERE checklist_id = $1
+ORDER BY "order"
+`
+
+func (q *Queries) ListChecklistItems(ctx context.Context, checklistID uuid.UUID) ([]ChecklistItem, error) {
+	rows, err := q.db.QueryContext(ctx, listChecklistItems, checklistID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChecklistItem{}
+	for rows.Next() {
+		var i ChecklistItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChecklistID,
+			&i.Content,
+			&i.IsChecked,
+			&i.Order,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectTaskKeys = `-- name: ListProjectTaskKeys :many
 SELECT key
 FROM tasks
@@ -165,6 +306,165 @@ func (q *Queries) ListProjectTasks(ctx context.Context, projectID uuid.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTaskChecklists = `-- name: ListTaskChecklists :many
+SELECT id, task_id, name, created_at
+FROM task_checklists
+WHERE task_id = $1
+ORDER BY created_at
+`
+
+func (q *Queries) ListTaskChecklists(ctx context.Context, taskID uuid.UUID) ([]TaskChecklist, error) {
+	rows, err := q.db.QueryContext(ctx, listTaskChecklists, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskChecklist{}
+	for rows.Next() {
+		var i TaskChecklist
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Name,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskDependants = `-- name: ListTaskDependants :many
+SELECT id, task_id, depends_on_task_id, dependency_type, created_at
+FROM task_dependencies
+WHERE depends_on_task_id = $1
+`
+
+func (q *Queries) ListTaskDependants(ctx context.Context, dependsOnTaskID uuid.UUID) ([]TaskDependency, error) {
+	rows, err := q.db.QueryContext(ctx, listTaskDependants, dependsOnTaskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskDependency{}
+	for rows.Next() {
+		var i TaskDependency
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.DependsOnTaskID,
+			&i.DependencyType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskDependencies = `-- name: ListTaskDependencies :many
+SELECT id, task_id, depends_on_task_id, dependency_type, created_at
+FROM task_dependencies
+WHERE task_id = $1
+`
+
+func (q *Queries) ListTaskDependencies(ctx context.Context, taskID uuid.UUID) ([]TaskDependency, error) {
+	rows, err := q.db.QueryContext(ctx, listTaskDependencies, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskDependency{}
+	for rows.Next() {
+		var i TaskDependency
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.DependsOnTaskID,
+			&i.DependencyType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskWatchers = `-- name: ListTaskWatchers :many
+SELECT id, task_id, project_member_id, created_at
+FROM task_watchers
+WHERE task_id = $1
+`
+
+func (q *Queries) ListTaskWatchers(ctx context.Context, taskID uuid.UUID) ([]TaskWatcher, error) {
+	rows, err := q.db.QueryContext(ctx, listTaskWatchers, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskWatcher{}
+	for rows.Next() {
+		var i TaskWatcher
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.ProjectMemberID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeTaskDependency = `-- name: RemoveTaskDependency :exec
+DELETE FROM task_dependencies
+WHERE id = $1
+`
+
+func (q *Queries) RemoveTaskDependency(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, removeTaskDependency, id)
+	return err
+}
+
+const removeTaskWatcher = `-- name: RemoveTaskWatcher :exec
+DELETE FROM task_watchers
+WHERE id = $1
+`
+
+func (q *Queries) RemoveTaskWatcher(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, removeTaskWatcher, id)
+	return err
 }
 
 const searchTasks = `-- name: SearchTasks :many
@@ -244,6 +544,32 @@ type SoftDeleteTaskParams struct {
 func (q *Queries) SoftDeleteTask(ctx context.Context, arg SoftDeleteTaskParams) error {
 	_, err := q.db.ExecContext(ctx, softDeleteTask, arg.ID, arg.DeleteReason)
 	return err
+}
+
+const updateChecklistItemStatus = `-- name: UpdateChecklistItemStatus :one
+UPDATE checklist_items
+SET is_checked = $2
+WHERE id = $1
+RETURNING id, checklist_id, content, is_checked, "order", created_at
+`
+
+type UpdateChecklistItemStatusParams struct {
+	ID        uuid.UUID `json:"id"`
+	IsChecked bool      `json:"is_checked"`
+}
+
+func (q *Queries) UpdateChecklistItemStatus(ctx context.Context, arg UpdateChecklistItemStatusParams) (ChecklistItem, error) {
+	row := q.db.QueryRowContext(ctx, updateChecklistItemStatus, arg.ID, arg.IsChecked)
+	var i ChecklistItem
+	err := row.Scan(
+		&i.ID,
+		&i.ChecklistID,
+		&i.Content,
+		&i.IsChecked,
+		&i.Order,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const updateTask = `-- name: UpdateTask :one

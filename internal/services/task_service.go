@@ -89,7 +89,16 @@ func (s *TaskService) CreateTask(ctx context.Context, projectID, ownerMemberID u
 }
 
 func (s *TaskService) GetTask(ctx context.Context, id uuid.UUID) (*domain.Task, error) {
-	return s.taskRepo.GetByID(ctx, id)
+	task, err := s.taskRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	checklists, err := s.ListChecklistsWithItems(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	task.Checklists = checklists
+	return task, nil
 }
 
 func (s *TaskService) ListProjectTasks(ctx context.Context, projectID uuid.UUID) ([]domain.Task, error) {
@@ -113,5 +122,78 @@ func (s *TaskService) DeleteTask(ctx context.Context, id uuid.UUID, reason strin
 	}
 	return s.taskRepo.SoftDelete(ctx, id, reason)
 }
+
+func (s *TaskService) AddWatcher(ctx context.Context, taskID, projectMemberID uuid.UUID) (*domain.TaskWatcher, error) {
+	return s.taskRepo.AddWatcher(ctx, taskID, projectMemberID)
+}
+
+func (s *TaskService) RemoveWatcher(ctx context.Context, watcherID uuid.UUID) error {
+	return s.taskRepo.RemoveWatcher(ctx, watcherID)
+}
+
+func (s *TaskService) ListWatchers(ctx context.Context, taskID uuid.UUID) ([]domain.TaskWatcher, error) {
+	return s.taskRepo.ListWatchers(ctx, taskID)
+}
+
+func (s *TaskService) AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID, depType domain.TaskDependencyType) (*domain.TaskDependency, error) {
+	if taskID == dependsOnID {
+		return nil, domain.ErrInvalidInput
+	}
+	switch depType {
+	case domain.TaskDependencyBlocks, domain.TaskDependencyRelated, domain.TaskDependencyParent, domain.TaskDependencyChild:
+	default:
+		return nil, domain.ErrInvalidInput
+	}
+	// TODO: в будущем добавить проверку циклов зависимостей
+	return s.taskRepo.AddDependency(ctx, taskID, dependsOnID, depType)
+}
+
+func (s *TaskService) RemoveDependency(ctx context.Context, dependencyID uuid.UUID) error {
+	return s.taskRepo.RemoveDependency(ctx, dependencyID)
+}
+
+func (s *TaskService) ListDependencies(ctx context.Context, taskID uuid.UUID) ([]domain.TaskDependency, error) {
+	return s.taskRepo.ListDependencies(ctx, taskID)
+}
+
+func (s *TaskService) CreateChecklist(ctx context.Context, taskID uuid.UUID, name string) (*domain.Checklist, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.taskRepo.CreateChecklist(ctx, taskID, name)
+}
+
+func (s *TaskService) ListChecklistsWithItems(ctx context.Context, taskID uuid.UUID) ([]domain.Checklist, error) {
+	checklists, err := s.taskRepo.ListChecklists(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range checklists {
+		cid, err := uuid.Parse(checklists[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		items, err := s.taskRepo.ListChecklistItems(ctx, cid)
+		if err != nil {
+			return nil, err
+		}
+		checklists[i].Items = items
+	}
+	return checklists, nil
+}
+
+func (s *TaskService) AddChecklistItem(ctx context.Context, checklistID uuid.UUID, content string, order int16) (*domain.ChecklistItem, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.taskRepo.CreateChecklistItem(ctx, checklistID, content, order)
+}
+
+func (s *TaskService) SetChecklistItemStatus(ctx context.Context, itemID uuid.UUID, isChecked bool) (*domain.ChecklistItem, error) {
+	return s.taskRepo.UpdateChecklistItemStatus(ctx, itemID, isChecked)
+}
+
 
 

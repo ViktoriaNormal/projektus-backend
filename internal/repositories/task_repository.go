@@ -21,6 +21,21 @@ type TaskRepository interface {
 	Update(ctx context.Context, t *domain.Task) (*domain.Task, error)
 	SoftDelete(ctx context.Context, id uuid.UUID, reason string) error
 	ListProjectTaskKeys(ctx context.Context, projectID uuid.UUID) ([]string, error)
+
+	AddWatcher(ctx context.Context, taskID, projectMemberID uuid.UUID) (*domain.TaskWatcher, error)
+	RemoveWatcher(ctx context.Context, watcherID uuid.UUID) error
+	ListWatchers(ctx context.Context, taskID uuid.UUID) ([]domain.TaskWatcher, error)
+
+	AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID, depType domain.TaskDependencyType) (*domain.TaskDependency, error)
+	RemoveDependency(ctx context.Context, dependencyID uuid.UUID) error
+	ListDependencies(ctx context.Context, taskID uuid.UUID) ([]domain.TaskDependency, error)
+	ListDependants(ctx context.Context, taskID uuid.UUID) ([]domain.TaskDependency, error)
+
+	CreateChecklist(ctx context.Context, taskID uuid.UUID, name string) (*domain.Checklist, error)
+	ListChecklists(ctx context.Context, taskID uuid.UUID) ([]domain.Checklist, error)
+	CreateChecklistItem(ctx context.Context, checklistID uuid.UUID, content string, order int16) (*domain.ChecklistItem, error)
+	ListChecklistItems(ctx context.Context, checklistID uuid.UUID) ([]domain.ChecklistItem, error)
+	UpdateChecklistItemStatus(ctx context.Context, itemID uuid.UUID, isChecked bool) (*domain.ChecklistItem, error)
 }
 
 type taskRepository struct {
@@ -194,6 +209,190 @@ func (r *taskRepository) SoftDelete(ctx context.Context, id uuid.UUID, reason st
 
 func (r *taskRepository) ListProjectTaskKeys(ctx context.Context, projectID uuid.UUID) ([]string, error) {
 	return r.q.ListProjectTaskKeys(ctx, projectID)
+}
+
+func (r *taskRepository) AddWatcher(ctx context.Context, taskID, projectMemberID uuid.UUID) (*domain.TaskWatcher, error) {
+	row, err := r.q.AddTaskWatcher(ctx, db.AddTaskWatcherParams{
+		TaskID:          taskID,
+		ProjectMemberID: projectMemberID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	w := domain.TaskWatcher{
+		ID:              row.ID.String(),
+		TaskID:          row.TaskID.String(),
+		ProjectMemberID: row.ProjectMemberID.String(),
+		CreatedAt:       row.CreatedAt,
+	}
+	return &w, nil
+}
+
+func (r *taskRepository) RemoveWatcher(ctx context.Context, watcherID uuid.UUID) error {
+	return r.q.RemoveTaskWatcher(ctx, watcherID)
+}
+
+func (r *taskRepository) ListWatchers(ctx context.Context, taskID uuid.UUID) ([]domain.TaskWatcher, error) {
+	rows, err := r.q.ListTaskWatchers(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.TaskWatcher, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domain.TaskWatcher{
+			ID:              row.ID.String(),
+			TaskID:          row.TaskID.String(),
+			ProjectMemberID: row.ProjectMemberID.String(),
+			CreatedAt:       row.CreatedAt,
+		})
+	}
+	return result, nil
+}
+
+func (r *taskRepository) AddDependency(ctx context.Context, taskID, dependsOnID uuid.UUID, depType domain.TaskDependencyType) (*domain.TaskDependency, error) {
+	row, err := r.q.AddTaskDependency(ctx, db.AddTaskDependencyParams{
+		TaskID:          taskID,
+		DependsOnTaskID: dependsOnID,
+		DependencyType:  string(depType),
+	})
+	if err != nil {
+		return nil, err
+	}
+	d := domain.TaskDependency{
+		ID:              row.ID.String(),
+		TaskID:          row.TaskID.String(),
+		DependsOnTaskID: row.DependsOnTaskID.String(),
+		Type:            domain.TaskDependencyType(row.DependencyType),
+		CreatedAt:       row.CreatedAt,
+	}
+	return &d, nil
+}
+
+func (r *taskRepository) RemoveDependency(ctx context.Context, dependencyID uuid.UUID) error {
+	return r.q.RemoveTaskDependency(ctx, dependencyID)
+}
+
+func (r *taskRepository) ListDependencies(ctx context.Context, taskID uuid.UUID) ([]domain.TaskDependency, error) {
+	rows, err := r.q.ListTaskDependencies(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.TaskDependency, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domain.TaskDependency{
+			ID:              row.ID.String(),
+			TaskID:          row.TaskID.String(),
+			DependsOnTaskID: row.DependsOnTaskID.String(),
+			Type:            domain.TaskDependencyType(row.DependencyType),
+			CreatedAt:       row.CreatedAt,
+		})
+	}
+	return result, nil
+}
+
+func (r *taskRepository) ListDependants(ctx context.Context, taskID uuid.UUID) ([]domain.TaskDependency, error) {
+	rows, err := r.q.ListTaskDependants(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.TaskDependency, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domain.TaskDependency{
+			ID:              row.ID.String(),
+			TaskID:          row.TaskID.String(),
+			DependsOnTaskID: row.DependsOnTaskID.String(),
+			Type:            domain.TaskDependencyType(row.DependencyType),
+			CreatedAt:       row.CreatedAt,
+		})
+	}
+	return result, nil
+}
+
+func (r *taskRepository) CreateChecklist(ctx context.Context, taskID uuid.UUID, name string) (*domain.Checklist, error) {
+	row, err := r.q.CreateChecklist(ctx, db.CreateChecklistParams{
+		TaskID: taskID,
+		Name:   name,
+	})
+	if err != nil {
+		return nil, err
+	}
+	ch := domain.Checklist{
+		ID:     row.ID.String(),
+		TaskID: row.TaskID.String(),
+		Name:   row.Name,
+	}
+	return &ch, nil
+}
+
+func (r *taskRepository) ListChecklists(ctx context.Context, taskID uuid.UUID) ([]domain.Checklist, error) {
+	rows, err := r.q.ListTaskChecklists(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Checklist, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domain.Checklist{
+			ID:     row.ID.String(),
+			TaskID: row.TaskID.String(),
+			Name:   row.Name,
+		})
+	}
+	return result, nil
+}
+
+func (r *taskRepository) CreateChecklistItem(ctx context.Context, checklistID uuid.UUID, content string, order int16) (*domain.ChecklistItem, error) {
+	row, err := r.q.CreateChecklistItem(ctx, db.CreateChecklistItemParams{
+		ChecklistID: checklistID,
+		Content:     content,
+		Order:       order,
+	})
+	if err != nil {
+		return nil, err
+	}
+	item := domain.ChecklistItem{
+		ID:          row.ID.String(),
+		ChecklistID: row.ChecklistID.String(),
+		Content:     row.Content,
+		IsChecked:   row.IsChecked,
+		Order:       row.Order,
+	}
+	return &item, nil
+}
+
+func (r *taskRepository) ListChecklistItems(ctx context.Context, checklistID uuid.UUID) ([]domain.ChecklistItem, error) {
+	rows, err := r.q.ListChecklistItems(ctx, checklistID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.ChecklistItem, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domain.ChecklistItem{
+			ID:          row.ID.String(),
+			ChecklistID: row.ChecklistID.String(),
+			Content:     row.Content,
+			IsChecked:   row.IsChecked,
+			Order:       row.Order,
+		})
+	}
+	return result, nil
+}
+
+func (r *taskRepository) UpdateChecklistItemStatus(ctx context.Context, itemID uuid.UUID, isChecked bool) (*domain.ChecklistItem, error) {
+	row, err := r.q.UpdateChecklistItemStatus(ctx, db.UpdateChecklistItemStatusParams{
+		ID:        itemID,
+		IsChecked: isChecked,
+	})
+	if err != nil {
+		return nil, err
+	}
+	item := domain.ChecklistItem{
+		ID:          row.ID.String(),
+		ChecklistID: row.ChecklistID.String(),
+		Content:     row.Content,
+		IsChecked:   row.IsChecked,
+		Order:       row.Order,
+	}
+	return &item, nil
 }
 
 func mapDBTaskToDomain(t db.Task) domain.Task {

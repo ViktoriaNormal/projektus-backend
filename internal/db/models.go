@@ -33,6 +33,15 @@ type Board struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
+type ChecklistItem struct {
+	ID          uuid.UUID `json:"id"`
+	ChecklistID uuid.UUID `json:"checklist_id"`
+	Content     string    `json:"content"`
+	IsChecked   bool      `json:"is_checked"`
+	Order       int16     `json:"order"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type Column struct {
 	ID         uuid.UUID      `json:"id"`
 	BoardID    uuid.UUID      `json:"board_id"`
@@ -220,6 +229,28 @@ type Task struct {
 	DeletedAt    sql.NullTime   `json:"deleted_at"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+type TaskChecklist struct {
+	ID        uuid.UUID `json:"id"`
+	TaskID    uuid.UUID `json:"task_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type TaskDependency struct {
+	ID              uuid.UUID `json:"id"`
+	TaskID          uuid.UUID `json:"task_id"`
+	DependsOnTaskID uuid.UUID `json:"depends_on_task_id"`
+	DependencyType  string    `json:"dependency_type"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+type TaskWatcher struct {
+	ID              uuid.UUID `json:"id"`
+	TaskID          uuid.UUID `json:"task_id"`
+	ProjectMemberID uuid.UUID `json:"project_member_id"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type User struct {
