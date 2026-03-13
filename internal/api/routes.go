@@ -9,7 +9,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -64,6 +64,37 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.POST("/:projectId/members", projectMemberHandler.AddMember)
 			projects.DELETE("/:projectId/members/:memberId", projectMemberHandler.RemoveMember)
 			projects.PATCH("/:projectId/members/:memberId", projectMemberHandler.UpdateMemberRoles)
+		}
+
+		boards := v1.Group("/boards")
+		boards.Use(middleware.AuthMiddleware(cfg))
+		{
+			boards.GET("", boardHandler.ListBoards)
+			boards.POST("", boardHandler.CreateBoard)
+			boards.GET("/:boardId", boardHandler.GetBoard)
+			boards.PATCH("/:boardId", boardHandler.UpdateBoard)
+			boards.DELETE("/:boardId", boardHandler.DeleteBoard)
+
+			boards.GET("/:boardId/columns", boardHandler.ListColumns)
+			boards.POST("/:boardId/columns", boardHandler.CreateColumn)
+
+			boards.GET("/:boardId/swimlanes", boardHandler.ListSwimlanes)
+			boards.POST("/:boardId/swimlanes", boardHandler.CreateSwimlane)
+
+			boards.GET("/:boardId/notes", boardHandler.ListNotes)
+
+			boards.POST("/columns/:columnId/notes", boardHandler.CreateNoteForColumn)
+			boards.POST("/swimlanes/:swimlaneId/notes", boardHandler.CreateNoteForSwimlane)
+		}
+
+		tasks := v1.Group("/tasks")
+		tasks.Use(middleware.AuthMiddleware(cfg))
+		{
+			tasks.GET("", taskHandler.SearchTasks)
+			tasks.POST("", taskHandler.CreateTask)
+			tasks.GET("/:taskId", taskHandler.GetTask)
+			tasks.PATCH("/:taskId", taskHandler.UpdateTask)
+			tasks.DELETE("/:taskId", taskHandler.DeleteTask)
 		}
 
 		admin := v1.Group("/admin")

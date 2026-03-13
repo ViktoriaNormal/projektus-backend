@@ -22,6 +22,28 @@ type BlockedUser struct {
 	BlockedUntil time.Time `json:"blocked_until"`
 }
 
+type Board struct {
+	ID          uuid.UUID      `json:"id"`
+	ProjectID   uuid.NullUUID  `json:"project_id"`
+	TemplateID  uuid.NullUUID  `json:"template_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	Order       int16          `json:"order"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type Column struct {
+	ID         uuid.UUID      `json:"id"`
+	BoardID    uuid.UUID      `json:"board_id"`
+	Name       string         `json:"name"`
+	SystemType sql.NullString `json:"system_type"`
+	WipLimit   sql.NullInt16  `json:"wip_limit"`
+	Order      int16          `json:"order"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+}
+
 type LoginAttempt struct {
 	ID          int64          `json:"id"`
 	Email       sql.NullString `json:"email"`
@@ -60,6 +82,15 @@ type MeetingReminder struct {
 	Channel      string       `json:"channel"`
 	ReminderTime time.Time    `json:"reminder_time"`
 	SentAt       sql.NullTime `json:"sent_at"`
+}
+
+type Note struct {
+	ID         uuid.UUID     `json:"id"`
+	ColumnID   uuid.NullUUID `json:"column_id"`
+	SwimlaneID uuid.NullUUID `json:"swimlane_id"`
+	Content    string        `json:"content"`
+	CreatedAt  time.Time     `json:"created_at"`
+	UpdatedAt  time.Time     `json:"updated_at"`
 }
 
 type Notification struct {
@@ -162,6 +193,33 @@ type RolePermission struct {
 type RoleUser struct {
 	RoleID uuid.UUID `json:"role_id"`
 	UserID uuid.UUID `json:"user_id"`
+}
+
+type Swimlane struct {
+	ID        uuid.UUID     `json:"id"`
+	BoardID   uuid.UUID     `json:"board_id"`
+	Name      string        `json:"name"`
+	WipLimit  sql.NullInt16 `json:"wip_limit"`
+	Order     int16         `json:"order"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+type Task struct {
+	ID           uuid.UUID      `json:"id"`
+	Key          string         `json:"key"`
+	ProjectID    uuid.UUID      `json:"project_id"`
+	OwnerID      uuid.UUID      `json:"owner_id"`
+	ExecutorID   uuid.NullUUID  `json:"executor_id"`
+	Name         string         `json:"name"`
+	Description  sql.NullString `json:"description"`
+	Deadline     sql.NullTime   `json:"deadline"`
+	ColumnID     uuid.UUID      `json:"column_id"`
+	SwimlaneID   uuid.NullUUID  `json:"swimlane_id"`
+	DeleteReason sql.NullString `json:"delete_reason"`
+	DeletedAt    sql.NullTime   `json:"deleted_at"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
 type User struct {
