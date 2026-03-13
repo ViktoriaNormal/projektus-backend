@@ -120,7 +120,7 @@ const createTask = `-- name: CreateTask :one
 
 INSERT INTO tasks (key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type
+RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type, class_of_service, cycle_time_seconds
 `
 
 type CreateTaskParams struct {
@@ -166,12 +166,14 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.UpdatedAt,
 		&i.StoryPoints,
 		&i.BacklogType,
+		&i.ClassOfService,
+		&i.CycleTimeSeconds,
 	)
 	return i, err
 }
 
 const getTaskByID = `-- name: GetTaskByID :one
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type, class_of_service, cycle_time_seconds
 FROM tasks
 WHERE id = $1
 `
@@ -196,6 +198,8 @@ func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.UpdatedAt,
 		&i.StoryPoints,
 		&i.BacklogType,
+		&i.ClassOfService,
+		&i.CycleTimeSeconds,
 	)
 	return i, err
 }
@@ -267,7 +271,7 @@ func (q *Queries) ListProjectTaskKeys(ctx context.Context, projectID uuid.UUID) 
 }
 
 const listProjectTasks = `-- name: ListProjectTasks :many
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type, class_of_service, cycle_time_seconds
 FROM tasks
 WHERE project_id = $1
   AND deleted_at IS NULL
@@ -300,6 +304,8 @@ func (q *Queries) ListProjectTasks(ctx context.Context, projectID uuid.UUID) ([]
 			&i.UpdatedAt,
 			&i.StoryPoints,
 			&i.BacklogType,
+			&i.ClassOfService,
+			&i.CycleTimeSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -454,7 +460,7 @@ func (q *Queries) ListTaskWatchers(ctx context.Context, taskID uuid.UUID) ([]Tas
 }
 
 const listTasksByBacklogType = `-- name: ListTasksByBacklogType :many
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type, class_of_service, cycle_time_seconds
 FROM tasks
 WHERE project_id = $1
   AND backlog_type = $2
@@ -493,6 +499,8 @@ func (q *Queries) ListTasksByBacklogType(ctx context.Context, arg ListTasksByBac
 			&i.UpdatedAt,
 			&i.StoryPoints,
 			&i.BacklogType,
+			&i.ClassOfService,
+			&i.CycleTimeSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -528,7 +536,7 @@ func (q *Queries) RemoveTaskWatcher(ctx context.Context, id uuid.UUID) error {
 }
 
 const searchTasks = `-- name: SearchTasks :many
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type, class_of_service, cycle_time_seconds
 FROM tasks
 WHERE ($1::uuid IS NULL OR project_id = $1)
   AND ($2::uuid IS NULL OR owner_id = $2)
@@ -576,6 +584,8 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Tas
 			&i.UpdatedAt,
 			&i.StoryPoints,
 			&i.BacklogType,
+			&i.ClassOfService,
+			&i.CycleTimeSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -644,7 +654,7 @@ SET name        = COALESCE($1, name),
     swimlane_id = COALESCE($6, swimlane_id),
     updated_at  = NOW()
 WHERE id = $7
-RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type
+RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, delete_reason, deleted_at, created_at, updated_at, story_points, backlog_type, class_of_service, cycle_time_seconds
 `
 
 type UpdateTaskParams struct {
@@ -685,6 +695,8 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.UpdatedAt,
 		&i.StoryPoints,
 		&i.BacklogType,
+		&i.ClassOfService,
+		&i.CycleTimeSeconds,
 	)
 	return i, err
 }

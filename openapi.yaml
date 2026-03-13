@@ -1577,6 +1577,29 @@ paths:
         '204':
           description: Обновлено
 
+  /boards/{boardId}/wip-counts:
+    get:
+      tags: [Kanban]
+      summary: Получить текущие WIP-счетчики по доске
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Текущие WIP-счетчики
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WipCount'
+
   /projects/{projectId}/kanban/forecast:
     post:
       tags: [Kanban]
@@ -1598,6 +1621,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonteCarloForecastResult'
+
+  /projects/{projectId}/classes-of-service:
+    get:
+      tags: [Kanban]
+      summary: Получить список классов обслуживания для Kanban-проекта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Список классов обслуживания
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClassOfService'
+
+  /boards/{boardId}/swimlanes/configure:
+    post:
+      tags: [Kanban]
+      summary: Настроить источник дорожек для доски (классы обслуживания или кастомное поле)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwimlaneConfigRequest'
+      responses:
+        '200':
+          description: Конфигурация дорожек обновлена
+
+  /tasks/{taskId}/class-of-service:
+    patch:
+      tags: [Kanban]
+      summary: Обновить класс обслуживания задачи
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskClassRequest'
+      responses:
+        '200':
+          description: Класс обслуживания обновлён
 
   /projects/{projectId}/analytics/scrum/velocity:
     get:
@@ -3080,6 +3167,60 @@ components:
     WipLimitUpdate:
       allOf:
         - $ref: '#/components/schemas/WipLimit'
+
+    WipCount:
+      type: object
+      properties:
+        columnId:
+          type: string
+          format: uuid
+          nullable: true
+        swimlaneId:
+          type: string
+          format: uuid
+          nullable: true
+        count:
+          type: integer
+        limit:
+          type: integer
+          nullable: true
+        exceeded:
+          type: boolean
+
+    ClassOfService:
+      type: object
+      properties:
+        value:
+          type: string
+          enum: [expedite, fixed_date, standard, intangible]
+        name:
+          type: string
+        description:
+          type: string
+
+    UpdateTaskClassRequest:
+      type: object
+      required: [classOfService]
+      properties:
+        classOfService:
+          type: string
+          enum: [expedite, fixed_date, standard, intangible]
+
+    SwimlaneConfigRequest:
+      type: object
+      required: [sourceType]
+      properties:
+        sourceType:
+          type: string
+          enum: [class_of_service, custom_field]
+        customFieldId:
+          type: string
+          format: uuid
+          nullable: true
+        valueMappings:
+          type: object
+          additionalProperties:
+            type: string
 
     MonteCarloForecastRequest:
       type: object

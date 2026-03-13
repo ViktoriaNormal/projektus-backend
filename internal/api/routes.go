@@ -9,7 +9,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -75,6 +75,13 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			projects.GET("/:projectId/backlog/sprint", sprintBacklogHandler.GetSprintBacklog)
 			projects.POST("/:projectId/backlog/move-to-sprint", sprintBacklogHandler.MoveTasksToSprint)
+
+			projects.GET("/:projectId/classes-of-service", classOfServiceHandler.GetClassesOfService)
+
+			projects.GET("/:projectId/kanban/wip-limits", kanbanHandler.GetWipLimits)
+			projects.PUT("/:projectId/kanban/wip-limits", kanbanHandler.UpdateWipLimits)
+
+			projects.POST("/:projectId/kanban/forecast", forecastHandler.GenerateForecast)
 		}
 
 		sprints := v1.Group("/sprints")
@@ -106,6 +113,10 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			boards.POST("/columns/:columnId/notes", boardHandler.CreateNoteForColumn)
 			boards.POST("/swimlanes/:swimlaneId/notes", boardHandler.CreateNoteForSwimlane)
+
+			boards.POST("/:boardId/swimlanes/configure", classOfServiceHandler.ConfigureSwimlanes)
+
+			boards.GET("/:boardId/wip-counts", kanbanHandler.GetCurrentWipCounts)
 		}
 
 		tasks := v1.Group("/tasks")
@@ -133,6 +144,8 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			tasks.GET("/:taskId/attachments", attachmentHandler.ListTaskAttachments)
 			tasks.POST("/:taskId/attachments", attachmentHandler.UploadTaskAttachment)
+
+			tasks.PATCH("/:taskId/class-of-service", classOfServiceHandler.UpdateTaskClass)
 		}
 
 		admin := v1.Group("/admin")

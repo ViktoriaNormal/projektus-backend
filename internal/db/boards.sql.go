@@ -140,7 +140,7 @@ func (q *Queries) CreateNoteForSwimlane(ctx context.Context, arg CreateNoteForSw
 const createSwimlane = `-- name: CreateSwimlane :one
 INSERT INTO swimlanes (board_id, name, wip_limit, "order")
 VALUES ($1, $2, $3, $4)
-RETURNING id, board_id, name, wip_limit, "order", created_at, updated_at
+RETURNING id, board_id, name, wip_limit, "order", created_at, updated_at, source_type, custom_field_id, value_mappings
 `
 
 type CreateSwimlaneParams struct {
@@ -166,6 +166,9 @@ func (q *Queries) CreateSwimlane(ctx context.Context, arg CreateSwimlaneParams) 
 		&i.Order,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceType,
+		&i.CustomFieldID,
+		&i.ValueMappings,
 	)
 	return i, err
 }
@@ -320,7 +323,7 @@ func (q *Queries) ListBoardNotes(ctx context.Context, boardID uuid.UUID) ([]Note
 
 const listBoardSwimlanes = `-- name: ListBoardSwimlanes :many
 
-SELECT id, board_id, name, wip_limit, "order", created_at, updated_at
+SELECT id, board_id, name, wip_limit, "order", created_at, updated_at, source_type, custom_field_id, value_mappings
 FROM swimlanes
 WHERE board_id = $1
 ORDER BY "order"
@@ -344,6 +347,9 @@ func (q *Queries) ListBoardSwimlanes(ctx context.Context, boardID uuid.UUID) ([]
 			&i.Order,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SourceType,
+			&i.CustomFieldID,
+			&i.ValueMappings,
 		); err != nil {
 			return nil, err
 		}
@@ -511,7 +517,7 @@ SET name       = COALESCE($1, name),
     "order"    = COALESCE($3, "order"),
     updated_at = NOW()
 WHERE id = $4
-RETURNING id, board_id, name, wip_limit, "order", created_at, updated_at
+RETURNING id, board_id, name, wip_limit, "order", created_at, updated_at, source_type, custom_field_id, value_mappings
 `
 
 type UpdateSwimlaneParams struct {
@@ -537,6 +543,9 @@ func (q *Queries) UpdateSwimlane(ctx context.Context, arg UpdateSwimlaneParams) 
 		&i.Order,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SourceType,
+		&i.CustomFieldID,
+		&i.ValueMappings,
 	)
 	return i, err
 }

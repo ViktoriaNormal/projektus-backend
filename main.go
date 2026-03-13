@@ -46,6 +46,11 @@ func main() {
 	sprintRepo := repositories.NewSprintRepository(queries)
 	productBacklogRepo := repositories.NewProductBacklogRepository(queries)
 	sprintTaskRepo := repositories.NewSprintTaskRepository(queries)
+	classOfServiceRepo := repositories.NewClassOfServiceRepository(queries)
+	swimlaneConfigRepo := repositories.NewSwimlaneConfigRepository(queries)
+	kanbanRepo := repositories.NewKanbanRepository(queries)
+	taskHistoryRepo := repositories.NewTaskHistoryRepository(queries)
+	forecastRepo := repositories.NewForecastRepository(queries)
 
 	roleSvc := services.NewRoleService(roleRepo)
 	permissionSvc := services.NewPermissionService(roleSvc)
@@ -69,8 +74,19 @@ func main() {
 	boardSvc := services.NewBoardService(boardRepo)
 	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc)
 
-	taskSvc := services.NewTaskService(taskRepo, projectRepo)
+	taskHistorySvc := services.NewTaskHistoryService(taskHistoryRepo)
+
+	taskSvc := services.NewTaskService(taskRepo, projectRepo, taskHistorySvc)
 	taskHandler := handlers.NewTaskHandler(taskSvc)
+
+	classOfServiceSvc := services.NewClassOfServiceService(classOfServiceRepo, swimlaneConfigRepo, boardRepo)
+	classOfServiceHandler := handlers.NewClassOfServiceHandler(classOfServiceSvc)
+
+	kanbanSvc := services.NewKanbanService(kanbanRepo, boardRepo)
+	kanbanHandler := handlers.NewKanbanHandler(kanbanSvc)
+
+	forecastSvc := services.NewMonteCarloForecastService(taskHistoryRepo, forecastRepo)
+	forecastHandler := handlers.NewForecastHandler(forecastSvc)
 
 	commentSvc := services.NewCommentService(commentRepo, projectMemberRepo)
 	commentHandler := handlers.NewCommentHandler(commentSvc)
@@ -91,7 +107,7 @@ func main() {
 	templateSvc := services.NewTemplateService(templateRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, permissionSvc)
+	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

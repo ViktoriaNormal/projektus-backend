@@ -6,6 +6,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,6 +78,15 @@ type CommentMention struct {
 	ID              uuid.UUID `json:"id"`
 	CommentID       uuid.UUID `json:"comment_id"`
 	ProjectMemberID uuid.UUID `json:"project_member_id"`
+}
+
+type KanbanForecastCache struct {
+	ID            uuid.UUID       `json:"id"`
+	ProjectID     uuid.UUID       `json:"project_id"`
+	WorkItemCount int32           `json:"work_item_count"`
+	ForecastData  json.RawMessage `json:"forecast_data"`
+	CreatedAt     time.Time       `json:"created_at"`
+	ExpiresAt     time.Time       `json:"expires_at"`
 }
 
 type LoginAttempt struct {
@@ -259,32 +269,37 @@ type SprintTask struct {
 }
 
 type Swimlane struct {
-	ID        uuid.UUID     `json:"id"`
-	BoardID   uuid.UUID     `json:"board_id"`
-	Name      string        `json:"name"`
-	WipLimit  sql.NullInt16 `json:"wip_limit"`
-	Order     int16         `json:"order"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	ID            uuid.UUID             `json:"id"`
+	BoardID       uuid.UUID             `json:"board_id"`
+	Name          string                `json:"name"`
+	WipLimit      sql.NullInt16         `json:"wip_limit"`
+	Order         int16                 `json:"order"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
+	SourceType    sql.NullString        `json:"source_type"`
+	CustomFieldID uuid.NullUUID         `json:"custom_field_id"`
+	ValueMappings pqtype.NullRawMessage `json:"value_mappings"`
 }
 
 type Task struct {
-	ID           uuid.UUID      `json:"id"`
-	Key          string         `json:"key"`
-	ProjectID    uuid.UUID      `json:"project_id"`
-	OwnerID      uuid.UUID      `json:"owner_id"`
-	ExecutorID   uuid.NullUUID  `json:"executor_id"`
-	Name         string         `json:"name"`
-	Description  sql.NullString `json:"description"`
-	Deadline     sql.NullTime   `json:"deadline"`
-	ColumnID     uuid.UUID      `json:"column_id"`
-	SwimlaneID   uuid.NullUUID  `json:"swimlane_id"`
-	DeleteReason sql.NullString `json:"delete_reason"`
-	DeletedAt    sql.NullTime   `json:"deleted_at"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	StoryPoints  sql.NullInt32  `json:"story_points"`
-	BacklogType  sql.NullString `json:"backlog_type"`
+	ID               uuid.UUID      `json:"id"`
+	Key              string         `json:"key"`
+	ProjectID        uuid.UUID      `json:"project_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	ExecutorID       uuid.NullUUID  `json:"executor_id"`
+	Name             string         `json:"name"`
+	Description      sql.NullString `json:"description"`
+	Deadline         sql.NullTime   `json:"deadline"`
+	ColumnID         uuid.UUID      `json:"column_id"`
+	SwimlaneID       uuid.NullUUID  `json:"swimlane_id"`
+	DeleteReason     sql.NullString `json:"delete_reason"`
+	DeletedAt        sql.NullTime   `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	StoryPoints      sql.NullInt32  `json:"story_points"`
+	BacklogType      sql.NullString `json:"backlog_type"`
+	ClassOfService   sql.NullString `json:"class_of_service"`
+	CycleTimeSeconds sql.NullInt64  `json:"cycle_time_seconds"`
 }
 
 type TaskChecklist struct {
@@ -300,6 +315,14 @@ type TaskDependency struct {
 	DependsOnTaskID uuid.UUID `json:"depends_on_task_id"`
 	DependencyType  string    `json:"dependency_type"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+type TaskStatusHistory struct {
+	ID        uuid.UUID    `json:"id"`
+	TaskID    uuid.UUID    `json:"task_id"`
+	ColumnID  uuid.UUID    `json:"column_id"`
+	EnteredAt time.Time    `json:"entered_at"`
+	LeftAt    sql.NullTime `json:"left_at"`
 }
 
 type TaskWatcher struct {
