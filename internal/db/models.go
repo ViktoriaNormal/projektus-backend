@@ -12,6 +12,16 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+type Attachment struct {
+	ID         uuid.UUID     `json:"id"`
+	TaskID     uuid.NullUUID `json:"task_id"`
+	CommentID  uuid.NullUUID `json:"comment_id"`
+	FileName   string        `json:"file_name"`
+	FilePath   string        `json:"file_path"`
+	UploadedBy uuid.UUID     `json:"uploaded_by"`
+	UploadedAt time.Time     `json:"uploaded_at"`
+}
+
 type BlockedIp struct {
 	IpAddress    pqtype.Inet `json:"ip_address"`
 	BlockedUntil time.Time   `json:"blocked_until"`
@@ -51,6 +61,21 @@ type Column struct {
 	Order      int16          `json:"order"`
 	CreatedAt  time.Time      `json:"created_at"`
 	UpdatedAt  time.Time      `json:"updated_at"`
+}
+
+type Comment struct {
+	ID        uuid.UUID `json:"id"`
+	TaskID    uuid.UUID `json:"task_id"`
+	AuthorID  uuid.UUID `json:"author_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type CommentMention struct {
+	ID              uuid.UUID `json:"id"`
+	CommentID       uuid.UUID `json:"comment_id"`
+	ProjectMemberID uuid.UUID `json:"project_member_id"`
 }
 
 type LoginAttempt struct {

@@ -41,6 +41,8 @@ func main() {
 	templateRepo := repositories.NewTemplateRepository(queries)
 	boardRepo := repositories.NewBoardRepository(queries)
 	taskRepo := repositories.NewTaskRepository(queries)
+	commentRepo := repositories.NewCommentRepository(queries)
+	attachmentRepo := repositories.NewAttachmentRepository(queries)
 
 	roleSvc := services.NewRoleService(roleRepo)
 	permissionSvc := services.NewPermissionService(roleSvc)
@@ -65,13 +67,19 @@ func main() {
 	taskSvc := services.NewTaskService(taskRepo, projectRepo)
 	taskHandler := handlers.NewTaskHandler(taskSvc)
 
+	commentSvc := services.NewCommentService(commentRepo, projectMemberRepo)
+	commentHandler := handlers.NewCommentHandler(commentSvc)
+
+	attachmentSvc := services.NewAttachmentService(attachmentRepo)
+	attachmentHandler := handlers.NewAttachmentHandler(attachmentSvc)
+
 	projectMemberSvc := services.NewProjectMemberService(projectMemberRepo, userRepo, roleRepo)
 	projectMemberHandler := handlers.NewProjectMemberHandler(projectMemberSvc)
 
 	templateSvc := services.NewTemplateService(templateRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, permissionSvc)
+	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

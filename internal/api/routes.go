@@ -9,7 +9,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -106,6 +106,12 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			tasks.POST("/:taskId/checklists", taskHandler.CreateChecklist)
 			tasks.POST("/checklists/:checklistId/items", taskHandler.AddChecklistItem)
 			tasks.PATCH("/checklist-items/:itemId/status", taskHandler.SetChecklistItemStatus)
+
+			tasks.GET("/:taskId/comments", commentHandler.ListTaskComments)
+			tasks.POST("/comments", commentHandler.CreateComment)
+
+			tasks.GET("/:taskId/attachments", attachmentHandler.ListTaskAttachments)
+			tasks.POST("/:taskId/attachments", attachmentHandler.UploadTaskAttachment)
 		}
 
 		admin := v1.Group("/admin")
