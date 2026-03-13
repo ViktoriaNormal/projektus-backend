@@ -69,6 +69,44 @@ func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error) {
 	return i, err
 }
 
+const listProjectRoles = `-- name: ListProjectRoles :many
+SELECT id, name, description, scope, project_id, created_at, updated_at
+FROM roles
+WHERE scope = 'project' AND project_id = $1
+ORDER BY name
+`
+
+func (q *Queries) ListProjectRoles(ctx context.Context, projectID uuid.NullUUID) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectRoles, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Scope,
+			&i.ProjectID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSystemRoles = `-- name: ListSystemRoles :many
 
 SELECT id, name, description, scope, project_id, created_at, updated_at

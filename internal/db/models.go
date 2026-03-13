@@ -102,6 +102,39 @@ type Permission struct {
 	CreatedAt   time.Time      `json:"created_at"`
 }
 
+type Project struct {
+	ID          uuid.UUID      `json:"id"`
+	Key         string         `json:"key"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	ProjectType string         `json:"project_type"`
+	OwnerID     uuid.UUID      `json:"owner_id"`
+	Status      string         `json:"status"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type ProjectMember struct {
+	ID        uuid.UUID `json:"id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type ProjectMemberRole struct {
+	ProjectMemberID uuid.UUID `json:"project_member_id"`
+	RoleID          uuid.UUID `json:"role_id"`
+}
+
+type ProjectTemplate struct {
+	ID          uuid.UUID      `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	ProjectType string         `json:"project_type"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID    `json:"id"`
 	UserID    uuid.UUID    `json:"user_id"`

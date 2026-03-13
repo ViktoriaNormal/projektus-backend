@@ -28,3 +28,9 @@ RETURNING id, name, description, scope, project_id, created_at, updated_at;
 DELETE FROM roles
 WHERE id = $1;
 
+-- name: ListProjectRoles :many
+SELECT id, name, description, scope, project_id, created_at, updated_at
+FROM roles
+WHERE scope = 'project' AND project_id = $1
+ORDER BY name;
+

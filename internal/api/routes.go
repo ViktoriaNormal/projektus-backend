@@ -9,7 +9,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -51,6 +51,21 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			meetings.POST("/:meetingId/response", meetingHandler.RespondToInvitation)
 		}
 
+		projects := v1.Group("/projects")
+		projects.Use(middleware.AuthMiddleware(cfg))
+		{
+			projects.GET("", projectHandler.ListProjects)
+			projects.POST("", projectHandler.CreateProject)
+			projects.GET("/:projectId", projectHandler.GetProject)
+			projects.PATCH("/:projectId", projectHandler.UpdateProject)
+			projects.DELETE("/:projectId", projectHandler.DeleteProject)
+
+			projects.GET("/:projectId/members", projectMemberHandler.ListMembers)
+			projects.POST("/:projectId/members", projectMemberHandler.AddMember)
+			projects.DELETE("/:projectId/members/:memberId", projectMemberHandler.RemoveMember)
+			projects.PATCH("/:projectId/members/:memberId", projectMemberHandler.UpdateMemberRoles)
+		}
+
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthMiddleware(cfg), middleware.RequireSystemPermission(services.SystemPermissionManageRoles, permissionSvc))
 		{
@@ -67,6 +82,12 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			{
 				adminUsers.GET("/:userId/roles", roleHandler.GetUserRoles)
 				adminUsers.POST("/:userId/roles", roleHandler.AssignUserRoles)
+			}
+
+			templates := admin.Group("/project-templates")
+			{
+				templates.GET("", templateHandler.ListTemplates)
+				templates.POST("", templateHandler.CreateTemplate)
 			}
 		}
 	}

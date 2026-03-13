@@ -32,6 +32,8 @@ type RoleRepository interface {
 	DeleteUserRoles(ctx context.Context, userID uuid.UUID) error
 
 	UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error)
+
+	ListProjectRoles(ctx context.Context, projectID uuid.UUID) ([]domain.Role, error)
 }
 
 type roleRepository struct {
@@ -242,6 +244,26 @@ func (r *roleRepository) UserHasSystemPermission(ctx context.Context, userID uui
 		return false, err
 	}
 	return has, nil
+}
+
+func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UUID) ([]domain.Role, error) {
+	pid := uuid.NullUUID{UUID: projectID, Valid: true}
+	rows, err := r.q.ListProjectRoles(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+
+	roles := make([]domain.Role, 0, len(rows))
+	for _, row := range rows {
+		roles = append(roles, domain.Role{
+			ID:          row.ID,
+			Name:        row.Name,
+			Description: sqlNullStringToStringPtr(row.Description),
+			Scope:       domain.RoleScope(row.Scope),
+			ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
+		})
+	}
+	return roles, nil
 }
 
 func sqlNullStringToStringPtr(ns sql.NullString) string {
