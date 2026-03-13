@@ -53,14 +53,15 @@ type ChecklistItem struct {
 }
 
 type Column struct {
-	ID         uuid.UUID      `json:"id"`
-	BoardID    uuid.UUID      `json:"board_id"`
-	Name       string         `json:"name"`
-	SystemType sql.NullString `json:"system_type"`
-	WipLimit   sql.NullInt16  `json:"wip_limit"`
-	Order      int16          `json:"order"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
+	ID              uuid.UUID      `json:"id"`
+	BoardID         uuid.UUID      `json:"board_id"`
+	Name            string         `json:"name"`
+	SystemType      sql.NullString `json:"system_type"`
+	WipLimit        sql.NullInt16  `json:"wip_limit"`
+	Order           int16          `json:"order"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	IsSprintBacklog bool           `json:"is_sprint_backlog"`
 }
 
 type Comment struct {
@@ -167,6 +168,14 @@ type Permission struct {
 	CreatedAt   time.Time      `json:"created_at"`
 }
 
+type ProductBacklog struct {
+	ID        uuid.UUID `json:"id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	TaskID    uuid.UUID `json:"task_id"`
+	Order     int32     `json:"order"`
+	AddedAt   time.Time `json:"added_at"`
+}
+
 type Project struct {
 	ID          uuid.UUID      `json:"id"`
 	Key         string         `json:"key"`
@@ -229,6 +238,26 @@ type RoleUser struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
+type Sprint struct {
+	ID        uuid.UUID      `json:"id"`
+	ProjectID uuid.UUID      `json:"project_id"`
+	Name      string         `json:"name"`
+	Goal      sql.NullString `json:"goal"`
+	StartDate time.Time      `json:"start_date"`
+	EndDate   time.Time      `json:"end_date"`
+	Status    string         `json:"status"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+type SprintTask struct {
+	ID       uuid.UUID     `json:"id"`
+	SprintID uuid.UUID     `json:"sprint_id"`
+	TaskID   uuid.UUID     `json:"task_id"`
+	Order    sql.NullInt32 `json:"order"`
+	AddedAt  time.Time     `json:"added_at"`
+}
+
 type Swimlane struct {
 	ID        uuid.UUID     `json:"id"`
 	BoardID   uuid.UUID     `json:"board_id"`
@@ -254,6 +283,8 @@ type Task struct {
 	DeletedAt    sql.NullTime   `json:"deleted_at"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+	StoryPoints  sql.NullInt32  `json:"story_points"`
+	BacklogType  sql.NullString `json:"backlog_type"`
 }
 
 type TaskChecklist struct {

@@ -53,7 +53,7 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board
 const createColumn = `-- name: CreateColumn :one
 INSERT INTO columns (board_id, name, system_type, wip_limit, "order")
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, board_id, name, system_type, wip_limit, "order", created_at, updated_at
+RETURNING id, board_id, name, system_type, wip_limit, "order", created_at, updated_at, is_sprint_backlog
 `
 
 type CreateColumnParams struct {
@@ -82,6 +82,7 @@ func (q *Queries) CreateColumn(ctx context.Context, arg CreateColumnParams) (Col
 		&i.Order,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsSprintBacklog,
 	)
 	return i, err
 }
@@ -233,7 +234,7 @@ func (q *Queries) GetBoardByID(ctx context.Context, id uuid.UUID) (Board, error)
 
 const listBoardColumns = `-- name: ListBoardColumns :many
 
-SELECT id, board_id, name, system_type, wip_limit, "order", created_at, updated_at
+SELECT id, board_id, name, system_type, wip_limit, "order", created_at, updated_at, is_sprint_backlog
 FROM columns
 WHERE board_id = $1
 ORDER BY "order"
@@ -258,6 +259,7 @@ func (q *Queries) ListBoardColumns(ctx context.Context, boardID uuid.UUID) ([]Co
 			&i.Order,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsSprintBacklog,
 		); err != nil {
 			return nil, err
 		}
@@ -441,7 +443,7 @@ SET name        = COALESCE($1, name),
     "order"     = COALESCE($4, "order"),
     updated_at  = NOW()
 WHERE id = $5
-RETURNING id, board_id, name, system_type, wip_limit, "order", created_at, updated_at
+RETURNING id, board_id, name, system_type, wip_limit, "order", created_at, updated_at, is_sprint_backlog
 `
 
 type UpdateColumnParams struct {
@@ -470,6 +472,7 @@ func (q *Queries) UpdateColumn(ctx context.Context, arg UpdateColumnParams) (Col
 		&i.Order,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsSprintBacklog,
 	)
 	return i, err
 }

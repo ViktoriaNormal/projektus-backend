@@ -875,21 +875,17 @@ paths:
             type: string
             format: uuid
         - in: query
-          name: boardId
+          name: ownerId
           schema:
             type: string
             format: uuid
         - in: query
-          name: assigneeId
+          name: executorId
           schema:
             type: string
             format: uuid
         - in: query
-          name: status
-          schema:
-            type: string
-        - in: query
-          name: q
+          name: columnId
           schema:
             type: string
       responses:
@@ -1016,6 +1012,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/TaskDependency'
 
+  /tasks/{taskId}/watchers:
+    get:
+      tags: [Tasks]
+      summary: Список наблюдателей задачи
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Наблюдатели
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskWatcher'
+
+    post:
+      tags: [Tasks]
+      summary: Добавить наблюдателя к задаче
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddWatcherRequest'
+      responses:
+        '201':
+          description: Наблюдатель добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskWatcher'
+
   /tasks/{taskId}/checklists:
     get:
       tags: [Tasks]
@@ -1055,6 +1090,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/TaskChecklist'
 
+  /tasks/checklists/{checklistId}/items:
+    post:
+      tags: [Tasks]
+      summary: Добавить пункт в чек-лист
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: checklistId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChecklistItemRequest'
+      responses:
+        '201':
+          description: Пункт чек-листа создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChecklistItem'
+
+  /tasks/checklist-items/{itemId}/status:
+    patch:
+      tags: [Tasks]
+      summary: Обновить статус пункта чек-листа
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetChecklistItemStatusRequest'
+      responses:
+        '200':
+          description: Статус пункта обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChecklistItem'
+
   /tasks/{taskId}/comments:
     get:
       tags: [Tasks]
@@ -1073,17 +1162,16 @@ paths:
                 items:
                   $ref: '#/components/schemas/Comment'
 
+  /tasks/comments:
     post:
       tags: [Tasks]
-      summary: Добавить комментарий к задаче (с упоминаниями и вложениями)
+      summary: Добавить комментарий к задаче
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/TaskId'
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               $ref: '#/components/schemas/CreateCommentRequest'
       responses:
@@ -1095,6 +1183,23 @@ paths:
                 $ref: '#/components/schemas/Comment'
 
   /tasks/{taskId}/attachments:
+    get:
+      tags: [Tasks]
+      summary: Список вложений задачи
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Вложения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attachment'
+
     post:
       tags: [Tasks]
       summary: Прикрепить файл к задаче
@@ -1325,6 +1430,48 @@ paths:
       responses:
         '201':
           description: Спринт создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sprint'
+
+  /sprints/{sprintId}/start:
+    post:
+      tags: [Scrum]
+      summary: Запустить спринт вручную
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sprintId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Спринт запущен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sprint'
+
+  /sprints/{sprintId}/complete:
+    post:
+      tags: [Scrum]
+      summary: Завершить спринт вручную
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sprintId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Спринт завершён
           content:
             application/json:
               schema:
@@ -2584,6 +2731,20 @@ components:
         name:
           type: string
 
+    CreateChecklistItemRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        order:
+          type: integer
+
+    SetChecklistItemStatusRequest:
+      type: object
+      properties:
+        isChecked:
+          type: boolean
+
     Comment:
       type: object
       properties:
@@ -2617,18 +2778,14 @@ components:
     CreateCommentRequest:
       type: object
       properties:
+        taskId:
+          type: string
+          format: uuid
+        authorMemberId:
+          type: string
+          format: uuid
         content:
           type: string
-        mentions:
-          type: array
-          items:
-            type: string
-            format: uuid
-        attachments:
-          type: array
-          items:
-            type: string
-            format: binary
 
     Attachment:
       type: object
@@ -2646,7 +2803,7 @@ components:
           nullable: true
         fileName:
           type: string
-        fileUrl:
+        filePath:
           type: string
         uploadedBy:
           type: string
@@ -2654,6 +2811,26 @@ components:
         uploadedAt:
           type: string
           format: date-time
+
+    TaskWatcher:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        projectMemberId:
+          type: string
+          format: uuid
+
+    AddWatcherRequest:
+      type: object
+      properties:
+        projectMemberId:
+          type: string
+          format: uuid
 
     TaskHistoryEntry:
       type: object
@@ -2867,7 +3044,7 @@ components:
 
     CreateSprintRequest:
       type: object
-      required: [name, durationWeeks]
+      required: [name, startDate]
       properties:
         name:
           type: string
@@ -2879,9 +3056,8 @@ components:
         durationWeeks:
           type: integer
           enum: [1, 2, 3, 4]
-        customDurationDays:
+        durationDays:
           type: integer
-          nullable: true
 
     WipLimit:
       type: object

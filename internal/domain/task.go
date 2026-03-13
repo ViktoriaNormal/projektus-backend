@@ -25,7 +25,15 @@ type Task struct {
 	SwimlaneID *string
 	DeletedAt  *time.Time
 	Checklists []Checklist
+	StoryPoints *int
 }
+
+type BacklogType string
+
+const (
+	BacklogTypeProduct BacklogType = "product"
+	BacklogTypeSprint  BacklogType = "sprint"
+)
 
 type TaskDependencyType string
 

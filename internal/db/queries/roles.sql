@@ -34,3 +34,8 @@ FROM roles
 WHERE scope = 'project' AND project_id = $1
 ORDER BY name;
 
+-- name: CreateProjectRole :one
+INSERT INTO roles (name, description, scope, project_id)
+VALUES ($1, $2, 'project', $3)
+RETURNING id, name, description, scope, project_id, created_at, updated_at;
+

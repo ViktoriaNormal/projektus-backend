@@ -12,6 +12,33 @@ import (
 	"github.com/google/uuid"
 )
 
+const createProjectRole = `-- name: CreateProjectRole :one
+INSERT INTO roles (name, description, scope, project_id)
+VALUES ($1, $2, 'project', $3)
+RETURNING id, name, description, scope, project_id, created_at, updated_at
+`
+
+type CreateProjectRoleParams struct {
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	ProjectID   uuid.NullUUID  `json:"project_id"`
+}
+
+func (q *Queries) CreateProjectRole(ctx context.Context, arg CreateProjectRoleParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, createProjectRole, arg.Name, arg.Description, arg.ProjectID)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Scope,
+		&i.ProjectID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createSystemRole = `-- name: CreateSystemRole :one
 INSERT INTO roles (name, description, scope, project_id)
 VALUES ($1, $2, 'system', NULL)

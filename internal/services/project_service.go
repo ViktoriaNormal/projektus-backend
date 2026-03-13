@@ -14,11 +14,12 @@ import (
 )
 
 type ProjectService struct {
-	repo repositories.ProjectRepository
+	repo           repositories.ProjectRepository
+	scrumRoleSVC   *ScrumRoleService
 }
 
-func NewProjectService(repo repositories.ProjectRepository) *ProjectService {
-	return &ProjectService{repo: repo}
+func NewProjectService(repo repositories.ProjectRepository, scrumRoleSVC *ScrumRoleService) *ProjectService {
+	return &ProjectService{repo: repo, scrumRoleSVC: scrumRoleSVC}
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, ownerID uuid.UUID, name, description, projectType string) (*domain.Project, error) {
@@ -51,7 +52,19 @@ func (s *ProjectService) CreateProject(ctx context.Context, ownerID uuid.UUID, n
 		Status:      domain.ProjectStatusActive,
 	}
 
-	return s.repo.Create(ctx, p)
+	created, err := s.repo.Create(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	// Инициализация Scrum-ролей для Scrum-проектов
+	if pt == domain.ProjectTypeScrum && s.scrumRoleSVC != nil {
+		if err := s.scrumRoleSVC.InitializeScrumRoles(ctx, created.ID); err != nil {
+			return nil, err
+		}
+	}
+
+	return created, nil
 }
 
 func (s *ProjectService) GetProject(ctx context.Context, id uuid.UUID) (*domain.Project, error) {

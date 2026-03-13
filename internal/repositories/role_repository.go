@@ -19,6 +19,7 @@ type RoleRepository interface {
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 
 	ListPermissions(ctx context.Context) ([]domain.Permission, error)
+	GetPermissionByCode(ctx context.Context, code string) (*domain.Permission, error)
 	CreatePermission(ctx context.Context, code, description string) (*domain.Permission, error)
 	DeletePermission(ctx context.Context, id uuid.UUID) error
 
@@ -34,6 +35,7 @@ type RoleRepository interface {
 	UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error)
 
 	ListProjectRoles(ctx context.Context, projectID uuid.UUID) ([]domain.Role, error)
+	CreateProjectRole(ctx context.Context, projectID uuid.UUID, name, description string) (*domain.Role, error)
 }
 
 type roleRepository struct {
@@ -144,6 +146,21 @@ func (r *roleRepository) ListPermissions(ctx context.Context) ([]domain.Permissi
 		})
 	}
 	return perms, nil
+}
+
+func (r *roleRepository) GetPermissionByCode(ctx context.Context, code string) (*domain.Permission, error) {
+	row, err := r.q.GetPermissionByCode(ctx, code)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &domain.Permission{
+		ID:          row.ID,
+		Code:        row.Code,
+		Description: sqlNullStringToStringPtr(row.Description),
+	}, nil
 }
 
 func (r *roleRepository) CreatePermission(ctx context.Context, code, description string) (*domain.Permission, error) {
@@ -264,6 +281,24 @@ func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UU
 		})
 	}
 	return roles, nil
+}
+
+func (r *roleRepository) CreateProjectRole(ctx context.Context, projectID uuid.UUID, name, description string) (*domain.Role, error) {
+	row, err := r.q.CreateProjectRole(ctx, db.CreateProjectRoleParams{
+		Name:        name,
+		Description: stringToNullString(description),
+		ProjectID:   uuid.NullUUID{UUID: projectID, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &domain.Role{
+		ID:          row.ID,
+		Name:        row.Name,
+		Description: sqlNullStringToStringPtr(row.Description),
+		Scope:       domain.RoleScope(row.Scope),
+		ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
+	}, nil
 }
 
 func sqlNullStringToStringPtr(ns sql.NullString) string {

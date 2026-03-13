@@ -9,7 +9,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -64,6 +64,27 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.POST("/:projectId/members", projectMemberHandler.AddMember)
 			projects.DELETE("/:projectId/members/:memberId", projectMemberHandler.RemoveMember)
 			projects.PATCH("/:projectId/members/:memberId", projectMemberHandler.UpdateMemberRoles)
+
+			projects.GET("/:projectId/sprints", sprintHandler.ListProjectSprints)
+			projects.POST("/:projectId/sprints", sprintHandler.CreateSprint)
+
+			projects.GET("/:projectId/backlog/product", productBacklogHandler.GetProductBacklog)
+			projects.POST("/:projectId/backlog/product/tasks", productBacklogHandler.AddTaskToBacklog)
+			projects.DELETE("/:projectId/backlog/product/tasks/:taskId", productBacklogHandler.RemoveTaskFromBacklog)
+			projects.PATCH("/:projectId/backlog/product/reorder", productBacklogHandler.ReorderProductBacklog)
+
+			projects.GET("/:projectId/backlog/sprint", sprintBacklogHandler.GetSprintBacklog)
+			projects.POST("/:projectId/backlog/move-to-sprint", sprintBacklogHandler.MoveTasksToSprint)
+		}
+
+		sprints := v1.Group("/sprints")
+		sprints.Use(middleware.AuthMiddleware(cfg))
+		{
+			sprints.GET("/:sprintId", sprintHandler.GetSprint)
+			sprints.PATCH("/:sprintId", sprintHandler.UpdateSprint)
+			sprints.DELETE("/:sprintId", sprintHandler.DeleteSprint)
+			sprints.POST("/:sprintId/start", sprintHandler.StartSprint)
+			sprints.POST("/:sprintId/complete", sprintHandler.CompleteSprint)
 		}
 
 		boards := v1.Group("/boards")

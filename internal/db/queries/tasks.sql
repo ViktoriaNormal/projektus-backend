@@ -51,6 +51,20 @@ SELECT key
 FROM tasks
 WHERE project_id = $1;
 
+-- name: UpdateTaskStoryPoints :exec
+UPDATE tasks
+SET story_points = $2
+WHERE id = $1;
+
+-- name: ListTasksByBacklogType :many
+SELECT *
+FROM tasks
+WHERE project_id = $1
+  AND backlog_type = $2
+  AND deleted_at IS NULL
+ORDER BY created_at DESC;
+
+
 -- Watchers
 
 -- name: AddTaskWatcher :one
