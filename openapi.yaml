@@ -1686,10 +1686,11 @@ paths:
         '200':
           description: Класс обслуживания обновлён
 
-  /projects/{projectId}/analytics/scrum/velocity:
+  /v1/projects/{projectId}/analytics/scrum/velocity:
     get:
       tags: [Analytics]
-      summary: Данные для графика скорости Scrum-команды
+      summary: Данные для графика скорости Scrum-команды (Velocity Chart)
+      description: Только для проектов типа scrum. Запланированные и завершённые Story Points по спринтам.
       security:
         - bearerAuth: []
       parameters:
@@ -1700,39 +1701,315 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScrumVelocityReport'
+                $ref: '#/components/schemas/APIResponseScrumVelocity'
+        '400':
+          description: Проект не является Scrum
 
-  /projects/{projectId}/analytics/scrum/burndown:
+  /v1/projects/{projectId}/analytics/scrum/burndown:
     get:
       tags: [Analytics]
-      summary: Данные для диаграммы сгорания задач (burndown)
+      summary: Данные для диаграммы сгорания задач (Burndown Chart)
+      description: Только для проектов типа scrum. Оставшиеся и идеальные Story Points по дням спринта.
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: sprintId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Идентификатор спринта
       responses:
         '200':
           description: Данные диаграммы сгорания
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BurndownReport'
+                $ref: '#/components/schemas/APIResponseBurndown'
+        '400':
+          description: Не указан sprintId или проект не Scrum
+        '404':
+          description: Спринт не найден
 
-  /projects/{projectId}/analytics/kanban/cumulative-flow:
+  /v1/projects/{projectId}/analytics/kanban/cumulative-flow:
     get:
       tags: [Analytics]
-      summary: Данные для накопительной диаграммы потока (CFD) Kanban
+      summary: Накопительная диаграмма потока (CFD)
+      description: Только для проектов типа kanban. Количество задач по статусам (колонкам) по дням.
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: boardId
+          schema:
+            type: string
+            format: uuid
+          description: Доска (если не указана — первая доска проекта)
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+          description: Начало периода (YYYY-MM-DD), по умолчанию 30 дней назад
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+          description: Конец периода (YYYY-MM-DD), по умолчанию сегодня
       responses:
         '200':
-          description: Данные CFD
+          description: Точки CFD (дата и накопительные счётчики по колонкам)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CumulativeFlowReport'
+                $ref: '#/components/schemas/APIResponseCumulativeFlow'
+        '400':
+          description: Проект не является Kanban
+        '404':
+          description: Доска не найдена
+
+  /v1/projects/{projectId}/analytics/kanban/throughput:
+    get:
+      tags: [Analytics]
+      summary: Скорость поставки (Throughput)
+      description: Количество завершённых задач за период (день/неделя). Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: groupBy
+          schema:
+            type: string
+            enum: [day, week]
+            default: day
+      responses:
+        '200':
+          description: Точки графика (период, количество задач, накопительный итог)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseThroughput'
+
+  /v1/projects/{projectId}/analytics/kanban/wip/over-time:
+    get:
+      tags: [Analytics]
+      summary: Work in Progress по времени
+      description: Количество задач в работе по дням. Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Точки (дата, wipCount)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseWipOverTime'
+
+  /v1/projects/{projectId}/analytics/kanban/wip/age:
+    get:
+      tags: [Analytics]
+      summary: Возраст WIP
+      description: WIP по дням с средним и максимальным возрастом задач в работе. Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Точки (дата, wipCount, avgWipAge, maxWipAge)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseWipAge'
+
+  /v1/projects/{projectId}/analytics/kanban/cycle-time/scatterplot:
+    get:
+      tags: [Analytics]
+      summary: Диаграмма рассеяния времени производства (Cycle Time Scatterplot)
+      description: Каждая завершённая задача — точка (дата завершения, время цикла в днях). Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: classOfService
+          schema:
+            type: string
+          description: Фильтр по классу обслуживания
+      responses:
+        '200':
+          description: Точки (taskId, taskKey, completedAt, cycleTimeDays, classOfService)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseCycleTimeScatterplot'
+
+  /v1/projects/{projectId}/analytics/kanban/cycle-time/trend:
+    get:
+      tags: [Analytics]
+      summary: Тренд среднего времени производства (Average Cycle Time Trend)
+      description: Средний cycle time по периодам (день/неделя/месяц). Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: groupBy
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: day
+        - in: query
+          name: classOfService
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Точки (период, avgCycleTimeDays, taskCount, classOfService)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseCycleTimeTrend'
+
+  /v1/projects/{projectId}/analytics/kanban/cycle-time/histogram:
+    get:
+      tags: [Analytics]
+      summary: Гистограмма распределения времени производства (Cycle Time Histogram)
+      description: Интервалы времени в днях и количество задач в каждом; процентили 50, 85, 95. Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: classOfService
+          schema:
+            type: string
+        - in: query
+          name: buckets
+          schema:
+            type: integer
+            default: 20
+          description: Число интервалов гистограммы (1–100)
+        - in: query
+          name: maxDays
+          schema:
+            type: number
+            format: float
+            default: 30
+          description: Верхняя граница оси (дни)
+      responses:
+        '200':
+          description: Гистограмма (buckets, totalTasks, average, median, p85, p95)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseHistogram'
+
+  /v1/projects/{projectId}/analytics/kanban/throughput/histogram:
+    get:
+      tags: [Analytics]
+      summary: Гистограмма распределения скорости поставки (Throughput Histogram)
+      description: Распределение количества периодов по числу завершённых задач за период. Только для Kanban.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [day, week]
+            default: day
+        - in: query
+          name: bucketSize
+          schema:
+            type: integer
+            default: 1
+          description: Ширина интервала по количеству задач
+      responses:
+        '200':
+          description: Гистограмма (buckets, totalTasks, average, median, p85, p95)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseHistogram'
 
   /dashboards:
     get:
@@ -3289,23 +3566,231 @@ components:
                 type: string
                 format: date
               remainingPoints:
-                type: number
+                type: integer
+              idealPoints:
+                type: integer
+                description: Идеальная линия сгорания
 
-    CumulativeFlowReport:
+    CumulativeFlowPoint:
       type: object
       properties:
-        points:
+        date:
+          type: string
+          format: date
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Имя колонки → накопительное количество задач
+
+    ThroughputPoint:
+      type: object
+      properties:
+        period:
+          type: string
+          format: date
+        classOfService:
+          type: string
+          nullable: true
+        taskCount:
+          type: integer
+        cumulativeCount:
+          type: integer
+
+    WipPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        wipCount:
+          type: integer
+        avgWipAge:
+          type: number
+          format: float
+          nullable: true
+        maxWipAge:
+          type: number
+          format: float
+          nullable: true
+
+    CycleTimePoint:
+      type: object
+      properties:
+        taskId:
+          type: string
+          format: uuid
+        taskKey:
+          type: string
+        classOfService:
+          type: string
+          nullable: true
+        completedAt:
+          type: string
+          format: date
+        cycleTimeDays:
+          type: number
+          format: float
+
+    AverageCycleTimePoint:
+      type: object
+      properties:
+        period:
+          type: string
+          format: date
+        classOfService:
+          type: string
+          nullable: true
+        avgCycleTimeDays:
+          type: number
+          format: float
+        taskCount:
+          type: integer
+
+    HistogramBucket:
+      type: object
+      properties:
+        bucketStart:
+          type: number
+          format: float
+        bucketEnd:
+          type: number
+          format: float
+        taskCount:
+          type: integer
+
+    HistogramData:
+      type: object
+      properties:
+        buckets:
           type: array
           items:
-            type: object
-            properties:
-              date:
-                type: string
-                format: date
-              statusCounts:
-                type: object
-                additionalProperties:
-                  type: integer
+            $ref: '#/components/schemas/HistogramBucket'
+        totalTasks:
+          type: integer
+        average:
+          type: number
+          format: float
+        median:
+          type: number
+          format: float
+        p85:
+          type: number
+          format: float
+        p95:
+          type: number
+          format: float
+
+    APIResponseScrumVelocity:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ScrumVelocityReport'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseBurndown:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/BurndownReport'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseCumulativeFlow:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CumulativeFlowPoint'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseThroughput:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThroughputPoint'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseWipOverTime:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WipPoint'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseWipAge:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WipPoint'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseCycleTimeScatterplot:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CycleTimePoint'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseCycleTimeTrend:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AverageCycleTimePoint'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    APIResponseHistogram:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/HistogramData'
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
 
     Dashboard:
       type: object

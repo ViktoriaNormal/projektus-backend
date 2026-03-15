@@ -54,14 +54,19 @@ func main() {
 	analyticsCacheRepo := repositories.NewAnalyticsCacheRepository(queries)
 	scrumAnalyticsRepo := repositories.NewScrumAnalyticsRepository(queries)
 	kanbanAnalyticsRepo := repositories.NewKanbanAnalyticsRepository(queries)
+	adminUserRepo := repositories.NewAdminUserRepository(queries)
+	passwordPolicyRepo := repositories.NewPasswordPolicyRepository(queries)
+	auditLogRepo := repositories.NewAuditLogRepository(queries)
 
 	roleSvc := services.NewRoleService(roleRepo)
 	permissionSvc := services.NewPermissionService(roleSvc)
 	passwordSvc := services.NewPasswordService()
+	passwordPolicySvc := services.NewPasswordPolicyService(passwordPolicyRepo)
+	auditLogSvc := services.NewAuditLogService(auditLogRepo)
 	rateLimitSvc := services.NewRateLimitService(cfg, authRepo)
-	authSvc := services.NewAuthService(cfg, userRepo, authRepo, passwordSvc, rateLimitSvc, roleSvc)
+	authSvc := services.NewAuthService(cfg, userRepo, authRepo, passwordSvc, passwordPolicySvc, rateLimitSvc, roleSvc)
 
-	authHandler := handlers.NewAuthHandler(authSvc)
+	authHandler := handlers.NewAuthHandler(authSvc, auditLogSvc)
 	userSvc := services.NewUserService(userRepo)
 	userHandler := handlers.NewUserHandler(userSvc)
 	notificationSvc := services.NewNotificationService(notificationRepo)
@@ -97,6 +102,11 @@ func main() {
 	kanbanAnalyticsSvc := services.NewKanbanAnalyticsService(kanbanAnalyticsRepo, boardRepo, analyticsCacheRepo)
 	kanbanAnalyticsHandler := handlers.NewKanbanAnalyticsHandler(kanbanAnalyticsSvc)
 
+	adminUserSvc := services.NewAdminUserService(userRepo, adminUserRepo, roleSvc, passwordSvc, passwordPolicySvc)
+	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc, auditLogSvc)
+	adminPasswordPolicyHandler := handlers.NewAdminPasswordPolicyHandler(passwordPolicySvc, auditLogSvc)
+	adminAuditLogHandler := handlers.NewAdminAuditLogHandler(auditLogSvc)
+
 	commentSvc := services.NewCommentService(commentRepo, projectMemberRepo)
 	commentHandler := handlers.NewCommentHandler(commentSvc)
 
@@ -116,7 +126,7 @@ func main() {
 	templateSvc := services.NewTemplateService(templateRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, projectSvc, permissionSvc)
+	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, adminUserHandler, adminPasswordPolicyHandler, adminAuditLogHandler, projectSvc, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

@@ -22,12 +22,13 @@ type AuthService interface {
 }
 
 type authService struct {
-	cfg       *config.Config
-	users     repositories.UserRepository
-	authRepo  repositories.AuthRepository
-	passwords PasswordService
-	rateLimit RateLimitService
-	roleSvc   *RoleService
+	cfg        *config.Config
+	users      repositories.UserRepository
+	authRepo   repositories.AuthRepository
+	passwords  PasswordService
+	policySvc  *PasswordPolicyService
+	rateLimit  RateLimitService
+	roleSvc    *RoleService
 }
 
 func NewAuthService(
@@ -35,6 +36,7 @@ func NewAuthService(
 	users repositories.UserRepository,
 	authRepo repositories.AuthRepository,
 	passwords PasswordService,
+	policySvc *PasswordPolicyService,
 	rateLimit RateLimitService,
 	roleSvc *RoleService,
 ) AuthService {
@@ -43,13 +45,14 @@ func NewAuthService(
 		users:     users,
 		authRepo:  authRepo,
 		passwords: passwords,
+		policySvc: policySvc,
 		rateLimit: rateLimit,
 		roleSvc:   roleSvc,
 	}
 }
 
 func (s *authService) Register(ctx context.Context, username, email, password, fullName string) (*domain.User, error) {
-	if err := s.passwords.ValidatePolicy(password); err != nil {
+	if err := s.policySvc.ValidatePassword(ctx, password); err != nil {
 		return nil, err
 	}
 	hash, err := s.passwords.HashPassword(password)
@@ -188,7 +191,7 @@ func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, n
 		return domain.ErrInvalidCredentials
 	}
 
-	if err := s.passwords.ValidatePolicy(newPassword); err != nil {
+	if err := s.policySvc.ValidatePassword(ctx, newPassword); err != nil {
 		return err
 	}
 

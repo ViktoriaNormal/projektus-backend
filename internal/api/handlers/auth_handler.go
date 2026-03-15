@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -11,11 +12,12 @@ import (
 )
 
 type AuthHandler struct {
-	auth services.AuthService
+	auth      services.AuthService
+	auditLog  *services.AuditLogService
 }
 
-func NewAuthHandler(auth services.AuthService) *AuthHandler {
-	return &AuthHandler{auth: auth}
+func NewAuthHandler(auth services.AuthService, auditLog *services.AuditLogService) *AuthHandler {
+	return &AuthHandler{auth: auth, auditLog: auditLog}
 }
 
 func writeError(c *gin.Context, status int, code, message string) {
@@ -82,6 +84,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if h.auditLog != nil {
+		if uid, err := uuid.Parse(user.ID); err == nil {
+			_ = h.auditLog.Log(c.Request.Context(), uid, "auth.login", "user", &uid, map[string]string{"ip": ip})
+		}
+	}
 	// Пока возвращаем только токены и пользователя, без явного списка ролей.
 	writeSuccess(c, dto.AuthResponse{
 		AccessToken:  access,
@@ -157,7 +164,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		}
 		return
 	}
-
+	if h.auditLog != nil {
+		if uid, err := uuid.Parse(userID); err == nil {
+			_ = h.auditLog.Log(c.Request.Context(), uid, "auth.password.change", "user", &uid, nil)
+		}
+	}
 	writeSuccess(c, gin.H{
 		"message": "Пароль успешно изменен",
 	})

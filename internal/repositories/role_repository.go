@@ -31,6 +31,7 @@ type RoleRepository interface {
 	AssignRoleToUser(ctx context.Context, roleID, userID uuid.UUID) error
 	RemoveRoleFromUser(ctx context.Context, roleID, userID uuid.UUID) error
 	DeleteUserRoles(ctx context.Context, userID uuid.UUID) error
+	DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) error
 
 	UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error)
 
@@ -250,6 +251,10 @@ func (r *roleRepository) RemoveRoleFromUser(ctx context.Context, roleID, userID 
 
 func (r *roleRepository) DeleteUserRoles(ctx context.Context, userID uuid.UUID) error {
 	return r.q.DeleteUserRoles(ctx, userID)
+}
+
+func (r *roleRepository) DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) error {
+	return r.q.DeleteUserSystemRoles(ctx, userID)
 }
 
 func (r *roleRepository) UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error) {

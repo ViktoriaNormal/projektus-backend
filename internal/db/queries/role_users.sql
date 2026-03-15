@@ -21,6 +21,12 @@ WHERE role_id = $1 AND user_id = $2;
 DELETE FROM role_users
 WHERE user_id = $1;
 
+-- Удалить только системные роли пользователя (для замены системных ролей без затрагивания проектных)
+-- name: DeleteUserSystemRoles :exec
+DELETE FROM role_users
+WHERE user_id = $1
+  AND role_id IN (SELECT id FROM roles WHERE scope = 'system');
+
 -- name: UserHasSystemPermission :one
 SELECT EXISTS (
     SELECT 1

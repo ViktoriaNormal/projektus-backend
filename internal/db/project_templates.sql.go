@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const countProjectTemplates = `-- name: CountProjectTemplates :one
+SELECT COUNT(*) FROM project_templates
+`
+
+func (q *Queries) CountProjectTemplates(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProjectTemplates)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createProjectTemplate = `-- name: CreateProjectTemplate :one
 INSERT INTO project_templates (name, description, project_type)
 VALUES ($1, $2, $3)
@@ -45,6 +56,47 @@ ORDER BY created_at DESC
 // Project templates
 func (q *Queries) ListProjectTemplates(ctx context.Context) ([]ProjectTemplate, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectTemplates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTemplate{}
+	for rows.Next() {
+		var i ProjectTemplate
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.ProjectType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectTemplatesPaginated = `-- name: ListProjectTemplatesPaginated :many
+SELECT id, name, description, project_type, created_at
+FROM project_templates
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListProjectTemplatesPaginatedParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+func (q *Queries) ListProjectTemplatesPaginated(ctx context.Context, arg ListProjectTemplatesPaginatedParams) ([]ProjectTemplate, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectTemplatesPaginated, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

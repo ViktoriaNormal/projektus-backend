@@ -33,6 +33,16 @@ type Attachment struct {
 	UploadedAt time.Time     `json:"uploaded_at"`
 }
 
+type AuditLog struct {
+	ID         uuid.UUID             `json:"id"`
+	UserID     uuid.UUID             `json:"user_id"`
+	ActionType string                `json:"action_type"`
+	EntityType sql.NullString        `json:"entity_type"`
+	EntityID   uuid.NullUUID         `json:"entity_id"`
+	CreatedAt  time.Time             `json:"created_at"`
+	Metadata   pqtype.NullRawMessage `json:"metadata"`
+}
+
 type BlockedIp struct {
 	IpAddress    pqtype.Inet `json:"ip_address"`
 	BlockedUntil time.Time   `json:"blocked_until"`
@@ -179,6 +189,18 @@ type PasswordHistory struct {
 	UserID       uuid.UUID `json:"user_id"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+type PasswordPolicy struct {
+	ID               uuid.UUID      `json:"id"`
+	MinLength        int32          `json:"min_length"`
+	RequireDigits    bool           `json:"require_digits"`
+	RequireLowercase bool           `json:"require_lowercase"`
+	RequireUppercase bool           `json:"require_uppercase"`
+	RequireSpecial   bool           `json:"require_special"`
+	Notes            sql.NullString `json:"notes"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	UpdatedBy        uuid.NullUUID  `json:"updated_by"`
 }
 
 type Permission struct {
@@ -352,4 +374,5 @@ type User struct {
 	IsActive     bool           `json:"is_active"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    sql.NullTime   `json:"deleted_at"`
 }

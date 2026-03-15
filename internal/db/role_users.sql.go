@@ -37,6 +37,18 @@ func (q *Queries) DeleteUserRoles(ctx context.Context, userID uuid.UUID) error {
 	return err
 }
 
+const deleteUserSystemRoles = `-- name: DeleteUserSystemRoles :exec
+DELETE FROM role_users
+WHERE user_id = $1
+  AND role_id IN (SELECT id FROM roles WHERE scope = 'system')
+`
+
+// Удалить только системные роли пользователя (для замены системных ролей без затрагивания проектных)
+func (q *Queries) DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteUserSystemRoles, userID)
+	return err
+}
+
 const listUserSystemRoles = `-- name: ListUserSystemRoles :many
 
 SELECT r.id, r.name, r.description, r.scope, r.project_id, r.created_at, r.updated_at

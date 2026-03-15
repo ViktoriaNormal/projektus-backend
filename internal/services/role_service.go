@@ -50,8 +50,8 @@ func (s *RoleService) ListPermissions(ctx context.Context) ([]domain.Permission,
 }
 
 func (s *RoleService) AssignSystemRolesToUser(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error {
-	// Replace existing roles with provided set
-	if err := s.repo.DeleteUserRoles(ctx, userID); err != nil {
+	// Replace only system roles, leave project roles intact
+	if err := s.repo.DeleteUserSystemRoles(ctx, userID); err != nil {
 		return err
 	}
 	for _, roleID := range roleIDs {

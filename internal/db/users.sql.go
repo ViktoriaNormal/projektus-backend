@@ -15,7 +15,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, full_name, avatar_url)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at
+RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at
 `
 
 type CreateUserParams struct {
@@ -45,6 +45,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -86,7 +87,7 @@ func (q *Queries) GetLastNPasswordHashes(ctx context.Context, arg GetLastNPasswo
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at FROM users
 WHERE email = $1
 `
 
@@ -103,12 +104,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at FROM users
 WHERE id = $1
 `
 
@@ -125,6 +127,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -173,7 +176,7 @@ func (q *Queries) ListAllUserIDs(ctx context.Context) ([]uuid.UUID, error) {
 }
 
 const searchUsers = `-- name: SearchUsers :many
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at
 FROM users
 WHERE (username ILIKE '%' || $1 || '%'
    OR email ILIKE '%' || $1 || '%'
@@ -207,6 +210,7 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}

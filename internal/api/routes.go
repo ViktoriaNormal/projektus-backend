@@ -10,7 +10,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, kanbanAnalyticsHandler *handlers.KanbanAnalyticsHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, kanbanAnalyticsHandler *handlers.KanbanAnalyticsHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, adminAuditLogHandler *handlers.AdminAuditLogHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -172,6 +172,10 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthMiddleware(cfg), middleware.RequireSystemPermission(services.SystemPermissionManageRoles, permissionSvc))
 		{
+			admin.GET("/password-policy", adminPasswordPolicyHandler.GetPasswordPolicy)
+			admin.PUT("/password-policy", adminPasswordPolicyHandler.UpdatePasswordPolicy)
+			admin.GET("/logs", adminAuditLogHandler.GetLogs)
+
 			roles := admin.Group("/roles")
 			{
 				roles.GET("", roleHandler.ListSystemRoles)
@@ -183,6 +187,9 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			adminUsers := admin.Group("/users")
 			{
+				adminUsers.GET("", adminUserHandler.ListUsers)
+				adminUsers.POST("", adminUserHandler.CreateUser)
+				adminUsers.DELETE("/:id", adminUserHandler.DeleteUser)
 				adminUsers.GET("/:userId/roles", roleHandler.GetUserRoles)
 				adminUsers.POST("/:userId/roles", roleHandler.AssignUserRoles)
 			}
