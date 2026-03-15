@@ -8,6 +8,7 @@ import (
 
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
+	"projektus-backend/pkg/errctx"
 )
 
 // AdminCreateUserRequest — запрос на создание пользователя администратором.
@@ -61,21 +62,21 @@ func (s *AdminUserService) ListUsers(ctx context.Context, limit, offset int32, i
 // CreateUser создаёт пользователя с начальным паролем и назначает системные роли.
 func (s *AdminUserService) CreateUser(ctx context.Context, req AdminCreateUserRequest) (*domain.User, error) {
 	if err := s.policySvc.ValidatePassword(ctx, req.InitialPassword); err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
 	}
 	hash, err := s.passwordSvc.HashPassword(req.InitialPassword)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
 	}
 	user, err := s.userRepo.CreateUser(ctx, req.Username, req.Email, hash, req.FullName, nil)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
 	}
 	_ = s.userRepo.InsertPasswordHistory(ctx, user.ID, hash)
 	if len(req.SystemRoleIDs) > 0 {
 		uid, _ := uuid.Parse(user.ID)
 		if err := s.roleSvc.AssignSystemRolesToUser(ctx, uid, req.SystemRoleIDs); err != nil {
-			return user, err
+			return user, errctx.Wrap(err, "CreateUser", "email", req.Email)
 		}
 	}
 	return user, nil
@@ -91,7 +92,8 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, targetUserID uuid.UUI
 		if errors.Is(err, domain.ErrUserNotFound) {
 			return domain.ErrNotFound
 		}
-		return err
+		return errctx.Wrap(err, "DeleteUser", "targetUserID", targetUserID)
 	}
-	return s.adminUserRepo.SoftDeleteUser(ctx, targetUserID)
+	err = s.adminUserRepo.SoftDeleteUser(ctx, targetUserID)
+	return errctx.Wrap(err, "DeleteUser", "targetUserID", targetUserID)
 }

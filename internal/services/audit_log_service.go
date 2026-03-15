@@ -9,6 +9,7 @@ import (
 
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
+	"projektus-backend/pkg/errctx"
 )
 
 // ListAuditLogsFilter — фильтры для списка записей журнала.
@@ -42,7 +43,8 @@ func (s *AuditLogService) List(ctx context.Context, filter ListAuditLogsFilter) 
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
-	return s.repo.List(ctx, filter.UserID, filter.ActionType, filter.From, filter.To, limit, filter.Offset)
+	list, total, err := s.repo.List(ctx, filter.UserID, filter.ActionType, filter.From, filter.To, limit, filter.Offset)
+	return list, total, errctx.Wrap(err, "List", "limit", limit, "offset", filter.Offset)
 }
 
 // Log записывает событие в журнал (entityType и entityID опциональны, metadata — произвольный JSON).
@@ -52,9 +54,9 @@ func (s *AuditLogService) Log(ctx context.Context, userID uuid.UUID, actionType,
 		var err error
 		raw, err = json.Marshal(metadata)
 		if err != nil {
-			return err
+			return errctx.Wrap(err, "Log", "actionType", actionType, "userID", userID)
 		}
 	}
 	_, err := s.repo.Insert(ctx, userID, actionType, entityType, entityID, raw)
-	return err
+	return errctx.Wrap(err, "Log", "actionType", actionType, "userID", userID)
 }

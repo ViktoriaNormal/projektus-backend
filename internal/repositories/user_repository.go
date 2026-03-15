@@ -9,6 +9,7 @@ import (
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type UserRepository interface {
@@ -45,7 +46,7 @@ func (r *userRepository) CreateUser(ctx context.Context, username, email, passwo
 		AvatarUrl:    avatar,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateUser", "email", email)
 	}
 	return mapDBUserToDomain(u), nil
 }
@@ -56,7 +57,7 @@ func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "GetUserByEmail", "email", email)
 	}
 	return mapDBUserToDomain(u), nil
 }
@@ -64,14 +65,14 @@ func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 func (r *userRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	uid, err := uuid.Parse(id)
 	if err != nil {
-		return nil, domain.ErrUserNotFound
+		return nil, errctx.Wrap(domain.ErrUserNotFound, "GetUserByID", "id", id)
 	}
 	u, err := r.q.GetUserByID(ctx, uid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "GetUserByID", "id", id)
 	}
 	return mapDBUserToDomain(u), nil
 }
@@ -79,57 +80,62 @@ func (r *userRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 func (r *userRepository) UpdatePassword(ctx context.Context, userID, newHash string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "UpdatePassword", "userID", userID)
 	}
-	return r.q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
+	err = r.q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
 		ID:           uid,
 		PasswordHash: newHash,
 	})
+	return errctx.Wrap(err, "UpdatePassword", "userID", userID)
 }
 
 func (r *userRepository) InsertPasswordHistory(ctx context.Context, userID, hash string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "InsertPasswordHistory", "userID", userID)
 	}
-	return r.q.InsertPasswordHistory(ctx, db.InsertPasswordHistoryParams{
+	err = r.q.InsertPasswordHistory(ctx, db.InsertPasswordHistoryParams{
 		UserID:       uid,
 		PasswordHash: hash,
 	})
+	return errctx.Wrap(err, "InsertPasswordHistory", "userID", userID)
 }
 
 func (r *userRepository) GetLastPasswordHashes(ctx context.Context, userID string, limit int32) ([]string, error) {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetLastPasswordHashes", "userID", userID)
 	}
-	return r.q.GetLastNPasswordHashes(ctx, db.GetLastNPasswordHashesParams{
+	hashes, err := r.q.GetLastNPasswordHashes(ctx, db.GetLastNPasswordHashesParams{
 		UserID: uid,
 		Limit:  limit,
 	})
+	return hashes, errctx.Wrap(err, "GetLastPasswordHashes", "userID", userID)
 }
 
 func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, email string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "UpdateProfile", "userID", userID)
 	}
-	return r.q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
+	err = r.q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
 		ID:       uid,
 		FullName: fullName,
 		Email:    email,
 	})
+	return errctx.Wrap(err, "UpdateProfile", "userID", userID)
 }
 
 func (r *userRepository) UpdateAvatar(ctx context.Context, userID, avatarURL string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "UpdateAvatar", "userID", userID)
 	}
-	return r.q.UpdateUserAvatar(ctx, db.UpdateUserAvatarParams{
+	err = r.q.UpdateUserAvatar(ctx, db.UpdateUserAvatarParams{
 		ID:        uid,
 		AvatarUrl: sql.NullString{String: avatarURL, Valid: true},
 	})
+	return errctx.Wrap(err, "UpdateAvatar", "userID", userID)
 }
 
 func (r *userRepository) SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error) {
@@ -140,7 +146,7 @@ func (r *userRepository) SearchUsers(ctx context.Context, query string, limit, o
 		Offset:  offset,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "SearchUsers", "query", query, "limit", limit, "offset", offset)
 	}
 	result := make([]domain.User, len(rows))
 	for i, u := range rows {
@@ -153,7 +159,7 @@ func (r *userRepository) SearchUsers(ctx context.Context, query string, limit, o
 func (r *userRepository) ListAllUserIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.q.ListAllUserIDs(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListAllUserIDs")
 	}
 	result := make([]string, len(rows))
 	for i, id := range rows {

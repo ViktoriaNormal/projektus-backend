@@ -8,6 +8,7 @@ import (
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type PasswordPolicyRepository interface {
@@ -26,7 +27,7 @@ func NewPasswordPolicyRepository(q *db.Queries) PasswordPolicyRepository {
 func (r *passwordPolicyRepository) GetCurrent(ctx context.Context) (*domain.PasswordPolicy, error) {
 	row, err := r.q.GetCurrentPasswordPolicy(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetCurrent")
 	}
 	return mapDBPolicyToDomain(row), nil
 }
@@ -50,7 +51,7 @@ func (r *passwordPolicyRepository) Insert(ctx context.Context, minLength int, re
 	}
 	row, err := r.q.InsertPasswordPolicy(ctx, arg)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "Insert", "minLength", minLength)
 	}
 	return mapDBPolicyToDomain(row), nil
 }

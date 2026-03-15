@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +25,7 @@ func NewAdminPasswordPolicyHandler(policySvc *services.PasswordPolicyService, au
 func (h *AdminPasswordPolicyHandler) GetPasswordPolicy(c *gin.Context) {
 	policy, err := h.policySvc.GetCurrentPolicy(c.Request.Context())
 	if err != nil {
-		if err == services.ErrNoPasswordPolicy {
+		if errors.Is(err, services.ErrNoPasswordPolicy) {
 			c.JSON(http.StatusNotFound, dto.APIResponse{
 				Success: false,
 				Data:    nil,
@@ -73,7 +74,7 @@ func (h *AdminPasswordPolicyHandler) UpdatePasswordPolicy(c *gin.Context) {
 
 	// Сначала получаем текущую политику, чтобы подставить значения для неуказанных полей
 	current, err := h.policySvc.GetCurrentPolicy(c.Request.Context())
-	if err != nil && err != services.ErrNoPasswordPolicy {
+	if err != nil && !errors.Is(err, services.ErrNoPasswordPolicy) {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить текущую политику")
 		return
 	}
@@ -112,7 +113,7 @@ func (h *AdminPasswordPolicyHandler) UpdatePasswordPolicy(c *gin.Context) {
 		Notes:            req.Notes,
 	}, userID)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
+		if errors.Is(err, domain.ErrInvalidInput) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "minLength должен быть от 1 до 100")
 			return
 		}

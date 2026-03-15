@@ -9,6 +9,7 @@ import (
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type RoleRepository interface {
@@ -73,7 +74,7 @@ func (r *roleRepository) GetRoleByID(ctx context.Context, id uuid.UUID) (*domain
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "GetRoleByID", "id", id)
 	}
 
 	role := &domain.Role{
@@ -92,7 +93,7 @@ func (r *roleRepository) CreateSystemRole(ctx context.Context, name, description
 		Description: stringToNullString(description),
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateSystemRole", "name", name)
 	}
 
 	role := &domain.Role{
@@ -115,7 +116,7 @@ func (r *roleRepository) UpdateSystemRole(ctx context.Context, id uuid.UUID, nam
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "UpdateSystemRole", "id", id)
 	}
 
 	role := &domain.Role{
@@ -129,7 +130,8 @@ func (r *roleRepository) UpdateSystemRole(ctx context.Context, id uuid.UUID, nam
 }
 
 func (r *roleRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {
-	return r.q.DeleteRole(ctx, id)
+	err := r.q.DeleteRole(ctx, id)
+	return errctx.Wrap(err, "DeleteRole", "id", id)
 }
 
 func (r *roleRepository) ListPermissions(ctx context.Context) ([]domain.Permission, error) {

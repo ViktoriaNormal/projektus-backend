@@ -10,6 +10,7 @@ import (
 	"projektus-backend/config"
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
+	"projektus-backend/pkg/errctx"
 	"projektus-backend/pkg/utils"
 )
 
@@ -53,15 +54,15 @@ func NewAuthService(
 
 func (s *authService) Register(ctx context.Context, username, email, password, fullName string) (*domain.User, error) {
 	if err := s.policySvc.ValidatePassword(ctx, password); err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "Register", "email", email)
 	}
 	hash, err := s.passwords.HashPassword(password)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "Register", "email", email)
 	}
 	user, err := s.users.CreateUser(ctx, username, email, hash, fullName, nil)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "Register", "email", email)
 	}
 	_ = s.users.InsertPasswordHistory(ctx, user.ID, hash)
 	return user, nil
@@ -74,10 +75,10 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 			_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, "", email, ip, false)
 			return "", "", nil, domain.ErrInvalidCredentials
 		}
-		return "", "", nil, err
+		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
 	}
 
-	if user.IsActive == false {
+	if !user.IsActive {
 		return "", "", nil, domain.ErrUserBlocked
 	}
 
@@ -95,7 +96,7 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 		if errors.Is(err, domain.ErrUserBlocked) || errors.Is(err, domain.ErrIPBlocked) {
 			return "", "", nil, err
 		}
-		return "", "", nil, err
+		return "", "", nil, errctx.Wrap(err, "Login", "email", email, "userID", user.ID)
 	}
 
 	access, err := utils.GenerateAccessToken(
@@ -106,7 +107,7 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 		"",
 	)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
 	}
 	refresh, err := utils.GenerateRefreshToken(
 		s.cfg.JWTRefreshSecret,
@@ -114,12 +115,12 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 		user.ID,
 	)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
 	}
 
 	hash := sha256.Sum256([]byte(refresh))
 	if err := s.authRepo.CreateRefreshToken(ctx, user.ID, hex.EncodeToString(hash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
-		return "", "", nil, err
+		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
 	}
 
 	return access, refresh, user, nil
@@ -134,7 +135,7 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 	hash := sha256.Sum256([]byte(refreshToken))
 	userID, ok, err := s.authRepo.IsRefreshTokenValid(ctx, hex.EncodeToString(hash[:]))
 	if err != nil {
-		return "", "", err
+		return "", "", errctx.Wrap(err, "Refresh")
 	}
 	if !ok || userID != claims.UserID {
 		return "", "", domain.ErrRefreshTokenRevoked
@@ -142,7 +143,7 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 
 	user, err := s.users.GetUserByID(ctx, claims.UserID)
 	if err != nil {
-		return "", "", err
+		return "", "", errctx.Wrap(err, "Refresh", "userID", claims.UserID)
 	}
 
 	access, err := utils.GenerateAccessToken(
@@ -153,7 +154,7 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 		"",
 	)
 	if err != nil {
-		return "", "", err
+		return "", "", errctx.Wrap(err, "Refresh", "userID", user.ID)
 	}
 
 	newRefresh, err := utils.GenerateRefreshToken(
@@ -162,12 +163,12 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 		user.ID,
 	)
 	if err != nil {
-		return "", "", err
+		return "", "", errctx.Wrap(err, "Refresh", "userID", user.ID)
 	}
 
 	newHash := sha256.Sum256([]byte(newRefresh))
 	if err := s.authRepo.CreateRefreshToken(ctx, user.ID, hex.EncodeToString(newHash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
-		return "", "", err
+		return "", "", errctx.Wrap(err, "Refresh", "userID", user.ID)
 	}
 
 	// Revoke old token
@@ -178,13 +179,14 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 
 func (s *authService) Logout(ctx context.Context, refreshToken string) error {
 	hash := sha256.Sum256([]byte(refreshToken))
-	return s.authRepo.RevokeRefreshToken(ctx, hex.EncodeToString(hash[:]))
+	err := s.authRepo.RevokeRefreshToken(ctx, hex.EncodeToString(hash[:]))
+	return errctx.Wrap(err, "Logout")
 }
 
 func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
 	user, err := s.users.GetUserByID(ctx, userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
 	if err := s.passwords.CheckPassword(user.PasswordHash, oldPassword); err != nil {
@@ -192,12 +194,12 @@ func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, n
 	}
 
 	if err := s.policySvc.ValidatePassword(ctx, newPassword); err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
 	lastHashes, err := s.users.GetLastPasswordHashes(ctx, userID, 3)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 	if err := s.passwords.CheckNotRecentlyUsed(newPassword, lastHashes); err != nil {
 		return err
@@ -205,19 +207,18 @@ func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, n
 
 	newHash, err := s.passwords.HashPassword(newPassword)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
 	if err := s.users.UpdatePassword(ctx, userID, newHash); err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 	if err := s.users.InsertPasswordHistory(ctx, userID, newHash); err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
-	// Revoke all existing refresh tokens after password change
 	if err := s.authRepo.RevokeAllUserTokens(ctx, userID); err != nil {
-		return err
+		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
 	return nil

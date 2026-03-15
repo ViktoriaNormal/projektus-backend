@@ -10,6 +10,7 @@ import (
 
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
+	"projektus-backend/pkg/errctx"
 )
 
 // UpdatePasswordPolicyRequest — запрос на обновление парольной политики.
@@ -38,7 +39,7 @@ func (s *PasswordPolicyService) GetCurrentPolicy(ctx context.Context) (*domain.P
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNoPasswordPolicy
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "GetCurrentPolicy")
 	}
 	return p, nil
 }
@@ -48,7 +49,7 @@ func (s *PasswordPolicyService) UpdatePolicy(ctx context.Context, req UpdatePass
 	if req.MinLength < 1 || req.MinLength > 100 {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repo.Insert(ctx,
+	policy, err := s.repo.Insert(ctx,
 		req.MinLength,
 		req.RequireDigits,
 		req.RequireLowercase,
@@ -57,13 +58,17 @@ func (s *PasswordPolicyService) UpdatePolicy(ctx context.Context, req UpdatePass
 		req.Notes,
 		&updatedBy,
 	)
+	if err != nil {
+		return nil, errctx.Wrap(err, "UpdatePolicy", "updatedBy", updatedBy)
+	}
+	return policy, nil
 }
 
 // ValidatePassword проверяет пароль по текущей политике из БД.
 func (s *PasswordPolicyService) ValidatePassword(ctx context.Context, password string) error {
 	policy, err := s.GetCurrentPolicy(ctx)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "ValidatePassword")
 	}
 	return validatePasswordAgainstPolicy(password, policy)
 }

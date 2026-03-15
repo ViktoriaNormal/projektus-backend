@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -79,7 +80,7 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 		SystemRoleIDs:   req.SystemRoles,
 	})
 	if err != nil {
-		if err == domain.ErrPasswordPolicy {
+		if errors.Is(err, domain.ErrPasswordPolicy) {
 			writeError(c, http.StatusBadRequest, "PASSWORD_POLICY_VIOLATION", "Пароль не соответствует политике безопасности")
 			return
 		}
@@ -130,11 +131,11 @@ func (h *AdminUserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.adminUserSvc.DeleteUser(c.Request.Context(), targetID, currentID); err != nil {
-		if err == domain.ErrInvalidInput {
+		if errors.Is(err, domain.ErrInvalidInput) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Нельзя удалить свой аккаунт")
 			return
 		}
-		if err == domain.ErrNotFound {
+		if errors.Is(err, domain.ErrNotFound) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
 			return
 		}
