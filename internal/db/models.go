@@ -13,6 +13,16 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+type AnalyticsCache struct {
+	ID          uuid.UUID       `json:"id"`
+	ProjectID   uuid.UUID       `json:"project_id"`
+	ReportType  string          `json:"report_type"`
+	Parameters  json.RawMessage `json:"parameters"`
+	ResultData  json.RawMessage `json:"result_data"`
+	GeneratedAt time.Time       `json:"generated_at"`
+	ExpiresAt   time.Time       `json:"expires_at"`
+}
+
 type Attachment struct {
 	ID         uuid.UUID     `json:"id"`
 	TaskID     uuid.NullUUID `json:"task_id"`

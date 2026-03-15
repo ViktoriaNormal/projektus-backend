@@ -6,10 +6,11 @@ import (
 	"projektus-backend/config"
 	"projektus-backend/internal/api/handlers"
 	"projektus-backend/internal/api/middleware"
+	"projektus-backend/internal/domain"
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, kanbanAnalyticsHandler *handlers.KanbanAnalyticsHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
@@ -82,6 +83,26 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.PUT("/:projectId/kanban/wip-limits", kanbanHandler.UpdateWipLimits)
 
 			projects.POST("/:projectId/kanban/forecast", forecastHandler.GenerateForecast)
+
+			scrumAnalytics := projects.Group("/:projectId/analytics/scrum")
+			scrumAnalytics.Use(middleware.RequireProjectType(domain.ProjectTypeScrum, projectService))
+			{
+				scrumAnalytics.GET("/velocity", scrumAnalyticsHandler.GetVelocity)
+				scrumAnalytics.GET("/burndown", scrumAnalyticsHandler.GetBurndown)
+			}
+
+			kanbanAnalytics := projects.Group("/:projectId/analytics/kanban")
+			kanbanAnalytics.Use(middleware.RequireProjectType(domain.ProjectTypeKanban, projectService))
+			{
+				kanbanAnalytics.GET("/cumulative-flow", kanbanAnalyticsHandler.GetCumulativeFlow)
+				kanbanAnalytics.GET("/throughput", kanbanAnalyticsHandler.GetThroughput)
+				kanbanAnalytics.GET("/wip/over-time", kanbanAnalyticsHandler.GetWipOverTime)
+				kanbanAnalytics.GET("/wip/age", kanbanAnalyticsHandler.GetWipAge)
+				kanbanAnalytics.GET("/cycle-time/scatterplot", kanbanAnalyticsHandler.GetCycleTimeScatterplot)
+				kanbanAnalytics.GET("/cycle-time/trend", kanbanAnalyticsHandler.GetCycleTimeTrend)
+				kanbanAnalytics.GET("/cycle-time/histogram", kanbanAnalyticsHandler.GetCycleTimeHistogram)
+				kanbanAnalytics.GET("/throughput/histogram", kanbanAnalyticsHandler.GetThroughputHistogram)
+			}
 		}
 
 		sprints := v1.Group("/sprints")

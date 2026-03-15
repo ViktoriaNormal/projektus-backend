@@ -51,6 +51,9 @@ func main() {
 	kanbanRepo := repositories.NewKanbanRepository(queries)
 	taskHistoryRepo := repositories.NewTaskHistoryRepository(queries)
 	forecastRepo := repositories.NewForecastRepository(queries)
+	analyticsCacheRepo := repositories.NewAnalyticsCacheRepository(queries)
+	scrumAnalyticsRepo := repositories.NewScrumAnalyticsRepository(queries)
+	kanbanAnalyticsRepo := repositories.NewKanbanAnalyticsRepository(queries)
 
 	roleSvc := services.NewRoleService(roleRepo)
 	permissionSvc := services.NewPermissionService(roleSvc)
@@ -88,6 +91,12 @@ func main() {
 	forecastSvc := services.NewMonteCarloForecastService(taskHistoryRepo, forecastRepo)
 	forecastHandler := handlers.NewForecastHandler(forecastSvc)
 
+	scrumAnalyticsSvc := services.NewScrumAnalyticsService(scrumAnalyticsRepo, sprintRepo, analyticsCacheRepo)
+	scrumAnalyticsHandler := handlers.NewScrumAnalyticsHandler(scrumAnalyticsSvc)
+
+	kanbanAnalyticsSvc := services.NewKanbanAnalyticsService(kanbanAnalyticsRepo, boardRepo, analyticsCacheRepo)
+	kanbanAnalyticsHandler := handlers.NewKanbanAnalyticsHandler(kanbanAnalyticsSvc)
+
 	commentSvc := services.NewCommentService(commentRepo, projectMemberRepo)
 	commentHandler := handlers.NewCommentHandler(commentSvc)
 
@@ -107,7 +116,7 @@ func main() {
 	templateSvc := services.NewTemplateService(templateRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, permissionSvc)
+	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, projectSvc, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {
