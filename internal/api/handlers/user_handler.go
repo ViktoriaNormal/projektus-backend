@@ -6,18 +6,22 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
+	"projektus-backend/internal/repositories"
 	"projektus-backend/internal/services"
 )
 
 type UserHandler struct {
-	users services.UserService
+	users      services.UserService
+	members    repositories.ProjectMemberRepository
+	roleRepo   repositories.RoleRepository
 }
 
-func NewUserHandler(users services.UserService) *UserHandler {
-	return &UserHandler{users: users}
+func NewUserHandler(users services.UserService, members repositories.ProjectMemberRepository, roleRepo repositories.RoleRepository) *UserHandler {
+	return &UserHandler{users: users, members: members, roleRepo: roleRepo}
 }
 
 func mapUserToResponse(u *domain.User) dto.UserResponse {
@@ -27,6 +31,7 @@ func mapUserToResponse(u *domain.User) dto.UserResponse {
 		Email:     u.Email,
 		FullName:  u.FullName,
 		AvatarURL: u.AvatarURL,
+		Position:  u.Position,
 	}
 }
 
@@ -94,7 +99,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	// Пока нет ролей — считаем, что админа нет
 	isAdmin := false
 
-	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, isAdmin)
+	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, req.Position, isAdmin)
 	if err != nil {
 		switch err {
 		case domain.ErrAccessDenied:
@@ -144,6 +149,8 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Недостаточно прав для изменения аватара")
 		case domain.ErrUserNotFound:
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+		case domain.ErrInvalidInput:
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Допустимые форматы: jpg, jpeg, png, webp")
 		default:
 			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
@@ -151,5 +158,59 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 	}
 
 	writeSuccess(c, mapUserToResponse(u))
+}
+
+// GET /api/v1/users/:id/project-roles
+func (h *UserHandler) GetMyProjectRoles(c *gin.Context) {
+	currentUserID := c.GetString("userID")
+	if currentUserID == "" {
+		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+		return
+	}
+
+	targetUserID := c.Param("id")
+	if currentUserID != targetUserID {
+		writeError(c, http.StatusForbidden, "FORBIDDEN", "Можно запрашивать только свои проектные роли")
+		return
+	}
+
+	uid, err := uuid.Parse(targetUserID)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор пользователя")
+		return
+	}
+
+	memberships, err := h.members.ListByUser(c.Request.Context(), uid)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проектные роли")
+		return
+	}
+
+	resp := make([]dto.ProjectRoleResponse, 0, len(memberships))
+	for _, m := range memberships {
+		permSet := make(map[string]struct{})
+		for _, roleID := range m.RoleIDs {
+			perms, err := h.roleRepo.ListRolePermissions(c.Request.Context(), roleID)
+			if err != nil {
+				continue
+			}
+			for _, p := range perms {
+				permSet[p.Code] = struct{}{}
+			}
+		}
+		permissions := make([]string, 0, len(permSet))
+		for code := range permSet {
+			permissions = append(permissions, code)
+		}
+
+		resp = append(resp, dto.ProjectRoleResponse{
+			ProjectID:   m.ProjectID,
+			ProjectName: m.ProjectName,
+			Roles:       m.Roles,
+			Permissions: permissions,
+		})
+	}
+
+	writeSuccess(c, resp)
 }
 

@@ -14,26 +14,6 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-const countFailedAttemptsByEmailSince = `-- name: CountFailedAttemptsByEmailSince :one
-SELECT COUNT(*)::INT
-FROM login_attempts
-WHERE email = $1
-  AND success = FALSE
-  AND attempted_at >= $2
-`
-
-type CountFailedAttemptsByEmailSinceParams struct {
-	Email       sql.NullString `json:"email"`
-	AttemptedAt time.Time      `json:"attempted_at"`
-}
-
-func (q *Queries) CountFailedAttemptsByEmailSince(ctx context.Context, arg CountFailedAttemptsByEmailSinceParams) (int32, error) {
-	row := q.db.QueryRowContext(ctx, countFailedAttemptsByEmailSince, arg.Email, arg.AttemptedAt)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const countFailedAttemptsByIPSince = `-- name: CountFailedAttemptsByIPSince :one
 SELECT COUNT(*)::INT
 FROM login_attempts
@@ -49,6 +29,26 @@ type CountFailedAttemptsByIPSinceParams struct {
 
 func (q *Queries) CountFailedAttemptsByIPSince(ctx context.Context, arg CountFailedAttemptsByIPSinceParams) (int32, error) {
 	row := q.db.QueryRowContext(ctx, countFailedAttemptsByIPSince, arg.IpAddress, arg.AttemptedAt)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countFailedAttemptsByUsernameSince = `-- name: CountFailedAttemptsByUsernameSince :one
+SELECT COUNT(*)::INT
+FROM login_attempts
+WHERE username = $1
+  AND success = FALSE
+  AND attempted_at >= $2
+`
+
+type CountFailedAttemptsByUsernameSinceParams struct {
+	Username    sql.NullString `json:"username"`
+	AttemptedAt time.Time      `json:"attempted_at"`
+}
+
+func (q *Queries) CountFailedAttemptsByUsernameSince(ctx context.Context, arg CountFailedAttemptsByUsernameSinceParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countFailedAttemptsByUsernameSince, arg.Username, arg.AttemptedAt)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -153,19 +153,19 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 
 const insertLoginAttempt = `-- name: InsertLoginAttempt :exec
 
-INSERT INTO login_attempts (email, ip_address, success)
+INSERT INTO login_attempts (username, ip_address, success)
 VALUES ($1, $2, $3)
 `
 
 type InsertLoginAttemptParams struct {
-	Email     sql.NullString `json:"email"`
+	Username  sql.NullString `json:"username"`
 	IpAddress pqtype.Inet    `json:"ip_address"`
 	Success   bool           `json:"success"`
 }
 
 // Login attempts
 func (q *Queries) InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error {
-	_, err := q.db.ExecContext(ctx, insertLoginAttempt, arg.Email, arg.IpAddress, arg.Success)
+	_, err := q.db.ExecContext(ctx, insertLoginAttempt, arg.Username, arg.IpAddress, arg.Success)
 	return err
 }
 

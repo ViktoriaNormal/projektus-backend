@@ -10,17 +10,16 @@ const (
 )
 
 type Permission struct {
-	ID          uuid.UUID
-	Code        string
-	Description string
+	ID          uuid.UUID `json:"id"`
+	Code        string    `json:"code"`
+	Description string    `json:"description,omitempty"`
 }
 
 type Role struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	Scope       RoleScope
-	ProjectID   *uuid.UUID
-	Permissions []Permission
+	ID          uuid.UUID    `json:"id"`
+	Name        string       `json:"name"`
+	Description string       `json:"description,omitempty"`
+	Scope       RoleScope    `json:"scope"`
+	ProjectID   *uuid.UUID   `json:"project_id,omitempty"`
+	Permissions []Permission `json:"permissions,omitempty"`
 }
-

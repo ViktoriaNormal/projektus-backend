@@ -29,3 +29,15 @@ RETURNING id, project_id, user_id, created_at, updated_at;
 DELETE FROM project_members
 WHERE id = $1;
 
+-- name: ListProjectMembersByUser :many
+SELECT pm.id,
+       pm.project_id,
+       pm.user_id,
+       p.name AS project_name,
+       pm.created_at,
+       pm.updated_at
+FROM project_members pm
+JOIN projects p ON p.id = pm.project_id
+WHERE pm.user_id = $1
+ORDER BY p.name;
+

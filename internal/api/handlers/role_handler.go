@@ -19,6 +19,19 @@ func NewRoleHandler(roleService *services.RoleService) *RoleHandler {
 	return &RoleHandler{roleService: roleService}
 }
 
+func (h *RoleHandler) mapRoleToResponse(c *gin.Context, r domain.Role) dto.RoleResponse {
+	perms, _ := h.roleService.GetRolePermissions(c.Request.Context(), r.ID)
+	if perms == nil {
+		perms = []string{}
+	}
+	return dto.RoleResponse{
+		ID:          r.ID,
+		Name:        r.Name,
+		Description: r.Description,
+		Permissions: perms,
+	}
+}
+
 func (h *RoleHandler) ListSystemRoles(c *gin.Context) {
 	roles, err := h.roleService.ListSystemRoles(c.Request.Context())
 	if err != nil {
@@ -28,11 +41,7 @@ func (h *RoleHandler) ListSystemRoles(c *gin.Context) {
 
 	resp := make([]dto.RoleResponse, 0, len(roles))
 	for _, r := range roles {
-		resp = append(resp, dto.RoleResponse{
-			ID:          r.ID,
-			Name:        r.Name,
-			Description: r.Description,
-		})
+		resp = append(resp, h.mapRoleToResponse(c, r))
 	}
 
 	writeSuccess(c, resp)
@@ -56,11 +65,7 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 		return
 	}
 
-	writeSuccess(c, dto.RoleResponse{
-		ID:          role.ID,
-		Name:        role.Name,
-		Description: role.Description,
-	})
+	writeSuccess(c, h.mapRoleToResponse(c, *role))
 }
 
 func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
@@ -80,11 +85,7 @@ func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
 		return
 	}
 
-	writeSuccess(c, dto.RoleResponse{
-		ID:          role.ID,
-		Name:        role.Name,
-		Description: role.Description,
-	})
+	writeSuccess(c, h.mapRoleToResponse(c, *role))
 }
 
 func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
@@ -115,11 +116,7 @@ func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
 		return
 	}
 
-	writeSuccess(c, dto.RoleResponse{
-		ID:          role.ID,
-		Name:        role.Name,
-		Description: role.Description,
-	})
+	writeSuccess(c, h.mapRoleToResponse(c, *role))
 }
 
 func (h *RoleHandler) DeleteRole(c *gin.Context) {
@@ -160,6 +157,7 @@ func (h *RoleHandler) AssignUserRoles(c *gin.Context) {
 	writeSuccess(c, gin.H{"message": "Роли пользователя обновлены"})
 }
 
+// GetUserRoles — admin endpoint (GET /admin/users/:userId/roles)
 func (h *RoleHandler) GetUserRoles(c *gin.Context) {
 	userIDStr := c.Param("userId")
 	userID, err := uuid.Parse(userIDStr)
@@ -176,13 +174,42 @@ func (h *RoleHandler) GetUserRoles(c *gin.Context) {
 
 	resp := make([]dto.RoleResponse, 0, len(roles))
 	for _, r := range roles {
-		resp = append(resp, dto.RoleResponse{
-			ID:          r.ID,
-			Name:        r.Name,
-			Description: r.Description,
-		})
+		resp = append(resp, h.mapRoleToResponse(c, r))
 	}
 
 	writeSuccess(c, resp)
 }
 
+// GetMySystemRoles — non-admin endpoint (GET /users/:id/roles), only own roles
+func (h *RoleHandler) GetMySystemRoles(c *gin.Context) {
+	currentUserID := c.GetString("userID")
+	if currentUserID == "" {
+		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+		return
+	}
+
+	targetUserID := c.Param("id")
+	if currentUserID != targetUserID {
+		writeError(c, http.StatusForbidden, "FORBIDDEN", "Можно запрашивать только свои роли")
+		return
+	}
+
+	userID, err := uuid.Parse(targetUserID)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор пользователя")
+		return
+	}
+
+	roles, err := h.roleService.GetUserSystemRoles(c.Request.Context(), userID)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить роли пользователя")
+		return
+	}
+
+	resp := make([]dto.RoleResponse, 0, len(roles))
+	for _, r := range roles {
+		resp = append(resp, h.mapRoleToResponse(c, r))
+	}
+
+	writeSuccess(c, resp)
+}

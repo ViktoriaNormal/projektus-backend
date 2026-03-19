@@ -3,18 +3,17 @@ package domain
 import "time"
 
 type Comment struct {
-	ID        string
-	TaskID    string
-	AuthorID  string
-	Content   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Mentions  []CommentMention
+	ID        string           `json:"id"`
+	TaskID    string           `json:"task_id"`
+	AuthorID  string           `json:"author_id"`
+	Content   string           `json:"content"`
+	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
+	Mentions  []CommentMention `json:"mentions,omitempty"`
 }
 
 type CommentMention struct {
-	ID              string
-	CommentID       string
-	ProjectMemberID string
+	ID              string `json:"id"`
+	CommentID       string `json:"comment_id"`
+	ProjectMemberID string `json:"project_member_id"`
 }
-

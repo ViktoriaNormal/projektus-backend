@@ -15,11 +15,12 @@ import (
 type UserRepository interface {
 	CreateUser(ctx context.Context, username, email, passwordHash, fullName string, avatarURL *string) (*domain.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*domain.User, error)
 	GetUserByID(ctx context.Context, id string) (*domain.User, error)
 	UpdatePassword(ctx context.Context, userID, newHash string) error
 	InsertPasswordHistory(ctx context.Context, userID, hash string) error
 	GetLastPasswordHashes(ctx context.Context, userID string, limit int32) ([]string, error)
-	UpdateProfile(ctx context.Context, userID, fullName, email string) error
+	UpdateProfile(ctx context.Context, userID, fullName, email string, position *string) error
 	UpdateAvatar(ctx context.Context, userID, avatarURL string) error
 	SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error)
 	ListAllUserIDs(ctx context.Context) ([]string, error)
@@ -58,6 +59,17 @@ func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 			return nil, domain.ErrUserNotFound
 		}
 		return nil, errctx.Wrap(err, "GetUserByEmail", "email", email)
+	}
+	return mapDBUserToDomain(u), nil
+}
+
+func (r *userRepository) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
+	u, err := r.q.GetUserByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrUserNotFound
+		}
+		return nil, errctx.Wrap(err, "GetUserByUsername", "username", username)
 	}
 	return mapDBUserToDomain(u), nil
 }
@@ -113,15 +125,20 @@ func (r *userRepository) GetLastPasswordHashes(ctx context.Context, userID strin
 	return hashes, errctx.Wrap(err, "GetLastPasswordHashes", "userID", userID)
 }
 
-func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, email string) error {
+func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, email string, position *string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
 		return errctx.Wrap(err, "UpdateProfile", "userID", userID)
+	}
+	pos := sql.NullString{}
+	if position != nil {
+		pos = sql.NullString{String: *position, Valid: true}
 	}
 	err = r.q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
 		ID:       uid,
 		FullName: fullName,
 		Email:    email,
+		Position: pos,
 	})
 	return errctx.Wrap(err, "UpdateProfile", "userID", userID)
 }
@@ -173,6 +190,10 @@ func mapDBUserToDomain(u db.User) *domain.User {
 	if u.AvatarUrl.Valid {
 		avatarURL = &u.AvatarUrl.String
 	}
+	var position *string
+	if u.Position.Valid {
+		position = &u.Position.String
+	}
 	return &domain.User{
 		ID:           u.ID.String(),
 		Username:     u.Username,
@@ -180,6 +201,7 @@ func mapDBUserToDomain(u db.User) *domain.User {
 		PasswordHash: u.PasswordHash,
 		FullName:     u.FullName,
 		AvatarURL:    avatarURL,
+		Position:     position,
 		IsActive:     u.IsActive,
 		CreatedAt:    u.CreatedAt,
 		UpdatedAt:    u.UpdatedAt,

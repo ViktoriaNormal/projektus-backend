@@ -1,31 +1,869 @@
 openapi: 3.0.3
 info:
   title: Projektus API
-  version: 1.0.0
+  version: 2.0.0
   description: >
-    Backend API системы управления проектами Projektus, реализующей управление доступом,
-    пользователями, проектами, рабочими процессами Scrum / Kanban, встречами, уведомлениями,
-    аналитикой и администрированием в соответствии с функциональными требованиями.
+    Backend API системы управления проектами Projektus.
+    Поддерживает методологии Scrum и Kanban, управление пользователями,
+    встречами, аналитикой и администрированием.
+    CORS включён для всех эндпоинтов /api/v1/**. Разрешённый origin
+    настраивается через переменную окружения CORS_ALLOWED_ORIGIN
+    (по умолчанию http://localhost:5173).
 
 servers:
   - url: http://localhost:8080/api
     description: Локальное окружение разработки
+
+security: []
 
 tags:
   - name: Auth
   - name: Users
   - name: Notifications
   - name: Projects
+  - name: Members
   - name: Boards
   - name: Tasks
-  - name: Meetings
-  - name: Scrum
+  - name: Sprints
+  - name: Backlog
   - name: Kanban
+  - name: Meetings
   - name: Analytics
-  - name: Dashboards
   - name: Admin
 
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    UserId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+    ProjectId:
+      in: path
+      name: projectId
+      required: true
+      schema: { type: string, format: uuid }
+    ProjectMemberId:
+      in: path
+      name: memberId
+      required: true
+      schema: { type: string, format: uuid }
+    BoardId:
+      in: path
+      name: boardId
+      required: true
+      schema: { type: string, format: uuid }
+    TaskId:
+      in: path
+      name: taskId
+      required: true
+      schema: { type: string, format: uuid }
+    SprintId:
+      in: path
+      name: sprintId
+      required: true
+      schema: { type: string, format: uuid }
+    MeetingId:
+      in: path
+      name: meetingId
+      required: true
+      schema: { type: string, format: uuid }
+    RoleId:
+      in: path
+      name: roleId
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    # ── Обёртки ответов ──────────────────────────────────────────────
+    APIError:
+      type: object
+      properties:
+        code:    { type: string, example: VALIDATION_ERROR }
+        message: { type: string, example: Некорректные данные запроса }
+
+    APIResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:    {}
+        error:
+          $ref: '#/components/schemas/APIError'
+          nullable: true
+
+    # ── Auth ─────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [username, email, password, full_name]
+      properties:
+        username:  { type: string }
+        email:     { type: string, format: email }
+        password:  { type: string, format: password }
+        full_name: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    LogoutRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password: { type: string }
+        new_password: { type: string }
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:  { type: string }
+        refresh_token: { type: string }
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    # ── Users ────────────────────────────────────────────────────────
+    UserResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        username:   { type: string }
+        email:      { type: string }
+        full_name:  { type: string }
+        avatar_url: { type: string, nullable: true }
+        position:   { type: string, nullable: true }
+
+    UpdateUserProfileRequest:
+      type: object
+      required: [full_name, email]
+      properties:
+        full_name: { type: string }
+        email:     { type: string, format: email }
+        position:  { type: string, nullable: true }
+
+    # ── Projects ─────────────────────────────────────────────────────
+    CreateProjectRequest:
+      type: object
+      required: [name, project_type]
+      properties:
+        name:         { type: string }
+        description:  { type: string }
+        project_type: { type: string, enum: [scrum, kanban] }
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        status:      { type: string, enum: [active, archived, paused] }
+
+    ProjectResponse:
+      type: object
+      properties:
+        id:           { type: string, format: uuid }
+        key:          { type: string, example: PROJ }
+        name:         { type: string }
+        description:  { type: string }
+        project_type: { type: string, enum: [scrum, kanban] }
+        owner_id:     { type: string, format: uuid }
+        status:       { type: string, enum: [active, archived, paused] }
+
+    # ── Members ──────────────────────────────────────────────────────
+    AddMemberRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+        roles:   { type: array, items: { type: string } }
+
+    UpdateMemberRolesRequest:
+      type: object
+      required: [roles]
+      properties:
+        roles: { type: array, items: { type: string } }
+
+    ProjectMemberResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid, description: projectMemberId }
+        project_id: { type: string, format: uuid }
+        user_id:    { type: string, format: uuid }
+        roles:      { type: array, items: { type: string } }
+
+    # ── Boards ───────────────────────────────────────────────────────
+    CreateBoardRequest:
+      type: object
+      required: [projectId, name]
+      properties:
+        projectId:   { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string }
+        order:       { type: integer, format: int16, default: 0 }
+
+    UpdateBoardRequest:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        order:       { type: integer, format: int16 }
+
+    BoardResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        projectId:   { type: string, format: uuid, nullable: true }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        order:       { type: integer, format: int16 }
+
+    CreateColumnRequest:
+      type: object
+      required: [name]
+      properties:
+        name:       { type: string }
+        systemType: { type: string, nullable: true }
+        wipLimit:   { type: integer, format: int16, nullable: true }
+        order:      { type: integer, format: int16, default: 0 }
+
+    ColumnResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        boardId:    { type: string, format: uuid }
+        name:       { type: string }
+        systemType: { type: string, nullable: true }
+        wipLimit:   { type: integer, format: int16, nullable: true }
+        order:      { type: integer, format: int16 }
+
+    CreateSwimlaneRequest:
+      type: object
+      required: [name]
+      properties:
+        name:     { type: string }
+        wipLimit: { type: integer, format: int16, nullable: true }
+        order:    { type: integer, format: int16, default: 0 }
+
+    SwimlaneResponse:
+      type: object
+      properties:
+        id:       { type: string, format: uuid }
+        boardId:  { type: string, format: uuid }
+        name:     { type: string }
+        wipLimit: { type: integer, format: int16, nullable: true }
+        order:    { type: integer, format: int16 }
+
+    CreateNoteRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+
+    NoteResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        columnId:   { type: string, format: uuid, nullable: true }
+        swimlaneId: { type: string, format: uuid, nullable: true }
+        content:    { type: string }
+
+    WipCountDTO:
+      type: object
+      properties:
+        columnId:   { type: string, format: uuid, nullable: true }
+        swimlaneId: { type: string, format: uuid, nullable: true }
+        count:      { type: integer }
+        limit:      { type: integer, nullable: true }
+        exceeded:   { type: boolean }
+
+    # ── Tasks ────────────────────────────────────────────────────────
+    CreateTaskRequest:
+      type: object
+      required: [projectId, ownerMemberId, name, columnId]
+      properties:
+        projectId:        { type: string, format: uuid }
+        ownerMemberId:    { type: string, format: uuid, description: projectMemberId владельца }
+        executorMemberId: { type: string, format: uuid, nullable: true }
+        name:             { type: string }
+        description:      { type: string }
+        deadline:         { type: string, format: date-time, nullable: true }
+        columnId:         { type: string, format: uuid }
+        swimlaneId:       { type: string, format: uuid, nullable: true }
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        name:             { type: string }
+        description:      { type: string, nullable: true }
+        deadline:         { type: string, format: date-time, nullable: true }
+        executorMemberId: { type: string, format: uuid, nullable: true }
+        columnId:         { type: string, format: uuid }
+        swimlaneId:       { type: string, format: uuid, nullable: true }
+
+    DeleteTaskRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
+
+    TaskResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        key:         { type: string, example: PROJ-1 }
+        projectId:   { type: string, format: uuid }
+        ownerId:     { type: string, format: uuid }
+        executorId:  { type: string, format: uuid, nullable: true }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        deadline:    { type: string, format: date-time, nullable: true }
+        columnId:    { type: string, format: uuid }
+        swimlaneId:  { type: string, format: uuid, nullable: true }
+        progress:    { type: integer, nullable: true, description: "Процент выполнения чек-листов (0-100)" }
+
+    AddWatcherRequest:
+      type: object
+      required: [projectMemberId]
+      properties:
+        projectMemberId: { type: string, format: uuid }
+
+    TaskWatcherResponse:
+      type: object
+      properties:
+        id:              { type: string, format: uuid }
+        taskId:          { type: string, format: uuid }
+        projectMemberId: { type: string, format: uuid }
+
+    AddDependencyRequest:
+      type: object
+      required: [dependsOnTaskId, type]
+      properties:
+        dependsOnTaskId: { type: string, format: uuid }
+        type:            { type: string, enum: [blocks, is_blocked_by, relates_to] }
+
+    TaskDependencyResponse:
+      type: object
+      properties:
+        id:              { type: string, format: uuid }
+        taskId:          { type: string, format: uuid }
+        dependsOnTaskId: { type: string, format: uuid }
+        type:            { type: string }
+
+    CreateChecklistRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    CreateChecklistItemRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+        order:   { type: integer, format: int16, default: 0 }
+
+    SetChecklistItemStatusRequest:
+      type: object
+      required: [isChecked]
+      properties:
+        isChecked: { type: boolean }
+
+    ChecklistItemResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        checklistId: { type: string, format: uuid }
+        content:     { type: string }
+        isChecked:   { type: boolean }
+        order:       { type: integer, format: int16 }
+
+    ChecklistResponse:
+      type: object
+      properties:
+        id:     { type: string, format: uuid }
+        taskId: { type: string, format: uuid }
+        name:   { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ChecklistItemResponse' }
+
+    CreateCommentRequest:
+      type: object
+      required: [taskId, authorMemberId, content]
+      properties:
+        taskId:         { type: string, format: uuid }
+        authorMemberId: { type: string, format: uuid, description: projectMemberId автора }
+        content:        { type: string }
+
+    CommentResponse:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        taskId:    { type: string, format: uuid }
+        authorId:  { type: string, format: uuid }
+        content:   { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AttachmentResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        taskId:     { type: string, format: uuid, nullable: true }
+        commentId:  { type: string, format: uuid, nullable: true }
+        fileName:   { type: string }
+        filePath:   { type: string }
+        uploadedBy: { type: string, format: uuid }
+
+    UpdateTaskClassRequest:
+      type: object
+      required: [classOfService]
+      properties:
+        classOfService: { type: string }
+
+    ClassOfServiceResponse:
+      type: object
+      properties:
+        value:       { type: string }
+        name:        { type: string }
+        description: { type: string }
+
+    # ── Sprints ──────────────────────────────────────────────────────
+    CreateSprintRequest:
+      type: object
+      required: [name, startDate]
+      properties:
+        name:          { type: string }
+        goal:          { type: string, nullable: true }
+        startDate:     { type: string, format: date, example: "2025-01-01" }
+        durationWeeks: { type: integer, enum: [1, 2, 3, 4], nullable: true }
+        durationDays:  { type: integer, minimum: 1, maximum: 28, nullable: true,
+                         description: "Если не указано ни одно из duration*, по умолчанию 14 дней" }
+
+    UpdateSprintRequest:
+      type: object
+      properties:
+        name:          { type: string }
+        goal:          { type: string, nullable: true }
+        startDate:     { type: string, format: date }
+        durationWeeks: { type: integer, enum: [1, 2, 3, 4] }
+        durationDays:  { type: integer, minimum: 1, maximum: 28 }
+
+    SprintResponse:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        name:      { type: string }
+        goal:      { type: string, nullable: true }
+        startDate: { type: string, format: date }
+        endDate:   { type: string, format: date }
+        status:    { type: string, enum: [planned, active, completed] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    # ── Backlog ──────────────────────────────────────────────────────
+    AddToBacklogRequest:
+      type: object
+      required: [taskId]
+      properties:
+        taskId: { type: string, format: uuid }
+        order:  { type: integer, default: 0 }
+
+    TaskOrder:
+      type: object
+      required: [taskId, order]
+      properties:
+        taskId: { type: string, format: uuid }
+        order:  { type: integer }
+
+    ReorderBacklogRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items: { $ref: '#/components/schemas/TaskOrder' }
+
+    MoveToSprintRequest:
+      type: object
+      required: [sprintId, taskIds]
+      properties:
+        sprintId: { type: string, format: uuid }
+        taskIds:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+
+    # ── Kanban ───────────────────────────────────────────────────────
+    WipLimitDTO:
+      type: object
+      properties:
+        boardId:    { type: string, format: uuid }
+        columnId:   { type: string, format: uuid, nullable: true }
+        swimlaneId: { type: string, format: uuid, nullable: true }
+        limit:      { type: integer, nullable: true }
+
+    SwimlaneConfigRequest:
+      type: object
+      required: [sourceType]
+      properties:
+        sourceType:    { type: string, enum: [class_of_service, custom_field] }
+        customFieldId: { type: string, format: uuid, nullable: true }
+        valueMappings: { type: object, additionalProperties: { type: string } }
+
+    # ── Forecast ─────────────────────────────────────────────────────
+    MonteCarloForecastRequest:
+      type: object
+      required: [workItemCount, simulations]
+      properties:
+        workItemCount:    { type: integer, minimum: 1 }
+        simulations:      { type: integer, minimum: 100, maximum: 10000 }
+        confidenceLevels:
+          type: array
+          items: { type: number, format: double }
+
+    ForecastPointDTO:
+      type: object
+      properties:
+        date:        { type: string, format: date }
+        probability: { type: number, format: double }
+
+    MonteCarloForecastResultDTO:
+      type: object
+      properties:
+        projectId:     { type: string, format: uuid }
+        workItemCount: { type: integer }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/ForecastPointDTO' }
+        generatedAt: { type: string, format: date-time }
+
+    # ── Analytics: Scrum ─────────────────────────────────────────────
+    VelocitySprintDTO:
+      type: object
+      properties:
+        sprintId:        { type: string, format: uuid }
+        name:            { type: string }
+        committedPoints: { type: integer }
+        completedPoints: { type: integer }
+
+    ScrumVelocityReport:
+      type: object
+      properties:
+        sprints:
+          type: array
+          items: { $ref: '#/components/schemas/VelocitySprintDTO' }
+
+    BurndownPointDTO:
+      type: object
+      properties:
+        date:            { type: string, format: date }
+        remainingPoints: { type: integer }
+        idealPoints:     { type: integer }
+
+    BurndownReportDTO:
+      type: object
+      properties:
+        sprintId: { type: string, format: uuid }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/BurndownPointDTO' }
+
+    # ── Analytics: Kanban ────────────────────────────────────────────
+    CumulativeFlowPointDTO:
+      type: object
+      properties:
+        date:         { type: string, format: date }
+        statusCounts: { type: object, additionalProperties: { type: integer } }
+
+    ThroughputPointDTO:
+      type: object
+      properties:
+        period:          { type: string, format: date }
+        classOfService:  { type: string, nullable: true }
+        taskCount:       { type: integer }
+        cumulativeCount: { type: integer }
+
+    WipPointDTO:
+      type: object
+      properties:
+        date:      { type: string, format: date }
+        wipCount:  { type: integer }
+        avgWipAge: { type: number, format: double }
+        maxWipAge: { type: number, format: double }
+
+    CycleTimePointDTO:
+      type: object
+      properties:
+        taskId:         { type: string, format: uuid }
+        taskKey:        { type: string }
+        classOfService: { type: string, nullable: true }
+        completedAt:    { type: string, format: date }
+        cycleTimeDays:  { type: number, format: double }
+
+    AverageCycleTimePointDTO:
+      type: object
+      properties:
+        period:           { type: string, format: date }
+        classOfService:   { type: string, nullable: true }
+        avgCycleTimeDays: { type: number, format: double }
+        taskCount:        { type: integer }
+
+    HistogramBucketDTO:
+      type: object
+      properties:
+        bucketStart: { type: number, format: double }
+        bucketEnd:   { type: number, format: double }
+        taskCount:   { type: integer }
+
+    HistogramDataDTO:
+      type: object
+      properties:
+        buckets:
+          type: array
+          items: { $ref: '#/components/schemas/HistogramBucketDTO' }
+        totalTasks: { type: integer }
+        average:    { type: number, format: double }
+        median:     { type: number, format: double }
+        p85:        { type: number, format: double }
+        p95:        { type: number, format: double }
+
+    # ── Meetings ─────────────────────────────────────────────────────
+    CreateMeetingRequest:
+      type: object
+      required: [name, startTime, endTime]
+      properties:
+        projectId:      { type: string, format: uuid, nullable: true }
+        name:           { type: string }
+        description:    { type: string, nullable: true }
+        meetingType:    { type: string, nullable: true }
+        startTime:      { type: string, format: date-time }
+        endTime:        { type: string, format: date-time }
+        participantIds:
+          type: array
+          items: { type: string, format: uuid }
+
+    UpdateMeetingRequest:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        meetingType: { type: string, nullable: true }
+        startTime:   { type: string, format: date-time }
+        endTime:     { type: string, format: date-time }
+
+    MeetingParticipantResponse:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        meetingId: { type: string, format: uuid }
+        userId:    { type: string, format: uuid }
+        status:    { type: string, enum: [pending, accepted, declined] }
+
+    MeetingResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        projectId:   { type: string, format: uuid, nullable: true }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        meetingType: { type: string }
+        startTime:   { type: string, format: date-time }
+        endTime:     { type: string, format: date-time }
+
+    MeetingDetailsResponse:
+      allOf:
+        - $ref: '#/components/schemas/MeetingResponse'
+        - type: object
+          properties:
+            participants:
+              type: array
+              items: { $ref: '#/components/schemas/MeetingParticipantResponse' }
+
+    # ── Notifications ────────────────────────────────────────────────
+    NotificationResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        userId:      { type: string, format: uuid }
+        eventType:   { type: string, enum: [
+            task_assigned, task_mentioned_in_comment,
+            task_status_changed_author, task_status_changed_assignee,
+            task_status_changed_watcher, task_deadline_approaching,
+            task_deadline_reached, meeting_invitation_received,
+            meeting_updated, meeting_cancelled, meeting_reminder
+          ] }
+        channel:     { type: string, enum: [system, email] }
+        title:       { type: string }
+        body:        { type: string, nullable: true }
+        isRead:      { type: boolean }
+        createdAt:   { type: string, format: date-time }
+        readAt:      { type: string, format: date-time, nullable: true }
+
+    NotificationFeedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationResponse' }
+        unreadCount: { type: integer }
+
+    NotificationSettingResponse:
+      type: object
+      properties:
+        id:                    { type: string, format: uuid }
+        userId:                { type: string, format: uuid }
+        eventType:             { type: string }
+        inSystem:              { type: boolean }
+        inEmail:               { type: boolean }
+        reminderOffsetMinutes: { type: integer, nullable: true,
+                                 description: "Только для meeting_reminder — минут до события" }
+
+    UpdateNotificationSettingItem:
+      type: object
+      required: [eventType]
+      properties:
+        eventType:             { type: string }
+        inSystem:              { type: boolean }
+        inEmail:               { type: boolean }
+        reminderOffsetMinutes: { type: integer, nullable: true }
+
+    # ── Roles ────────────────────────────────────────────────────────
+    RoleResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string }
+        permissions: { type: array, items: { type: string } }
+
+    ProjectRoleResponse:
+      type: object
+      properties:
+        projectId:   { type: string, format: uuid }
+        projectName: { type: string }
+        roles:       { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+
+    CreateRoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+
+    UpdateRoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+
+    AssignRolesRequest:
+      type: object
+      required: [role_ids]
+      properties:
+        role_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    # ── Admin ────────────────────────────────────────────────────────
+    AdminCreateUserRequest:
+      type: object
+      required: [username, email, fullName, initialPassword]
+      properties:
+        username:        { type: string, minLength: 3, maxLength: 50 }
+        email:           { type: string, format: email }
+        fullName:        { type: string }
+        initialPassword: { type: string, minLength: 6 }
+        systemRoles:
+          type: array
+          items: { type: string, format: uuid }
+
+    AdminUserResponse:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        username:  { type: string }
+        email:     { type: string }
+        fullName:  { type: string }
+        isActive:  { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    PasswordPolicyResponse:
+      type: object
+      properties:
+        minLength:        { type: integer }
+        requireDigits:    { type: boolean }
+        requireLowercase: { type: boolean }
+        requireUppercase: { type: boolean }
+        requireSpecial:   { type: boolean }
+        notes:            { type: string, nullable: true }
+        updatedAt:        { type: string, format: date-time }
+        updatedBy:        { type: string, nullable: true }
+
+    UpdatePasswordPolicyRequest:
+      type: object
+      properties:
+        minLength:        { type: integer, minimum: 1, maximum: 100 }
+        requireDigits:    { type: boolean }
+        requireLowercase: { type: boolean }
+        requireUppercase: { type: boolean }
+        requireSpecial:   { type: boolean }
+        notes:            { type: string, nullable: true }
+
+    AuditLogEntryResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        userId:     { type: string, format: uuid }
+        actionType: { type: string }
+        entityType: { type: string, nullable: true }
+        entityId:   { type: string, format: uuid, nullable: true }
+        createdAt:  { type: string, format: date-time }
+        metadata:   { type: object, nullable: true }
+
+    ProjectTemplateResponse:
+      type: object
+      properties:
+        id:           { type: string, format: uuid }
+        name:         { type: string }
+        description:  { type: string }
+        project_type: { type: string, enum: [scrum, kanban] }
+
+    CreateTemplateRequest:
+      type: object
+      required: [name, project_type]
+      properties:
+        name:         { type: string }
+        description:  { type: string }
+        project_type: { type: string, enum: [scrum, kanban] }
+
+# ────────────────────────────────────────────────────────────────────
+# PATHS
+# ────────────────────────────────────────────────────────────────────
 paths:
+
+  # ── Auth ───────────────────────────────────────────────────────────
   /v1/auth/register:
     post:
       tags: [Auth]
@@ -34,169 +872,48 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '200':
-          description: Пользователь успешно зарегистрирован
+          description: Пользователь создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseRegister'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/UserResponse' }
         '400':
-          description: Ошибка валидации
+          description: Ошибка валидации / пароль не соответствует политике
 
   /v1/auth/login:
     post:
       tags: [Auth]
-      summary: Аутентификация пользователя и выдача токена с ролями
+      summary: Вход — получение access + refresh токенов
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+            schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
-          description: Успешная аутентификация
+          description: Успешный вход
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseLogin'
-  /v1/admin/roles:
-    get:
-      tags: [Admin]
-      summary: Получить список системных ролей
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Список системных ролей
-    post:
-      tags: [Admin]
-      summary: Создать новую системную роль
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-      responses:
-        '200':
-          description: Роль успешно создана
-
-  /v1/admin/roles/{roleId}:
-    get:
-      tags: [Admin]
-      summary: Получить системную роль по идентификатору
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: roleId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Роль найдена
-    put:
-      tags: [Admin]
-      summary: Обновить системную роль
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: roleId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-      responses:
-        '200':
-          description: Роль обновлена
-    delete:
-      tags: [Admin]
-      summary: Удалить системную роль
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: roleId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Роль удалена
-
-  /v1/admin/users/{userId}/roles:
-    get:
-      tags: [Admin]
-      summary: Получить системные роли пользователя
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Список системных ролей пользователя
-    post:
-      tags: [Admin]
-      summary: Назначить системные роли пользователю
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                role_ids:
-                  type: array
-                  items:
-                    type: string
-                    format: uuid
-      responses:
-        '200':
-          description: Роли пользователя обновлены
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuthResponse' }
         '401':
-          description: Неверные учетные данные
+          description: "INVALID_CREDENTIALS — неверный email или пароль"
         '429':
-          description: Пользователь или IP-адрес временно заблокированы из-за неудачных попыток входа
+          description: "USER_BLOCKED или IP_BLOCKED — слишком много неудачных попыток"
 
   /v1/auth/refresh:
     post:
@@ -206,91 +923,112 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RefreshRequest'
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
       responses:
         '200':
-          description: Токены успешно обновлены
+          description: Новая пара токенов
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseRefresh'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          access_token:  { type: string }
+                          refresh_token: { type: string }
         '401':
-          description: Недействительный или отозванный refresh токен
+          description: "INVALID_TOKEN — токен недействителен или отозван"
 
   /v1/auth/logout:
     post:
       tags: [Auth]
-      summary: Выход из системы (инвалидация refresh токена)
+      summary: Выход — инвалидация refresh токена
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LogoutRequest'
+            schema: { $ref: '#/components/schemas/LogoutRequest' }
       responses:
         '200':
           description: Выход выполнен
+
+  /v1/auth/password-policy:
+    get:
+      tags: [Auth]
+      summary: Парольная политика (публичный, без авторизации)
+      description: >
+        Возвращает текущую парольную политику. Используется на странице
+        регистрации для отображения требований к паролю.
+      security: []
+      responses:
+        '200':
+          description: Парольная политика
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseMessage'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PasswordPolicyResponse' }
+        '404':
+          description: Политика паролей не настроена
 
   /v1/auth/change-password:
     post:
       tags: [Auth]
-      summary: Смена пароля текущего пользователя с проверкой политики
+      summary: Смена пароля (требует авторизации)
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/ChangePasswordRequest'
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
       responses:
         '200':
-          description: Пароль изменен
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseMessage'
+          description: Пароль изменён
         '400':
-          description: Пароль не соответствует политике или неверен старый пароль
+          description: "PASSWORD_POLICY_VIOLATION или PASSWORD_REUSE"
         '401':
-          description: Неавторизовано
+          description: "INVALID_CREDENTIALS — неверный текущий пароль"
 
-  /users:
+  # ── Users ──────────────────────────────────────────────────────────
+  /v1/users:
     get:
       tags: [Users]
-      summary: Поиск пользователей в организации
+      summary: Поиск пользователей
       security:
         - bearerAuth: []
       parameters:
         - in: query
           name: q
-          schema:
-            type: string
-          description: Поиск по логину, e-mail или полному имени
+          schema: { type: string }
+          description: Поиск по username, email или full_name
         - in: query
           name: limit
-          schema:
-            type: integer
-            default: 20
+          schema: { type: integer, default: 20 }
         - in: query
           name: offset
-          schema:
-            type: integer
-            default: 0
+          schema: { type: integer, default: 0 }
       responses:
         '200':
           description: Список пользователей
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseUserList'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/UserResponse' }
 
-  /users/{id}:
+  /v1/users/{id}:
     get:
       tags: [Users]
       summary: Получить профиль пользователя
@@ -300,17 +1038,20 @@ paths:
         - $ref: '#/components/parameters/UserId'
       responses:
         '200':
-          description: Профиль пользователя
+          description: Профиль
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseUser'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UserResponse' }
         '404':
-          description: Не найдено
-
+          description: NOT_FOUND
     patch:
       tags: [Users]
-      summary: Обновить личный профиль (самостоятельно или администратором)
+      summary: Обновить профиль пользователя
       security:
         - bearerAuth: []
       parameters:
@@ -319,24 +1060,23 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateUserProfileRequest'
+            schema: { $ref: '#/components/schemas/UpdateUserProfileRequest' }
       responses:
         '200':
-          description: Обновленный профиль пользователя
+          description: Обновлённый профиль
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseUser'
-        '403':
-          description: Доступ запрещен
-        '404':
-          description: Не найдено
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UserResponse' }
 
-  /users/{id}/avatar:
+  /v1/users/{id}/avatar:
     put:
       tags: [Users]
-      summary: Загрузить или изменить аватар пользователя
+      summary: Загрузить аватар пользователя
       security:
         - bearerAuth: []
       parameters:
@@ -348,38 +1088,153 @@ paths:
             schema:
               type: object
               properties:
-                file:
-                  type: string
-                  format: binary
+                file: { type: string, format: binary }
       responses:
         '200':
-          description: Аватар обновлен
+          description: Аватар обновлён
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseUser'
-        '400':
-          description: Некорректный файл
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UserResponse' }
 
-  /notifications/settings:
+  /v1/users/{userId}/roles:
+    get:
+      tags: [Users]
+      summary: Системные роли пользователя (только свои)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Системные роли пользователя
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/RoleResponse' }
+        '403':
+          description: Попытка запросить роли другого пользователя
+
+  /v1/users/{userId}/project-roles:
+    get:
+      tags: [Users]
+      summary: Проектные роли пользователя (только свои)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Проектные роли пользователя
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProjectRoleResponse' }
+        '403':
+          description: Попытка запросить роли другого пользователя
+
+  # ── Notifications ─────────────────────────────────────────────────
+  /v1/notifications:
     get:
       tags: [Notifications]
-      summary: Получить настройки уведомлений текущего пользователя
+      summary: Лента уведомлений текущего пользователя
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: unreadOnly
+          schema: { type: boolean, default: false }
+          description: Возвращать только непрочитанные
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Лента уведомлений с количеством непрочитанных
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/NotificationFeedResponse' }
+
+  /v1/notifications/{notificationId}/read:
+    patch:
+      tags: [Notifications]
+      summary: Отметить уведомление как прочитанное
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Уведомление помечено прочитанным
+
+  /v1/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Отметить все уведомления пользователя как прочитанные
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Настройки уведомлений
+          description: Все уведомления помечены прочитанными
+
+  /v1/notifications/settings:
+    get:
+      tags: [Notifications]
+      summary: Настройки уведомлений текущего пользователя
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список настроек по каждому типу события
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/NotificationSetting'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/NotificationSettingResponse' }
     put:
       tags: [Notifications]
-      summary: Полностью заменить настройки уведомлений текущего пользователя
+      summary: Обновить настройки уведомлений (массово)
+      description: >
+        Передаётся массив настроек для нужных eventType.
+        Настройка для meeting_reminder может содержать reminderOffsetMinutes (по умолчанию 30).
       security:
         - bearerAuth: []
       requestBody:
@@ -388,68 +1243,31 @@ paths:
           application/json:
             schema:
               type: array
-              items:
-                $ref: '#/components/schemas/NotificationSettingUpdate'
-      responses:
-        '204':
-          description: Настройки обновлены
-
-  /notifications:
-    get:
-      tags: [Notifications]
-      summary: Получить ленту внутрисистемных уведомлений
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: unreadOnly
-          schema:
-            type: boolean
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 20
-        - in: query
-          name: offset
-          schema:
-            type: integer
-            default: 0
+              items: { $ref: '#/components/schemas/UpdateNotificationSettingItem' }
       responses:
         '200':
-          description: Список уведомлений
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Notification'
+          description: Настройки сохранены
 
+  # ── Projects ───────────────────────────────────────────────────────
   /v1/projects:
     get:
       tags: [Projects]
-      summary: Список проектов, к которым есть доступ у текущего пользователя
+      summary: Список проектов текущего пользователя
       security:
         - bearerAuth: []
-      parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [active, archived, paused]
-        - in: query
-          name: type
-          schema:
-            type: string
-            enum: [scrum, kanban]
       responses:
         '200':
           description: Список проектов
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseProjectList'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProjectResponse' }
     post:
       tags: [Projects]
       summary: Создать проект
@@ -459,22 +1277,23 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateProjectRequest'
+            schema: { $ref: '#/components/schemas/CreateProjectRequest' }
       responses:
         '200':
           description: Проект создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseProject'
-        '400':
-          description: Ошибка валидации
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectResponse' }
 
   /v1/projects/{projectId}:
     get:
       tags: [Projects]
-      summary: Получить проект по идентификатору
+      summary: Получить проект
       security:
         - bearerAuth: []
       parameters:
@@ -485,10 +1304,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseProject'
-        '404':
-          description: Не найдено
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectResponse' }
+        '404': { description: NOT_FOUND }
     patch:
       tags: [Projects]
       summary: Обновить параметры проекта
@@ -500,38 +1321,33 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateProjectRequest'
+            schema: { $ref: '#/components/schemas/UpdateProjectRequest' }
       responses:
         '200':
-          description: Обновленный проект
+          description: Обновлённый проект
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseProject'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectResponse' }
     delete:
       tags: [Projects]
-      summary: Безвозвратно удалить проект (с подтверждением)
-      description: Требует явного флага подтверждения для предотвращения случайного удаления.
+      summary: Удалить проект
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: confirm
-          required: true
-          schema:
-            type: boolean
       responses:
-        '204':
-          description: Удалено
-        '400':
-          description: Нет подтверждения
+        '200':
+          description: Проект удалён
 
+  # ── Members ────────────────────────────────────────────────────────
   /v1/projects/{projectId}/members:
     get:
-      tags: [Projects]
+      tags: [Members]
       summary: Список участников проекта
       security:
         - bearerAuth: []
@@ -543,10 +1359,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseProjectMemberList'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProjectMemberResponse' }
     post:
-      tags: [Projects]
+      tags: [Members]
       summary: Добавить участника в проект
       security:
         - bearerAuth: []
@@ -556,19 +1377,38 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/AddProjectMemberRequest'
+            schema: { $ref: '#/components/schemas/AddMemberRequest' }
       responses:
         '200':
           description: Участник добавлен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseProjectMember'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectMemberResponse' }
 
   /v1/projects/{projectId}/members/{memberId}:
+    patch:
+      tags: [Members]
+      summary: Обновить роли участника
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ProjectMemberId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMemberRolesRequest' }
+      responses:
+        '200':
+          description: Роли обновлены
     delete:
-      tags: [Projects]
+      tags: [Members]
       summary: Удалить участника из проекта
       security:
         - bearerAuth: []
@@ -577,130 +1417,59 @@ paths:
         - $ref: '#/components/parameters/ProjectMemberId'
       responses:
         '200':
-          description: Участник удален
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseMessage'
+          description: Участник удалён
 
-    patch:
-      tags: [Projects]
-      summary: Изменить роли участника проекта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - $ref: '#/components/parameters/ProjectMemberId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateProjectMemberRolesRequest'
-      responses:
-        '200':
-          description: Участник обновлен
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseProjectMember'
-
-  /projects/{projectId}/history:
-    get:
-      tags: [Projects]
-      summary: Получить историю изменений проекта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Записи истории
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ProjectHistoryEntry'
-
-  /v1/admin/project-templates:
-    get:
-      tags: [Admin]
-      summary: Список шаблонов проектов
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Шаблоны
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseProjectTemplateList'
-    post:
-      tags: [Admin]
-      summary: Создать шаблон проекта
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateProjectTemplateRequest'
-      responses:
-        '200':
-          description: Шаблон создан
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseProjectTemplate'
-
-  /boards:
+  # ── Boards ─────────────────────────────────────────────────────────
+  /v1/boards:
     get:
       tags: [Boards]
-      summary: Список досок в рамках проекта
+      summary: Список досок проекта
       security:
         - bearerAuth: []
       parameters:
         - in: query
           name: projectId
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: Доски
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Board'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/BoardResponse' }
     post:
       tags: [Boards]
-      summary: Создать доску в проекте
+      summary: Создать доску
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateBoardRequest'
+            schema: { $ref: '#/components/schemas/CreateBoardRequest' }
       responses:
-        '201':
+        '200':
           description: Доска создана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Board'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/BoardResponse' }
 
-  /boards/{boardId}:
+  /v1/boards/{boardId}:
     get:
       tags: [Boards]
-      summary: Получить детали доски
+      summary: Получить доску
       security:
         - bearerAuth: []
       parameters:
@@ -711,8 +1480,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Board'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/BoardResponse' }
     patch:
       tags: [Boards]
       summary: Обновить доску
@@ -724,16 +1496,10 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateBoardRequest'
+            schema: { $ref: '#/components/schemas/UpdateBoardRequest' }
       responses:
         '200':
-          description: Обновленная доска
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Board'
-
+          description: Обновлённая доска
     delete:
       tags: [Boards]
       summary: Удалить доску
@@ -742,13 +1508,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/BoardId'
       responses:
-        '204':
-          description: Удалено
+        '200':
+          description: Доска удалена
 
-  /boards/{boardId}/columns:
+  /v1/boards/{boardId}/columns:
     get:
       tags: [Boards]
-      summary: Список колонок на доске
+      summary: Список колонок доски
       security:
         - bearerAuth: []
       parameters:
@@ -759,13 +1525,16 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Column'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ColumnResponse' }
     post:
       tags: [Boards]
-      summary: Добавить колонку на доску
+      summary: Добавить колонку
       security:
         - bearerAuth: []
       parameters:
@@ -774,20 +1543,23 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateColumnRequest'
+            schema: { $ref: '#/components/schemas/CreateColumnRequest' }
       responses:
-        '201':
-          description: Колонка создана, переходы статусов проекта обновлены
+        '200':
+          description: Колонка создана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Column'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ColumnResponse' }
 
-  /boards/{boardId}/swimlanes:
+  /v1/boards/{boardId}/swimlanes:
     get:
       tags: [Boards]
-      summary: Список дорожек (swimlanes) на доске
+      summary: Список дорожек доски
       security:
         - bearerAuth: []
       parameters:
@@ -798,13 +1570,16 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Swimlane'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SwimlaneResponse' }
     post:
       tags: [Boards]
-      summary: Добавить дорожку на доску
+      summary: Добавить дорожку
       security:
         - bearerAuth: []
       parameters:
@@ -813,20 +1588,40 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateSwimlaneRequest'
+            schema: { $ref: '#/components/schemas/CreateSwimlaneRequest' }
       responses:
-        '201':
+        '200':
           description: Дорожка создана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Swimlane'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SwimlaneResponse' }
 
-  /boards/{boardId}/notes:
+  /v1/boards/{boardId}/swimlanes/configure:
+    post:
+      tags: [Boards]
+      summary: Настроить дорожки по class of service
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwimlaneConfigRequest' }
+      responses:
+        '200':
+          description: Дорожки настроены
+
+  /v1/boards/{boardId}/notes:
     get:
       tags: [Boards]
-      summary: Список заметок на доске (по колонкам / дорожкам)
+      summary: Все заметки доски
       security:
         - bearerAuth: []
       parameters:
@@ -837,107 +1632,170 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Note'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/NoteResponse' }
 
+  /v1/boards/columns/{columnId}/notes:
     post:
       tags: [Boards]
-      summary: Добавить заметку на доску
+      summary: Создать заметку в колонке
       security:
         - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/BoardId'
+        - in: path
+          name: columnId
+          required: true
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateNoteRequest'
+            schema: { $ref: '#/components/schemas/CreateNoteRequest' }
       responses:
-        '201':
+        '200':
           description: Заметка создана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Note'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/NoteResponse' }
 
-  /tasks:
+  /v1/boards/swimlanes/{swimlaneId}/notes:
+    post:
+      tags: [Boards]
+      summary: Создать заметку в дорожке
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: swimlaneId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateNoteRequest' }
+      responses:
+        '200':
+          description: Заметка создана
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/NoteResponse' }
+
+  /v1/boards/{boardId}/wip-counts:
+    get:
+      tags: [Boards]
+      summary: Текущие WIP-счётчики по доске
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BoardId'
+      responses:
+        '200':
+          description: WIP-счётчики
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/WipCountDTO' }
+
+  # ── Tasks ──────────────────────────────────────────────────────────
+  /v1/tasks:
     get:
       tags: [Tasks]
-      summary: Поиск и список задач
+      summary: Поиск задач
       security:
         - bearerAuth: []
       parameters:
         - in: query
           name: projectId
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
         - in: query
           name: ownerId
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
         - in: query
           name: executorId
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
         - in: query
           name: columnId
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: Задачи
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Task'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskResponse' }
     post:
       tags: [Tasks]
-      summary: Создать задачу с автоматически сгенерированным ключом
+      summary: Создать задачу
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateTaskRequest'
+            schema: { $ref: '#/components/schemas/CreateTaskRequest' }
       responses:
-        '201':
+        '200':
           description: Задача создана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Task'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TaskResponse' }
 
-  /tasks/{taskId}:
+  /v1/tasks/{taskId}:
     get:
       tags: [Tasks]
-      summary: Получить подробную информацию о задаче
+      summary: Получить задачу
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TaskId'
       responses:
         '200':
-          description: Задача с полными деталями
+          description: Задача
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskDetails'
-        '404':
-          description: Не найдено
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TaskResponse' }
+        '404': { description: NOT_FOUND }
     patch:
       tags: [Tasks]
-      summary: Обновить параметры задачи
+      summary: Обновить задачу
       security:
         - bearerAuth: []
       parameters:
@@ -946,19 +1804,21 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateTaskRequest'
+            schema: { $ref: '#/components/schemas/UpdateTaskRequest' }
       responses:
         '200':
-          description: Обновленная задача
+          description: Обновлённая задача
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Task'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TaskResponse' }
     delete:
       tags: [Tasks]
-      summary: Удалить задачу с обязательным указанием причины
+      summary: "Удалить задачу (требует reason в теле!)"
       security:
         - bearerAuth: []
       parameters:
@@ -967,55 +1827,15 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/DeleteTaskRequest'
-      responses:
-        '204':
-          description: Удалено
-
-  /tasks/{taskId}/dependencies:
-    get:
-      tags: [Tasks]
-      summary: Список зависимостей задачи
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/TaskId'
+            schema: { $ref: '#/components/schemas/DeleteTaskRequest' }
       responses:
         '200':
-          description: Зависимости
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TaskDependency'
+          description: Задача удалена
 
-    post:
-      tags: [Tasks]
-      summary: Добавить зависимость к задаче
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/TaskId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateTaskDependencyRequest'
-      responses:
-        '201':
-          description: Зависимость создана
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskDependency'
-
-  /tasks/{taskId}/watchers:
+  /v1/tasks/{taskId}/watchers:
     get:
       tags: [Tasks]
-      summary: Список наблюдателей задачи
+      summary: Наблюдатели задачи
       security:
         - bearerAuth: []
       parameters:
@@ -1026,13 +1846,16 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TaskWatcher'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskWatcherResponse' }
     post:
       tags: [Tasks]
-      summary: Добавить наблюдателя к задаче
+      summary: Добавить наблюдателя
       security:
         - bearerAuth: []
       parameters:
@@ -1041,20 +1864,68 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/AddWatcherRequest'
+            schema: { $ref: '#/components/schemas/AddWatcherRequest' }
       responses:
-        '201':
+        '200':
           description: Наблюдатель добавлен
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskWatcher'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TaskWatcherResponse' }
 
-  /tasks/{taskId}/checklists:
+  /v1/tasks/{taskId}/dependencies:
     get:
       tags: [Tasks]
-      summary: Список чек-листов задачи
+      summary: Зависимости задачи
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Зависимости
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskDependencyResponse' }
+    post:
+      tags: [Tasks]
+      summary: Добавить зависимость
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddDependencyRequest' }
+      responses:
+        '200':
+          description: Зависимость создана
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TaskDependencyResponse' }
+
+  /v1/tasks/{taskId}/checklists:
+    get:
+      tags: [Tasks]
+      summary: Чек-листы задачи (с пунктами)
       security:
         - bearerAuth: []
       parameters:
@@ -1065,13 +1936,16 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TaskChecklist'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ChecklistResponse' }
     post:
       tags: [Tasks]
-      summary: Создать чек-лист для задачи
+      summary: Создать чек-лист
       security:
         - bearerAuth: []
       parameters:
@@ -1080,17 +1954,20 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateChecklistRequest'
+            schema: { $ref: '#/components/schemas/CreateChecklistRequest' }
       responses:
-        '201':
+        '200':
           description: Чек-лист создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskChecklist'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ChecklistResponse' }
 
-  /tasks/checklists/{checklistId}/items:
+  /v1/tasks/checklists/{checklistId}/items:
     post:
       tags: [Tasks]
       summary: Добавить пункт в чек-лист
@@ -1100,54 +1977,56 @@ paths:
         - in: path
           name: checklistId
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateChecklistItemRequest'
+            schema: { $ref: '#/components/schemas/CreateChecklistItemRequest' }
       responses:
-        '201':
-          description: Пункт чек-листа создан
+        '200':
+          description: Пункт создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChecklistItem'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ChecklistItemResponse' }
 
-  /tasks/checklist-items/{itemId}/status:
+  /v1/tasks/checklist-items/{itemId}/status:
     patch:
       tags: [Tasks]
-      summary: Обновить статус пункта чек-листа
+      summary: Отметить/снять отметку пункта чек-листа
       security:
         - bearerAuth: []
       parameters:
         - in: path
           name: itemId
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/SetChecklistItemStatusRequest'
+            schema: { $ref: '#/components/schemas/SetChecklistItemStatusRequest' }
       responses:
         '200':
-          description: Статус пункта обновлён
+          description: Статус обновлён
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChecklistItem'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ChecklistItemResponse' }
 
-  /tasks/{taskId}/comments:
+  /v1/tasks/{taskId}/comments:
     get:
       tags: [Tasks]
-      summary: Список комментариев к задаче
+      summary: Комментарии задачи
       security:
         - bearerAuth: []
       parameters:
@@ -1158,34 +2037,41 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Comment'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/CommentResponse' }
 
-  /tasks/comments:
+  /v1/tasks/comments:
     post:
       tags: [Tasks]
-      summary: Добавить комментарий к задаче
+      summary: Создать комментарий к задаче
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateCommentRequest'
+            schema: { $ref: '#/components/schemas/CreateCommentRequest' }
       responses:
-        '201':
+        '200':
           description: Комментарий создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Comment'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CommentResponse' }
 
-  /tasks/{taskId}/attachments:
+  /v1/tasks/{taskId}/attachments:
     get:
       tags: [Tasks]
-      summary: Список вложений задачи
+      summary: Вложения задачи
       security:
         - bearerAuth: []
       parameters:
@@ -1196,10 +2082,13 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Attachment'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AttachmentResponse' }
     post:
       tags: [Tasks]
       summary: Прикрепить файл к задаче
@@ -1214,60 +2103,687 @@ paths:
             schema:
               type: object
               properties:
-                file:
-                  type: string
-                  format: binary
+                file: { type: string, format: binary }
       responses:
-        '201':
-          description: Вложение создано
+        '200':
+          description: Файл прикреплён
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Attachment'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AttachmentResponse' }
 
-  /tasks/{taskId}/history:
-    get:
+  /v1/tasks/{taskId}/class-of-service:
+    patch:
       tags: [Tasks]
-      summary: Получить полную историю задачи, включая комментарии
+      summary: Обновить class of service задачи
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTaskClassRequest' }
       responses:
         '200':
-          description: История
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TaskHistoryEntry'
+          description: Class of service обновлён
 
-  /meetings:
+  # ── Sprints ────────────────────────────────────────────────────────
+  /v1/projects/{projectId}/sprints:
     get:
-      tags: [Meetings]
-      summary: Список встреч для текущего пользователя (личный календарь)
+      tags: [Sprints]
+      summary: Список спринтов проекта
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Спринты
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SprintResponse' }
+    post:
+      tags: [Sprints]
+      summary: Создать спринт
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSprintRequest' }
+      responses:
+        '200':
+          description: Спринт создан
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SprintResponse' }
+
+  /v1/sprints/{sprintId}:
+    get:
+      tags: [Sprints]
+      summary: Получить спринт
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+      responses:
+        '200':
+          description: Спринт
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SprintResponse' }
+        '404': { description: NOT_FOUND }
+    patch:
+      tags: [Sprints]
+      summary: Обновить спринт
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSprintRequest' }
+      responses:
+        '200':
+          description: Обновлённый спринт
+    delete:
+      tags: [Sprints]
+      summary: Удалить спринт
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+      responses:
+        '200':
+          description: Спринт удалён
+
+  /v1/sprints/{sprintId}/start:
+    post:
+      tags: [Sprints]
+      summary: Запустить спринт (status → active)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+      responses:
+        '200':
+          description: Спринт запущен
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SprintResponse' }
+        '400': { description: "VALIDATION_ERROR — нельзя запустить завершённый спринт" }
+
+  /v1/sprints/{sprintId}/complete:
+    post:
+      tags: [Sprints]
+      summary: Завершить спринт (status → completed)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+      responses:
+        '200':
+          description: Спринт завершён
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SprintResponse' }
+
+  # ── Backlog ────────────────────────────────────────────────────────
+  /v1/projects/{projectId}/backlog/product:
+    get:
+      tags: [Backlog]
+      summary: Получить бэклог продукта (упорядоченные задачи)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Задачи бэклога
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskResponse' }
+
+  /v1/projects/{projectId}/backlog/product/tasks:
+    post:
+      tags: [Backlog]
+      summary: Добавить задачу в бэклог продукта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddToBacklogRequest' }
+      responses:
+        '200':
+          description: Задача добавлена
+
+  /v1/projects/{projectId}/backlog/product/tasks/{taskId}:
+    delete:
+      tags: [Backlog]
+      summary: Убрать задачу из бэклога продукта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Задача убрана из бэклога
+
+  /v1/projects/{projectId}/backlog/product/reorder:
+    patch:
+      tags: [Backlog]
+      summary: Изменить порядок задач в бэклоге продукта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderBacklogRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/projects/{projectId}/backlog/sprint:
+    get:
+      tags: [Backlog]
+      summary: Бэклог активного спринта
+      description: Возвращает задачи активного спринта. Если активного спринта нет — пустой массив.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Задачи спринта
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskResponse' }
+
+  /v1/projects/{projectId}/backlog/move-to-sprint:
+    post:
+      tags: [Backlog]
+      summary: Перенести задачи из бэклога в спринт
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveToSprintRequest' }
+      responses:
+        '200':
+          description: Задачи перенесены
+
+  # ── Classes of Service ────────────────────────────────────────────
+  /v1/projects/{projectId}/classes-of-service:
+    get:
+      tags: [Kanban]
+      summary: Доступные классы обслуживания проекта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Классы обслуживания
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ClassOfServiceResponse' }
+
+  # ── Kanban WIP ────────────────────────────────────────────────────
+  /v1/projects/{projectId}/kanban/wip-limits:
+    get:
+      tags: [Kanban]
+      summary: WIP-лимиты проекта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: WIP-лимиты
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/WipLimitDTO' }
+    put:
+      tags: [Kanban]
+      summary: Обновить WIP-лимиты (массово)
+      description: "Возвращает HTTP 204 No Content (без тела ответа)"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/WipLimitDTO' }
+      responses:
+        '204':
+          description: WIP-лимиты обновлены (нет тела)
+
+  /v1/projects/{projectId}/kanban/forecast:
+    post:
+      tags: [Kanban]
+      summary: Прогноз завершения (Monte Carlo)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MonteCarloForecastRequest' }
+      responses:
+        '200':
+          description: Результат прогноза
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MonteCarloForecastResultDTO' }
+
+  # ── Analytics: Scrum ──────────────────────────────────────────────
+  /v1/projects/{projectId}/analytics/scrum/velocity:
+    get:
+      tags: [Analytics]
+      summary: График скорости команды (только Scrum)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Данные velocity
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ScrumVelocityReport' }
+        '400': { description: "Проект не является Scrum-проектом" }
+
+  /v1/projects/{projectId}/analytics/scrum/burndown:
+    get:
+      tags: [Analytics]
+      summary: Burndown диаграмма спринта (только Scrum)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: sprintId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Данные burndown
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/BurndownReportDTO' }
+        '400': { description: "Проект не является Scrum-проектом или не указан sprintId" }
+        '404': { description: "Спринт не найден" }
+
+  # ── Analytics: Kanban ─────────────────────────────────────────────
+  /v1/projects/{projectId}/analytics/kanban/cumulative-flow:
+    get:
+      tags: [Analytics]
+      summary: Накопительная диаграмма потока — CFD (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: boardId
+          schema: { type: string, format: uuid }
         - in: query
           name: from
-          schema:
-            type: string
-            format: date-time
+          schema: { type: string, format: date, example: "2025-01-01" }
         - in: query
           name: to
-          schema:
-            type: string
-            format: date-time
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Точки CFD
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/CumulativeFlowPointDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/throughput:
+    get:
+      tags: [Analytics]
+      summary: Скорость поставки (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: groupBy
+          schema: { type: string, enum: [day, week], default: day }
+      responses:
+        '200':
+          description: Throughput
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ThroughputPointDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/wip/over-time:
+    get:
+      tags: [Analytics]
+      summary: WIP по дням (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: WIP over time
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/WipPointDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/wip/age:
+    get:
+      tags: [Analytics]
+      summary: WIP с возрастом (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: WIP age
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/WipPointDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/cycle-time/scatterplot:
+    get:
+      tags: [Analytics]
+      summary: Диаграмма рассеяния cycle time (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: classOfService
+          schema: { type: string }
+      responses:
+        '200':
+          description: Точки scatterplot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/CycleTimePointDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/cycle-time/trend:
+    get:
+      tags: [Analytics]
+      summary: Тренд среднего cycle time (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: groupBy
+          schema: { type: string, enum: [day, week, month], default: day }
+        - in: query
+          name: classOfService
+          schema: { type: string }
+      responses:
+        '200':
+          description: Тренд
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AverageCycleTimePointDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/cycle-time/histogram:
+    get:
+      tags: [Analytics]
+      summary: Гистограмма cycle time (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: classOfService
+          schema: { type: string }
+        - in: query
+          name: buckets
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - in: query
+          name: maxDays
+          schema: { type: number, default: 30 }
+      responses:
+        '200':
+          description: Гистограмма
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/HistogramDataDTO' }
+
+  /v1/projects/{projectId}/analytics/kanban/throughput/histogram:
+    get:
+      tags: [Analytics]
+      summary: Гистограмма throughput (только Kanban)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: period
+          schema: { type: string, enum: [day, week], default: day }
+        - in: query
+          name: bucketSize
+          schema: { type: integer, default: 1, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: Гистограмма
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/HistogramDataDTO' }
+
+  # ── Meetings ───────────────────────────────────────────────────────
+  /v1/meetings:
+    get:
+      tags: [Meetings]
+      summary: Встречи текущего пользователя
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Встречи
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseMeetings'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/MeetingResponse' }
     post:
       tags: [Meetings]
       summary: Создать встречу
@@ -1277,32 +2793,38 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateMeetingRequest'
+            schema: { $ref: '#/components/schemas/CreateMeetingRequest' }
       responses:
-        '201':
+        '200':
           description: Встреча создана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseMeetingDetails'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MeetingDetailsResponse' }
 
-  /meetings/{meetingId}:
+  /v1/meetings/{meetingId}:
     get:
       tags: [Meetings]
-      summary: Получить детали встречи
+      summary: Детали встречи
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/MeetingId'
       responses:
         '200':
-          description: Встреча
+          description: Встреча с участниками
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseMeetingDetails'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MeetingDetailsResponse' }
     patch:
       tags: [Meetings]
       summary: Обновить встречу
@@ -1314,16 +2836,10 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateMeetingRequest'
+            schema: { $ref: '#/components/schemas/UpdateMeetingRequest' }
       responses:
         '200':
-          description: Обновленная встреча
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseMeeting'
-
+          description: Встреча обновлена
     delete:
       tags: [Meetings]
       summary: Отменить встречу
@@ -1332,10 +2848,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/MeetingId'
       responses:
-        '204':
+        '200':
           description: Встреча отменена
 
-  /meetings/{meetingId}/participants:
+  /v1/meetings/{meetingId}/participants:
     get:
       tags: [Meetings]
       summary: Список участников встречи
@@ -1349,11 +2865,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/APIResponseParticipants'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/MeetingParticipantResponse' }
     post:
       tags: [Meetings]
-      summary: Добавить участников к встрече
+      summary: Добавить участников во встречу
       security:
         - bearerAuth: []
       parameters:
@@ -1365,19 +2886,17 @@ paths:
             schema:
               type: object
               properties:
-                userIds:
+                participantIds:
                   type: array
-                  items:
-                    type: string
-                    format: uuid
+                  items: { type: string, format: uuid }
       responses:
-        '201':
+        '200':
           description: Участники добавлены
 
-  /meetings/{meetingId}/response:
+  /v1/meetings/{meetingId}/response:
     post:
       tags: [Meetings]
-      summary: Ответить на приглашение на встречу
+      summary: Ответить на приглашение (принять/отклонить)
       security:
         - bearerAuth: []
       parameters:
@@ -1388,773 +2907,96 @@ paths:
           application/json:
             schema:
               type: object
+              required: [status]
               properties:
-                status:
-                  type: string
-                  enum: [accepted, declined]
-      responses:
-        '204':
-          description: Ответ сохранен
-
-  /projects/{projectId}/sprints:
-    get:
-      tags: [Scrum]
-      summary: Список спринтов в Scrum-проекте
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
+                status: { type: string, enum: [accepted, declined] }
       responses:
         '200':
-          description: Спринты
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Sprint'
+          description: Статус участия обновлён
 
-    post:
-      tags: [Scrum]
-      summary: Создать спринт
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateSprintRequest'
-      responses:
-        '201':
-          description: Спринт создан
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Sprint'
-
-  /sprints/{sprintId}/start:
-    post:
-      tags: [Scrum]
-      summary: Запустить спринт вручную
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: sprintId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Спринт запущен
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Sprint'
-
-  /sprints/{sprintId}/complete:
-    post:
-      tags: [Scrum]
-      summary: Завершить спринт вручную
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: sprintId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Спринт завершён
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Sprint'
-
-  /projects/{projectId}/backlog/product:
-    get:
-      tags: [Scrum]
-      summary: Получить элементы бэклога продукта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Задачи бэклога продукта
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Task'
-
-  /projects/{projectId}/backlog/sprint:
-    get:
-      tags: [Scrum]
-      summary: Получить элементы бэклога спринта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Задачи бэклога спринта
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Task'
-
-  /projects/{projectId}/backlog/move-to-sprint:
-    post:
-      tags: [Scrum]
-      summary: Перенести задачи из бэклога продукта в бэклог спринта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                sprintId:
-                  type: string
-                  format: uuid
-                taskIds:
-                  type: array
-                  items:
-                    type: string
-                    format: uuid
-      responses:
-        '204':
-          description: Задачи перенесены
-
-  /projects/{projectId}/kanban/wip-limits:
-    get:
-      tags: [Kanban]
-      summary: Получить WIP-лимиты для досок проекта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: WIP-лимиты
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/WipLimit'
-
-    put:
-      tags: [Kanban]
-      summary: Обновить WIP-лимиты
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/WipLimitUpdate'
-      responses:
-        '204':
-          description: Обновлено
-
-  /boards/{boardId}/wip-counts:
-    get:
-      tags: [Kanban]
-      summary: Получить текущие WIP-счетчики по доске
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: boardId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Текущие WIP-счетчики
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/WipCount'
-
-  /projects/{projectId}/kanban/forecast:
-    post:
-      tags: [Kanban]
-      summary: Запуск прогнозирования методом Монте-Карло для заданного объема работ
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MonteCarloForecastRequest'
-      responses:
-        '200':
-          description: Результат прогнозирования
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MonteCarloForecastResult'
-
-  /projects/{projectId}/classes-of-service:
-    get:
-      tags: [Kanban]
-      summary: Получить список классов обслуживания для Kanban-проекта
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Список классов обслуживания
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ClassOfService'
-
-  /boards/{boardId}/swimlanes/configure:
-    post:
-      tags: [Kanban]
-      summary: Настроить источник дорожек для доски (классы обслуживания или кастомное поле)
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: boardId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SwimlaneConfigRequest'
-      responses:
-        '200':
-          description: Конфигурация дорожек обновлена
-
-  /tasks/{taskId}/class-of-service:
-    patch:
-      tags: [Kanban]
-      summary: Обновить класс обслуживания задачи
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: taskId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateTaskClassRequest'
-      responses:
-        '200':
-          description: Класс обслуживания обновлён
-
-  /v1/projects/{projectId}/analytics/scrum/velocity:
-    get:
-      tags: [Analytics]
-      summary: Данные для графика скорости Scrum-команды (Velocity Chart)
-      description: Только для проектов типа scrum. Запланированные и завершённые Story Points по спринтам.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-      responses:
-        '200':
-          description: Данные по скорости
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseScrumVelocity'
-        '400':
-          description: Проект не является Scrum
-
-  /v1/projects/{projectId}/analytics/scrum/burndown:
-    get:
-      tags: [Analytics]
-      summary: Данные для диаграммы сгорания задач (Burndown Chart)
-      description: Только для проектов типа scrum. Оставшиеся и идеальные Story Points по дням спринта.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: sprintId
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Идентификатор спринта
-      responses:
-        '200':
-          description: Данные диаграммы сгорания
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseBurndown'
-        '400':
-          description: Не указан sprintId или проект не Scrum
-        '404':
-          description: Спринт не найден
-
-  /v1/projects/{projectId}/analytics/kanban/cumulative-flow:
-    get:
-      tags: [Analytics]
-      summary: Накопительная диаграмма потока (CFD)
-      description: Только для проектов типа kanban. Количество задач по статусам (колонкам) по дням.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: boardId
-          schema:
-            type: string
-            format: uuid
-          description: Доска (если не указана — первая доска проекта)
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-          description: Начало периода (YYYY-MM-DD), по умолчанию 30 дней назад
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-          description: Конец периода (YYYY-MM-DD), по умолчанию сегодня
-      responses:
-        '200':
-          description: Точки CFD (дата и накопительные счётчики по колонкам)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseCumulativeFlow'
-        '400':
-          description: Проект не является Kanban
-        '404':
-          description: Доска не найдена
-
-  /v1/projects/{projectId}/analytics/kanban/throughput:
-    get:
-      tags: [Analytics]
-      summary: Скорость поставки (Throughput)
-      description: Количество завершённых задач за период (день/неделя). Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: groupBy
-          schema:
-            type: string
-            enum: [day, week]
-            default: day
-      responses:
-        '200':
-          description: Точки графика (период, количество задач, накопительный итог)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseThroughput'
-
-  /v1/projects/{projectId}/analytics/kanban/wip/over-time:
-    get:
-      tags: [Analytics]
-      summary: Work in Progress по времени
-      description: Количество задач в работе по дням. Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-      responses:
-        '200':
-          description: Точки (дата, wipCount)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseWipOverTime'
-
-  /v1/projects/{projectId}/analytics/kanban/wip/age:
-    get:
-      tags: [Analytics]
-      summary: Возраст WIP
-      description: WIP по дням с средним и максимальным возрастом задач в работе. Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-      responses:
-        '200':
-          description: Точки (дата, wipCount, avgWipAge, maxWipAge)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseWipAge'
-
-  /v1/projects/{projectId}/analytics/kanban/cycle-time/scatterplot:
-    get:
-      tags: [Analytics]
-      summary: Диаграмма рассеяния времени производства (Cycle Time Scatterplot)
-      description: Каждая завершённая задача — точка (дата завершения, время цикла в днях). Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: classOfService
-          schema:
-            type: string
-          description: Фильтр по классу обслуживания
-      responses:
-        '200':
-          description: Точки (taskId, taskKey, completedAt, cycleTimeDays, classOfService)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseCycleTimeScatterplot'
-
-  /v1/projects/{projectId}/analytics/kanban/cycle-time/trend:
-    get:
-      tags: [Analytics]
-      summary: Тренд среднего времени производства (Average Cycle Time Trend)
-      description: Средний cycle time по периодам (день/неделя/месяц). Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: groupBy
-          schema:
-            type: string
-            enum: [day, week, month]
-            default: day
-        - in: query
-          name: classOfService
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Точки (период, avgCycleTimeDays, taskCount, classOfService)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseCycleTimeTrend'
-
-  /v1/projects/{projectId}/analytics/kanban/cycle-time/histogram:
-    get:
-      tags: [Analytics]
-      summary: Гистограмма распределения времени производства (Cycle Time Histogram)
-      description: Интервалы времени в днях и количество задач в каждом; процентили 50, 85, 95. Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: classOfService
-          schema:
-            type: string
-        - in: query
-          name: buckets
-          schema:
-            type: integer
-            default: 20
-          description: Число интервалов гистограммы (1–100)
-        - in: query
-          name: maxDays
-          schema:
-            type: number
-            format: float
-            default: 30
-          description: Верхняя граница оси (дни)
-      responses:
-        '200':
-          description: Гистограмма (buckets, totalTasks, average, median, p85, p95)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseHistogram'
-
-  /v1/projects/{projectId}/analytics/kanban/throughput/histogram:
-    get:
-      tags: [Analytics]
-      summary: Гистограмма распределения скорости поставки (Throughput Histogram)
-      description: Распределение количества периодов по числу завершённых задач за период. Только для Kanban.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ProjectId'
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: period
-          schema:
-            type: string
-            enum: [day, week]
-            default: day
-        - in: query
-          name: bucketSize
-          schema:
-            type: integer
-            default: 1
-          description: Ширина интервала по количеству задач
-      responses:
-        '200':
-          description: Гистограмма (buckets, totalTasks, average, median, p85, p95)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIResponseHistogram'
-
-  /dashboards:
-    get:
-      tags: [Dashboards]
-      summary: Список дашбордов текущего пользователя
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Дашборды
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Dashboard'
-
-    post:
-      tags: [Dashboards]
-      summary: Создать дашборд
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateDashboardRequest'
-      responses:
-        '201':
-          description: Дашборд создан
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dashboard'
-
-  /dashboards/{dashboardId}:
-    get:
-      tags: [Dashboards]
-      summary: Получить дашборд с виджетами
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/DashboardId'
-      responses:
-        '200':
-          description: Дашборд
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DashboardDetails'
-
-    patch:
-      tags: [Dashboards]
-      summary: Обновить дашборд (переименование, флаг по умолчанию)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/DashboardId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateDashboardRequest'
-      responses:
-        '200':
-          description: Обновленный дашборд
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dashboard'
-
-    delete:
-      tags: [Dashboards]
-      summary: Удалить дашборд
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/DashboardId'
-      responses:
-        '204':
-          description: Удалено
-
-  /dashboards/{dashboardId}/widgets:
-    post:
-      tags: [Dashboards]
-      summary: Добавить виджет на дашборд
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/DashboardId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWidgetRequest'
-      responses:
-        '201':
-          description: Виджет создан
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Widget'
-
-  /dashboards/{dashboardId}/widgets/{widgetId}:
-    patch:
-      tags: [Dashboards]
-      summary: Обновить виджет
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/DashboardId'
-        - $ref: '#/components/parameters/WidgetId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateWidgetRequest'
-      responses:
-        '200':
-          description: Обновленный виджет
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Widget'
-
-    delete:
-      tags: [Dashboards]
-      summary: Удалить виджет
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/DashboardId'
-        - $ref: '#/components/parameters/WidgetId'
-      responses:
-        '204':
-          description: Удалено
-
-  /admin/users:
+  # ── Admin ──────────────────────────────────────────────────────────
+  /v1/admin/roles:
     get:
       tags: [Admin]
-      summary: Список всех пользователей (только для администратора)
+      summary: Список системных ролей
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Роли
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/RoleResponse' }
+    post:
+      tags: [Admin]
+      summary: Создать системную роль
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRoleRequest' }
+      responses:
+        '200':
+          description: Роль создана
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RoleResponse' }
+
+  /v1/admin/roles/{roleId}:
+    get:
+      tags: [Admin]
+      summary: Получить роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      responses:
+        '200':
+          description: Роль
+    put:
+      tags: [Admin]
+      summary: Обновить роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRoleRequest' }
+      responses:
+        '200':
+          description: Роль обновлена
+    delete:
+      tags: [Admin]
+      summary: Удалить роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RoleId'
+      responses:
+        '200':
+          description: Роль удалена
+
+  /v1/admin/users:
+    get:
+      tags: [Admin]
+      summary: Список всех пользователей
       security:
         - bearerAuth: []
       responses:
@@ -2163,1791 +3005,178 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AdminUserResponse' }
     post:
       tags: [Admin]
-      summary: Создать пользователя с начальным паролем
+      summary: Создать пользователя (администратором)
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/AdminCreateUserRequest'
+            schema: { $ref: '#/components/schemas/AdminCreateUserRequest' }
       responses:
-        '201':
+        '200':
           description: Пользователь создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AdminUserResponse' }
 
-  /admin/users/{id}:
+  /v1/admin/users/{id}:
     delete:
       tags: [Admin]
-      summary: Удалить учетную запись пользователя
+      summary: Удалить пользователя
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/UserId'
       responses:
-        '204':
-          description: Удалено
+        '200':
+          description: Пользователь удалён
 
-  /admin/password-policy:
+  /v1/admin/users/{userId}/roles:
     get:
       tags: [Admin]
-      summary: Получить общесистемную политику паролей
+      summary: Системные роли пользователя
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Роли пользователя
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/RoleResponse' }
+    post:
+      tags: [Admin]
+      summary: Назначить системные роли пользователю
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignRolesRequest' }
+      responses:
+        '200':
+          description: Роли назначены
+
+  /v1/admin/password-policy:
+    get:
+      tags: [Admin]
+      summary: Текущая парольная политика
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Политика паролей
+          description: Парольная политика
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PasswordPolicy'
-
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PasswordPolicyResponse' }
     put:
       tags: [Admin]
-      summary: Обновить общесистемную политику паролей
+      summary: Обновить парольную политику
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/PasswordPolicyUpdate'
+            schema: { $ref: '#/components/schemas/UpdatePasswordPolicyRequest' }
       responses:
         '200':
-          description: Обновленная политика паролей
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PasswordPolicy'
+          description: Политика обновлена
 
-  /admin/logs:
+  /v1/admin/logs:
     get:
       tags: [Admin]
-      summary: Получить журнал действий пользователей с фильтрацией
+      summary: Журнал аудита
       security:
         - bearerAuth: []
-      parameters:
-        - in: query
-          name: userId
-          schema:
-            type: string
-            format: uuid
-        - in: query
-          name: actionType
-          schema:
-            type: string
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date-time
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date-time
       responses:
         '200':
-          description: Журнал
+          description: Записи журнала
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AuditLogEntry'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditLogEntryResponse' }
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  parameters:
-    UserId:
-      in: path
-      name: id
-      required: true
-      schema:
-        type: string
-        format: uuid
-    ProjectId:
-      in: path
-      name: projectId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    ProjectMemberId:
-      in: path
-      name: memberId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    BoardId:
-      in: path
-      name: boardId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    TaskId:
-      in: path
-      name: taskId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    MeetingId:
-      in: path
-      name: meetingId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    DashboardId:
-      in: path
-      name: dashboardId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    WidgetId:
-      in: path
-      name: widgetId
-      required: true
-      schema:
-        type: string
-        format: uuid
-
-  schemas:
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        username:
-          type: string
-        email:
-          type: string
-          format: email
-        fullName:
-          type: string
-        avatarUrl:
-          type: string
-          nullable: true
-        isActive:
-          type: boolean
-
-    RegisterRequest:
-      type: object
-      required: [username, email, password, full_name]
-      properties:
-        username:
-          type: string
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-        full_name:
-          type: string
-
-    LoginRequest:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-
-    RefreshRequest:
-      type: object
-      required: [refresh_token]
-      properties:
-        refresh_token:
-          type: string
-
-    LogoutRequest:
-      type: object
-      required: [refresh_token]
-      properties:
-        refresh_token:
-          type: string
-
-    ChangePasswordRequest:
-      type: object
-      required: [old_password, new_password]
-      properties:
-        old_password:
-          type: string
-          format: password
-        new_password:
-          type: string
-          format: password
-
-    LoginData:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-        user:
-          $ref: '#/components/schemas/User'
-        roles:
-          type: array
-          description: Список системных ролей пользователя
-          items:
-            type: string
-
-    RefreshData:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-
-    RegisterData:
-      type: object
-      properties:
-        user:
-          $ref: '#/components/schemas/User'
-
-    MessageData:
-      type: object
-      properties:
-        message:
-          type: string
-
-    UserResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        username:
-          type: string
-        email:
-          type: string
-          format: email
-        full_name:
-          type: string
-        avatar_url:
-          type: string
-          nullable: true
-
-    UserListData:
-      type: object
-      properties:
-        users:
-          type: array
-          items:
-            $ref: '#/components/schemas/UserResponse'
-
-    UserData:
-      type: object
-      properties:
-        user:
-          $ref: '#/components/schemas/UserResponse'
-
-    APIError:
-      type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-
-    APIResponseRegister:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/RegisterData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseLogin:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/LoginData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseRefresh:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/RefreshData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseMessage:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/MessageData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseProject:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/Project'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseProjectList:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Project'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseProjectMember:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/ProjectMember'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseProjectMemberList:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/ProjectMember'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseProjectTemplate:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/ProjectTemplate'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseProjectTemplateList:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/ProjectTemplate'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseUserList:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/UserListData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseUser:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/UserData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    UpdateUserProfileRequest:
-      type: object
-      required: [full_name, email]
-      properties:
-        full_name:
-          type: string
-        email:
-          type: string
-          format: email
-
-    NotificationSetting:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        eventType:
-          type: string
-          description: >
-            События, связанные с задачами и встречами в соответствии с требованиями
-            (например, task_assigned, task_mentioned_in_comment, task_status_changed_author, meeting_invitation, meeting_changed и т.п.)
-        inSystem:
-          type: boolean
-        inEmail:
-          type: boolean
-
-    NotificationSettingUpdate:
-      type: object
-      required: [eventType, inSystem, inEmail]
-      properties:
-        eventType:
-          type: string
-        inSystem:
-          type: boolean
-        inEmail:
-          type: boolean
-
-    Notification:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        type:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        isRead:
-          type: boolean
-        payload:
-          type: object
-
-    Project:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        key:
-          type: string
-        name:
-          type: string
-        project_type:
-          type: string
-          enum: [scrum, kanban]
-        description:
-          type: string
-          nullable: true
-        status:
-          type: string
-          enum: [active, archived, paused]
-        owner_id:
-          type: string
-          format: uuid
-
-    CreateProjectRequest:
-      type: object
-      required: [name, project_type]
-      properties:
-        name:
-          type: string
-        project_type:
-          type: string
-          enum: [scrum, kanban]
-        description:
-          type: string
-
-    UpdateProjectRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        status:
-          type: string
-          enum: [active, archived, paused]
-
-    ProjectMember:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        project_id:
-          type: string
-          format: uuid
-        user_id:
-          type: string
-          format: uuid
-
-    AddProjectMemberRequest:
-      type: object
-      required: [user_id]
-      properties:
-        user_id:
-          type: string
-          format: uuid
-
-    UpdateProjectMemberRolesRequest:
-      type: object
-      properties:
-        roles:
-          type: array
-          items:
-            type: string
-
-    ProjectHistoryEntry:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        projectId:
-          type: string
-          format: uuid
-        actorId:
-          type: string
-          format: uuid
-        actionType:
-          type: string
-        fieldName:
-          type: string
-          nullable: true
-        oldValue:
-          type: string
-          nullable: true
-        newValue:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-
-    ProjectTemplate:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-        project_type:
-          type: string
-          enum: [scrum, kanban]
-
-    CreateProjectTemplateRequest:
-      type: object
-      required: [name, project_type]
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        project_type:
-          type: string
-          enum: [scrum, kanban]
-
-    Board:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        projectId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-
-    CreateBoardRequest:
-      type: object
-      required: [projectId, name]
-      properties:
-        projectId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-
-    UpdateBoardRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-
-    Column:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        boardId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        systemType:
-          type: string
-          enum: [initial, in_progress, paused, completed, cancelled]
-          nullable: true
-        wipLimit:
-          type: integer
-          nullable: true
-        order:
-          type: integer
-
-    CreateColumnRequest:
-      type: object
-      required: [boardId, name]
-      properties:
-        boardId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        systemType:
-          type: string
-          enum: [initial, in_progress, paused, completed, cancelled]
-        wipLimit:
-          type: integer
-          nullable: true
-
-    Swimlane:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        boardId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        wipLimit:
-          type: integer
-          nullable: true
-        order:
-          type: integer
-
-    CreateSwimlaneRequest:
-      type: object
-      required: [boardId, name]
-      properties:
-        boardId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        wipLimit:
-          type: integer
-          nullable: true
-
-    Note:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        columnId:
-          type: string
-          format: uuid
-          nullable: true
-        swimlaneId:
-          type: string
-          format: uuid
-          nullable: true
+  /v1/admin/project-templates:
+    get:
+      tags: [Admin]
+      summary: Список шаблонов проектов
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Шаблоны
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProjectTemplateResponse' }
+    post:
+      tags: [Admin]
+      summary: Создать шаблон проекта
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
         content:
-          type: string
-
-    CreateNoteRequest:
-      type: object
-      properties:
-        columnId:
-          type: string
-          format: uuid
-        swimlaneId:
-          type: string
-          format: uuid
-        content:
-          type: string
-
-    Task:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        key:
-          type: string
-        projectId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-        priority:
-          type: string
-        status:
-          type: string
-        authorId:
-          type: string
-          format: uuid
-        assigneeId:
-          type: string
-          format: uuid
-        dueDate:
-          type: string
-          format: date-time
-
-    TaskDetails:
-      allOf:
-        - $ref: '#/components/schemas/Task'
-        - type: object
-          properties:
-            watchers:
-              type: array
-              items:
-                type: string
-                format: uuid
-            checklistProgress:
-              type: number
-              format: float
-              nullable: true
-            subtasksProgress:
-              type: number
-              format: float
-              nullable: true
-
-    CreateTaskRequest:
-      type: object
-      required: [projectId, name, columnId]
-      properties:
-        projectId:
-          type: string
-          format: uuid
-        boardId:
-          type: string
-          format: uuid
-        columnId:
-          type: string
-          format: uuid
-        swimlaneId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-        priority:
-          type: string
-        assigneeId:
-          type: string
-          format: uuid
-        dueDate:
-          type: string
-          format: date-time
-
-    UpdateTaskRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        priority:
-          type: string
-        columnId:
-          type: string
-          format: uuid
-        swimlaneId:
-          type: string
-          format: uuid
-        assigneeId:
-          type: string
-          format: uuid
-        dueDate:
-          type: string
-          format: date-time
-
-    DeleteTaskRequest:
-      type: object
-      required: [reason]
-      properties:
-        reason:
-          type: string
-
-    TaskDependency:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-        dependsOnTaskId:
-          type: string
-          format: uuid
-        dependencyType:
-          type: string
-          enum: [blocks, related, parent, child]
-
-    CreateTaskDependencyRequest:
-      type: object
-      required: [dependsOnTaskId, dependencyType]
-      properties:
-        dependsOnTaskId:
-          type: string
-          format: uuid
-        dependencyType:
-          type: string
-          enum: [blocks, related, parent, child]
-
-    TaskChecklist:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/ChecklistItem'
-
-    ChecklistItem:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        content:
-          type: string
-        isChecked:
-          type: boolean
-        order:
-          type: integer
-
-    CreateChecklistRequest:
-      type: object
-      properties:
-        name:
-          type: string
-
-    CreateChecklistItemRequest:
-      type: object
-      properties:
-        content:
-          type: string
-        order:
-          type: integer
-
-    SetChecklistItemStatusRequest:
-      type: object
-      properties:
-        isChecked:
-          type: boolean
-
-    Comment:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-        authorId:
-          type: string
-          format: uuid
-        content:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        parentCommentId:
-          type: string
-          format: uuid
-          nullable: true
-        mentions:
-          type: array
-          items:
-            type: string
-            format: uuid
-
-    CreateCommentRequest:
-      type: object
-      properties:
-        taskId:
-          type: string
-          format: uuid
-        authorMemberId:
-          type: string
-          format: uuid
-        content:
-          type: string
-
-    Attachment:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-          nullable: true
-        commentId:
-          type: string
-          format: uuid
-          nullable: true
-        fileName:
-          type: string
-        filePath:
-          type: string
-        uploadedBy:
-          type: string
-          format: uuid
-        uploadedAt:
-          type: string
-          format: date-time
-
-    TaskWatcher:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-        projectMemberId:
-          type: string
-          format: uuid
-
-    AddWatcherRequest:
-      type: object
-      properties:
-        projectMemberId:
-          type: string
-          format: uuid
-
-    TaskHistoryEntry:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        taskId:
-          type: string
-          format: uuid
-        actorId:
-          type: string
-          format: uuid
-        actionType:
-          type: string
-        fieldName:
-          type: string
-          nullable: true
-        oldValue:
-          type: string
-          nullable: true
-        newValue:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-
-    Meeting:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        projectId:
-          type: string
-          format: uuid
-          nullable: true
-        name:
-          type: string
-        description:
-          type: string
-        meetingType:
-          type: string
-        startTime:
-          type: string
-          format: date-time
-        endTime:
-          type: string
-          format: date-time
-
-    MeetingDetails:
-      allOf:
-        - $ref: '#/components/schemas/Meeting'
-        - type: object
-          properties:
-            participants:
-              type: array
-              items:
-                $ref: '#/components/schemas/MeetingParticipant'
-
-    MeetingParticipant:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        meetingId:
-          type: string
-          format: uuid
-        userId:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [pending, accepted, declined]
-
-    MeetingsData:
-      type: object
-      properties:
-        meetings:
-          type: array
-          items:
-            $ref: '#/components/schemas/Meeting'
-
-    MeetingDetailsData:
-      type: object
-      properties:
-        meeting:
-          $ref: '#/components/schemas/Meeting'
-        participants:
-          type: array
-          items:
-            $ref: '#/components/schemas/MeetingParticipant'
-
-    APIResponseMeetings:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/MeetingsData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseMeeting:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            meeting:
-              $ref: '#/components/schemas/Meeting'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseMeetingDetails:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/MeetingDetailsData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseParticipants:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            participants:
-              type: array
-              items:
-                $ref: '#/components/schemas/MeetingParticipant'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    CreateMeetingRequest:
-      type: object
-      required: [name, startTime, endTime]
-      properties:
-        projectId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-        meetingType:
-          type: string
-        startTime:
-          type: string
-          format: date-time
-        endTime:
-          type: string
-          format: date-time
-        participantIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-
-    UpdateMeetingRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        meetingType:
-          type: string
-        startTime:
-          type: string
-          format: date-time
-        endTime:
-          type: string
-          format: date-time
-
-    Sprint:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        projectId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        goal:
-          type: string
-        startDate:
-          type: string
-          format: date
-        endDate:
-          type: string
-          format: date
-        status:
-          type: string
-          enum: [planned, active, completed]
-
-    CreateSprintRequest:
-      type: object
-      required: [name, startDate]
-      properties:
-        name:
-          type: string
-        goal:
-          type: string
-        startDate:
-          type: string
-          format: date
-        durationWeeks:
-          type: integer
-          enum: [1, 2, 3, 4]
-        durationDays:
-          type: integer
-
-    WipLimit:
-      type: object
-      properties:
-        boardId:
-          type: string
-          format: uuid
-        columnId:
-          type: string
-          format: uuid
-          nullable: true
-        swimlaneId:
-          type: string
-          format: uuid
-          nullable: true
-        limit:
-          type: integer
-          nullable: true
-
-    WipLimitUpdate:
-      allOf:
-        - $ref: '#/components/schemas/WipLimit'
-
-    WipCount:
-      type: object
-      properties:
-        columnId:
-          type: string
-          format: uuid
-          nullable: true
-        swimlaneId:
-          type: string
-          format: uuid
-          nullable: true
-        count:
-          type: integer
-        limit:
-          type: integer
-          nullable: true
-        exceeded:
-          type: boolean
-
-    ClassOfService:
-      type: object
-      properties:
-        value:
-          type: string
-          enum: [expedite, fixed_date, standard, intangible]
-        name:
-          type: string
-        description:
-          type: string
-
-    UpdateTaskClassRequest:
-      type: object
-      required: [classOfService]
-      properties:
-        classOfService:
-          type: string
-          enum: [expedite, fixed_date, standard, intangible]
-
-    SwimlaneConfigRequest:
-      type: object
-      required: [sourceType]
-      properties:
-        sourceType:
-          type: string
-          enum: [class_of_service, custom_field]
-        customFieldId:
-          type: string
-          format: uuid
-          nullable: true
-        valueMappings:
-          type: object
-          additionalProperties:
-            type: string
-
-    MonteCarloForecastRequest:
-      type: object
-      required: [workItemCount, simulations]
-      properties:
-        workItemCount:
-          type: integer
-        simulations:
-          type: integer
-        confidenceLevels:
-          type: array
-          items:
-            type: number
-            format: float
-
-    MonteCarloForecastResult:
-      type: object
-      properties:
-        projectId:
-          type: string
-          format: uuid
-        workItemCount:
-          type: integer
-        points:
-          type: array
-          items:
-            type: object
-            properties:
-              date:
-                type: string
-                format: date
-              probability:
-                type: number
-                format: float
-
-    ScrumVelocityReport:
-      type: object
-      properties:
-        sprints:
-          type: array
-          items:
-            type: object
-            properties:
-              sprintId:
-                type: string
-                format: uuid
-              name:
-                type: string
-              committedPoints:
-                type: number
-              completedPoints:
-                type: number
-
-    BurndownReport:
-      type: object
-      properties:
-        sprintId:
-          type: string
-          format: uuid
-        points:
-          type: array
-          items:
-            type: object
-            properties:
-              date:
-                type: string
-                format: date
-              remainingPoints:
-                type: integer
-              idealPoints:
-                type: integer
-                description: Идеальная линия сгорания
-
-    CumulativeFlowPoint:
-      type: object
-      properties:
-        date:
-          type: string
-          format: date
-        statusCounts:
-          type: object
-          additionalProperties:
-            type: integer
-          description: Имя колонки → накопительное количество задач
-
-    ThroughputPoint:
-      type: object
-      properties:
-        period:
-          type: string
-          format: date
-        classOfService:
-          type: string
-          nullable: true
-        taskCount:
-          type: integer
-        cumulativeCount:
-          type: integer
-
-    WipPoint:
-      type: object
-      properties:
-        date:
-          type: string
-          format: date
-        wipCount:
-          type: integer
-        avgWipAge:
-          type: number
-          format: float
-          nullable: true
-        maxWipAge:
-          type: number
-          format: float
-          nullable: true
-
-    CycleTimePoint:
-      type: object
-      properties:
-        taskId:
-          type: string
-          format: uuid
-        taskKey:
-          type: string
-        classOfService:
-          type: string
-          nullable: true
-        completedAt:
-          type: string
-          format: date
-        cycleTimeDays:
-          type: number
-          format: float
-
-    AverageCycleTimePoint:
-      type: object
-      properties:
-        period:
-          type: string
-          format: date
-        classOfService:
-          type: string
-          nullable: true
-        avgCycleTimeDays:
-          type: number
-          format: float
-        taskCount:
-          type: integer
-
-    HistogramBucket:
-      type: object
-      properties:
-        bucketStart:
-          type: number
-          format: float
-        bucketEnd:
-          type: number
-          format: float
-        taskCount:
-          type: integer
-
-    HistogramData:
-      type: object
-      properties:
-        buckets:
-          type: array
-          items:
-            $ref: '#/components/schemas/HistogramBucket'
-        totalTasks:
-          type: integer
-        average:
-          type: number
-          format: float
-        median:
-          type: number
-          format: float
-        p85:
-          type: number
-          format: float
-        p95:
-          type: number
-          format: float
-
-    APIResponseScrumVelocity:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/ScrumVelocityReport'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseBurndown:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/BurndownReport'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseCumulativeFlow:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/CumulativeFlowPoint'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseThroughput:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/ThroughputPoint'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseWipOverTime:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/WipPoint'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseWipAge:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/WipPoint'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseCycleTimeScatterplot:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/CycleTimePoint'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseCycleTimeTrend:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/AverageCycleTimePoint'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    APIResponseHistogram:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/HistogramData'
-        error:
-          $ref: '#/components/schemas/APIError'
-          nullable: true
-
-    Dashboard:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        ownerId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        isDefault:
-          type: boolean
-
-    DashboardDetails:
-      allOf:
-        - $ref: '#/components/schemas/Dashboard'
-        - type: object
-          properties:
-            widgets:
-              type: array
-              items:
-                $ref: '#/components/schemas/Widget'
-
-    CreateDashboardRequest:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-        isDefault:
-          type: boolean
-
-    UpdateDashboardRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        isDefault:
-          type: boolean
-
-    Widget:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        dashboardId:
-          type: string
-          format: uuid
-        widgetType:
-          type: string
-        name:
-          type: string
-        configuration:
-          type: object
-        positionX:
-          type: integer
-        positionY:
-          type: integer
-        width:
-          type: integer
-        height:
-          type: integer
-
-    CreateWidgetRequest:
-      type: object
-      required: [widgetType, name, positionX, positionY, width, height]
-      properties:
-        widgetType:
-          type: string
-        name:
-          type: string
-        configuration:
-          type: object
-        positionX:
-          type: integer
-        positionY:
-          type: integer
-        width:
-          type: integer
-        height:
-          type: integer
-
-    UpdateWidgetRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        configuration:
-          type: object
-        positionX:
-          type: integer
-        positionY:
-          type: integer
-        width:
-          type: integer
-        height:
-          type: integer
-
-    AdminCreateUserRequest:
-      type: object
-      required: [username, email, fullName, initialPassword]
-      properties:
-        username:
-          type: string
-        email:
-          type: string
-          format: email
-        fullName:
-          type: string
-        initialPassword:
-          type: string
-        systemRoles:
-          type: array
-          items:
-            type: string
-
-    PasswordPolicy:
-      type: object
-      properties:
-        minLength:
-          type: integer
-        requireDigits:
-          type: boolean
-        requireLowercase:
-          type: boolean
-        requireUppercase:
-          type: boolean
-        requireSpecial:
-          type: boolean
-        notes:
-          type: string
-
-    PasswordPolicyUpdate:
-      allOf:
-        - $ref: '#/components/schemas/PasswordPolicy'
-
-    AuditLogEntry:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        userId:
-          type: string
-          format: uuid
-        actionType:
-          type: string
-        entityType:
-          type: string
-        entityId:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        metadata:
-          type: object
-
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateRequest' }
+      responses:
+        '200':
+          description: Шаблон создан
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectTemplateResponse' }

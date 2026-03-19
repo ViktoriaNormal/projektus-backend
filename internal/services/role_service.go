@@ -70,3 +70,15 @@ func (s *RoleService) UserHasSystemPermission(ctx context.Context, userID uuid.U
 	return s.repo.UserHasSystemPermission(ctx, userID, code)
 }
 
+func (s *RoleService) GetRolePermissions(ctx context.Context, roleID uuid.UUID) ([]string, error) {
+	perms, err := s.repo.ListRolePermissions(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	codes := make([]string, len(perms))
+	for i, p := range perms {
+		codes[i] = p.Code
+	}
+	return codes, nil
+}
+

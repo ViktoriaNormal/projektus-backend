@@ -12,17 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const countSystemRoles = `-- name: CountSystemRoles :one
-SELECT COUNT(*) FROM roles WHERE scope = 'system'
-`
-
-func (q *Queries) CountSystemRoles(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countSystemRoles)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createProjectRole = `-- name: CreateProjectRole :one
 INSERT INTO roles (name, description, scope, project_id)
 VALUES ($1, $2, 'project', $3)
@@ -156,50 +145,6 @@ ORDER BY name
 // System roles and permissions
 func (q *Queries) ListSystemRoles(ctx context.Context) ([]Role, error) {
 	rows, err := q.db.QueryContext(ctx, listSystemRoles)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Role{}
-	for rows.Next() {
-		var i Role
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Description,
-			&i.Scope,
-			&i.ProjectID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSystemRolesPaginated = `-- name: ListSystemRolesPaginated :many
-SELECT id, name, description, scope, project_id, created_at, updated_at
-FROM roles
-WHERE scope = 'system'
-ORDER BY name
-LIMIT $1 OFFSET $2
-`
-
-type ListSystemRolesPaginatedParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-func (q *Queries) ListSystemRolesPaginated(ctx context.Context, arg ListSystemRolesPaginatedParams) ([]Role, error) {
-	rows, err := q.db.QueryContext(ctx, listSystemRolesPaginated, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

@@ -111,7 +111,7 @@ type KanbanForecastCache struct {
 
 type LoginAttempt struct {
 	ID          int64          `json:"id"`
-	Email       sql.NullString `json:"email"`
+	Username    sql.NullString `json:"username"`
 	IpAddress   pqtype.Inet    `json:"ip_address"`
 	Success     bool           `json:"success"`
 	AttemptedAt time.Time      `json:"attempted_at"`
@@ -375,4 +375,5 @@ type User struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    sql.NullTime   `json:"deleted_at"`
+	Position     sql.NullString `json:"position"`
 }

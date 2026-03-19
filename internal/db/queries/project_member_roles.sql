@@ -16,3 +16,8 @@ ON CONFLICT DO NOTHING;
 DELETE FROM project_member_roles
 WHERE project_member_id = $1;
 
+-- name: ListMemberRoleIDs :many
+SELECT pmr.role_id
+FROM project_member_roles pmr
+WHERE pmr.project_member_id = $1;
+

@@ -12,6 +12,8 @@ type Config struct {
 
 	DBURL string
 
+	CORSAllowedOrigin string
+
 	JWTAccessSecret  string
 	JWTRefreshSecret string
 
@@ -50,6 +52,8 @@ func Load() *Config {
 	cfg := &Config{
 		ServerPort: getenv("SERVER_PORT", "8080"),
 		DBURL:      getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/projektus?sslmode=disable"),
+
+		CORSAllowedOrigin: getenv("CORS_ALLOWED_ORIGIN", "http://localhost:5173"),
 
 		JWTAccessSecret:  getenv("JWT_ACCESS_SECRET", "dev-access-secret"),
 		JWTRefreshSecret: getenv("JWT_REFRESH_SECRET", "dev-refresh-secret"),

@@ -7,6 +7,10 @@ RETURNING *;
 SELECT * FROM users
 WHERE email = $1;
 
+-- name: GetUserByUsername :one
+SELECT * FROM users
+WHERE username = $1;
+
 -- name: GetUserByID :one
 SELECT * FROM users
 WHERE id = $1;
@@ -32,6 +36,7 @@ LIMIT $2;
 UPDATE users
 SET full_name = $2,
     email     = $3,
+    position  = $4,
     updated_at = NOW()
 WHERE id = $1;
 

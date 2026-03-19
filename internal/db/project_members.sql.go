@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -85,6 +86,58 @@ func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) (
 			&i.ID,
 			&i.ProjectID,
 			&i.UserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectMembersByUser = `-- name: ListProjectMembersByUser :many
+SELECT pm.id,
+       pm.project_id,
+       pm.user_id,
+       p.name AS project_name,
+       pm.created_at,
+       pm.updated_at
+FROM project_members pm
+JOIN projects p ON p.id = pm.project_id
+WHERE pm.user_id = $1
+ORDER BY p.name
+`
+
+type ListProjectMembersByUserRow struct {
+	ID          uuid.UUID `json:"id"`
+	ProjectID   uuid.UUID `json:"project_id"`
+	UserID      uuid.UUID `json:"user_id"`
+	ProjectName string    `json:"project_name"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) ListProjectMembersByUser(ctx context.Context, userID uuid.UUID) ([]ListProjectMembersByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectMembersByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectMembersByUserRow{}
+	for rows.Next() {
+		var i ListProjectMembersByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.UserID,
+			&i.ProjectName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

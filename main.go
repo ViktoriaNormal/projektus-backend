@@ -68,8 +68,9 @@ func main() {
 
 	authHandler := handlers.NewAuthHandler(authSvc, auditLogSvc)
 	userSvc := services.NewUserService(userRepo)
-	userHandler := handlers.NewUserHandler(userSvc)
+	userHandler := handlers.NewUserHandler(userSvc, projectMemberRepo, roleRepo)
 	notificationSvc := services.NewNotificationService(notificationRepo)
+	notificationHandler := handlers.NewNotificationHandler(notificationSvc)
 	meetingSvc := services.NewMeetingService(meetingRepo, notificationSvc)
 	meetingHandler := handlers.NewMeetingHandler(meetingSvc)
 
@@ -126,7 +127,7 @@ func main() {
 	templateSvc := services.NewTemplateService(templateRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, adminUserHandler, adminPasswordPolicyHandler, adminAuditLogHandler, projectSvc, permissionSvc)
+	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, adminUserHandler, adminPasswordPolicyHandler, adminAuditLogHandler, projectSvc, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

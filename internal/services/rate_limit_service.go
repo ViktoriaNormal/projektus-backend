@@ -10,7 +10,7 @@ import (
 )
 
 type RateLimitService interface {
-	CheckAndRecordLoginAttempt(ctx context.Context, userID, email, ip string, success bool) error
+	CheckAndRecordLoginAttempt(ctx context.Context, userID, username, ip string, success bool) error
 }
 
 type rateLimitService struct {
@@ -25,7 +25,7 @@ func NewRateLimitService(cfg *config.Config, repo repositories.AuthRepository) R
 	}
 }
 
-func (s *rateLimitService) CheckAndRecordLoginAttempt(ctx context.Context, userID, email, ip string, success bool) error {
+func (s *rateLimitService) CheckAndRecordLoginAttempt(ctx context.Context, userID, username, ip string, success bool) error {
 	now := time.Now()
 
 	// Cleanup expired blocks
@@ -54,10 +54,10 @@ func (s *rateLimitService) CheckAndRecordLoginAttempt(ctx context.Context, userI
 
 	// If login failed, check thresholds
 	if !success {
-		emailSince := now.Add(-time.Duration(s.cfg.RateLimitEmailWindowMinutes) * time.Minute)
+		usernameSince := now.Add(-time.Duration(s.cfg.RateLimitEmailWindowMinutes) * time.Minute)
 		ipSince := now.Add(-time.Duration(s.cfg.RateLimitIPWindowMinutes) * time.Minute)
 
-		emailFails, err := s.repo.CountFailedAttemptsByEmailSince(ctx, email, emailSince)
+		usernameFails, err := s.repo.CountFailedAttemptsByUsernameSince(ctx, username, usernameSince)
 		if err != nil {
 			return err
 		}
@@ -67,11 +67,11 @@ func (s *rateLimitService) CheckAndRecordLoginAttempt(ctx context.Context, userI
 		}
 
 		// Record current attempt
-		if err := s.repo.InsertLoginAttempt(ctx, email, ip, false); err != nil {
+		if err := s.repo.InsertLoginAttempt(ctx, username, ip, false); err != nil {
 			return err
 		}
 
-		if emailFails+1 >= s.cfg.RateLimitEmailMaxFailures && userID != "" {
+		if usernameFails+1 >= s.cfg.RateLimitEmailMaxFailures && userID != "" {
 			blockDuration := time.Duration(s.cfg.RateLimitEmailBlockMinutes) * time.Minute
 			if err := s.repo.BlockUserUntil(ctx, userID, now.Add(blockDuration)); err != nil {
 				return err
@@ -90,7 +90,7 @@ func (s *rateLimitService) CheckAndRecordLoginAttempt(ctx context.Context, userI
 	}
 
 	// success
-	if err := s.repo.InsertLoginAttempt(ctx, email, ip, true); err != nil {
+	if err := s.repo.InsertLoginAttempt(ctx, username, ip, true); err != nil {
 		return err
 	}
 	return nil

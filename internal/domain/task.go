@@ -13,19 +13,19 @@ const (
 type TaskStatus string
 
 type Task struct {
-	ID         string
-	Key        string
-	ProjectID  string
-	OwnerID    string
-	ExecutorID *string
-	Name       string
-	Description *string
-	Deadline   *time.Time
-	ColumnID   string
-	SwimlaneID *string
-	DeletedAt  *time.Time
-	Checklists []Checklist
-	StoryPoints *int
+	ID          string      `json:"id"`
+	Key         string      `json:"key"`
+	ProjectID   string      `json:"project_id"`
+	OwnerID     string      `json:"owner_id"`
+	ExecutorID  *string     `json:"executor_id,omitempty"`
+	Name        string      `json:"name"`
+	Description *string     `json:"description,omitempty"`
+	Deadline    *time.Time  `json:"deadline,omitempty"`
+	ColumnID    string      `json:"column_id"`
+	SwimlaneID  *string     `json:"swimlane_id,omitempty"`
+	DeletedAt   *time.Time  `json:"-"`
+	Checklists  []Checklist `json:"checklists,omitempty"`
+	StoryPoints *int        `json:"story_points,omitempty"`
 }
 
 type BacklogType string
@@ -38,39 +38,38 @@ const (
 type TaskDependencyType string
 
 const (
-	TaskDependencyBlocks TaskDependencyType = "blocks"
+	TaskDependencyBlocks  TaskDependencyType = "blocks"
 	TaskDependencyRelated TaskDependencyType = "related"
 	TaskDependencyParent  TaskDependencyType = "parent"
 	TaskDependencyChild   TaskDependencyType = "child"
 )
 
 type TaskWatcher struct {
-	ID              string
-	TaskID          string
-	ProjectMemberID string
-	CreatedAt       time.Time
+	ID              string    `json:"id"`
+	TaskID          string    `json:"task_id"`
+	ProjectMemberID string    `json:"project_member_id"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type TaskDependency struct {
-	ID              string
-	TaskID          string
-	DependsOnTaskID string
-	Type            TaskDependencyType
-	CreatedAt       time.Time
+	ID              string             `json:"id"`
+	TaskID          string             `json:"task_id"`
+	DependsOnTaskID string             `json:"depends_on_task_id"`
+	Type            TaskDependencyType `json:"type"`
+	CreatedAt       time.Time          `json:"created_at"`
 }
 
 type Checklist struct {
-	ID      string
-	TaskID  string
-	Name    string
-	Items   []ChecklistItem
+	ID     string          `json:"id"`
+	TaskID string          `json:"task_id"`
+	Name   string          `json:"name"`
+	Items  []ChecklistItem `json:"items,omitempty"`
 }
 
 type ChecklistItem struct {
-	ID         string
-	ChecklistID string
-	Content    string
-	IsChecked  bool
-	Order      int16
+	ID          string `json:"id"`
+	ChecklistID string `json:"checklist_id"`
+	Content     string `json:"content"`
+	IsChecked   bool   `json:"is_checked"`
+	Order       int16  `json:"order"`
 }
-

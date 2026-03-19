@@ -16,7 +16,7 @@ import (
 
 type AuthService interface {
 	Register(ctx context.Context, username, email, password, fullName string) (*domain.User, error)
-	Login(ctx context.Context, email, password, ip string) (accessToken, refreshToken string, user *domain.User, err error)
+	Login(ctx context.Context, username, password, ip string) (accessToken, refreshToken string, user *domain.User, err error)
 	Refresh(ctx context.Context, refreshToken string) (string, string, error)
 	Logout(ctx context.Context, refreshToken string) error
 	ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error
@@ -54,28 +54,28 @@ func NewAuthService(
 
 func (s *authService) Register(ctx context.Context, username, email, password, fullName string) (*domain.User, error) {
 	if err := s.policySvc.ValidatePassword(ctx, password); err != nil {
-		return nil, errctx.Wrap(err, "Register", "email", email)
+		return nil, errctx.Wrap(err, "Register", "username", username)
 	}
 	hash, err := s.passwords.HashPassword(password)
 	if err != nil {
-		return nil, errctx.Wrap(err, "Register", "email", email)
+		return nil, errctx.Wrap(err, "Register", "username", username)
 	}
 	user, err := s.users.CreateUser(ctx, username, email, hash, fullName, nil)
 	if err != nil {
-		return nil, errctx.Wrap(err, "Register", "email", email)
+		return nil, errctx.Wrap(err, "Register", "username", username)
 	}
 	_ = s.users.InsertPasswordHistory(ctx, user.ID, hash)
 	return user, nil
 }
 
-func (s *authService) Login(ctx context.Context, email, password, ip string) (string, string, *domain.User, error) {
-	user, err := s.users.GetUserByEmail(ctx, email)
+func (s *authService) Login(ctx context.Context, username, password, ip string) (string, string, *domain.User, error) {
+	user, err := s.users.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, "", email, ip, false)
+			_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, "", username, ip, false)
 			return "", "", nil, domain.ErrInvalidCredentials
 		}
-		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
+		return "", "", nil, errctx.Wrap(err, "Login", "username", username)
 	}
 
 	if !user.IsActive {
@@ -88,15 +88,15 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 	}
 
 	if err := s.passwords.CheckPassword(user.PasswordHash, password); err != nil {
-		_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID, email, ip, false)
+		_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID, username, ip, false)
 		return "", "", nil, domain.ErrInvalidCredentials
 	}
 
-	if err := s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID, email, ip, true); err != nil {
+	if err := s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID, username, ip, true); err != nil {
 		if errors.Is(err, domain.ErrUserBlocked) || errors.Is(err, domain.ErrIPBlocked) {
 			return "", "", nil, err
 		}
-		return "", "", nil, errctx.Wrap(err, "Login", "email", email, "userID", user.ID)
+		return "", "", nil, errctx.Wrap(err, "Login", "username", username, "userID", user.ID)
 	}
 
 	access, err := utils.GenerateAccessToken(
@@ -107,7 +107,7 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 		"",
 	)
 	if err != nil {
-		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
+		return "", "", nil, errctx.Wrap(err, "Login", "username", username)
 	}
 	refresh, err := utils.GenerateRefreshToken(
 		s.cfg.JWTRefreshSecret,
@@ -115,12 +115,12 @@ func (s *authService) Login(ctx context.Context, email, password, ip string) (st
 		user.ID,
 	)
 	if err != nil {
-		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
+		return "", "", nil, errctx.Wrap(err, "Login", "username", username)
 	}
 
 	hash := sha256.Sum256([]byte(refresh))
 	if err := s.authRepo.CreateRefreshToken(ctx, user.ID, hex.EncodeToString(hash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
-		return "", "", nil, errctx.Wrap(err, "Login", "email", email)
+		return "", "", nil, errctx.Wrap(err, "Login", "username", username)
 	}
 
 	return access, refresh, user, nil

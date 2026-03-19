@@ -33,25 +33,24 @@ const (
 )
 
 type Meeting struct {
-	ID          string
-	ProjectID   *string
-	Name        string
-	Description *string
-	Type        MeetingType
-	StartTime   time.Time
-	EndTime     time.Time
-	CreatedBy   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CanceledAt  *time.Time
+	ID          string      `json:"id"`
+	ProjectID   *string     `json:"project_id,omitempty"`
+	Name        string      `json:"name"`
+	Description *string     `json:"description,omitempty"`
+	Type        MeetingType `json:"meeting_type"`
+	StartTime   time.Time   `json:"start_time"`
+	EndTime     time.Time   `json:"end_time"`
+	CreatedBy   string      `json:"created_by"`
+	CreatedAt   time.Time   `json:"-"`
+	UpdatedAt   time.Time   `json:"-"`
+	CanceledAt  *time.Time  `json:"-"`
 }
 
 type MeetingParticipant struct {
-	ID         string
-	MeetingID  string
-	UserID     string
-	Status     ParticipantStatus
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID        string            `json:"id"`
+	MeetingID string            `json:"meeting_id"`
+	UserID    string            `json:"user_id"`
+	Status    ParticipantStatus `json:"status"`
+	CreatedAt time.Time         `json:"-"`
+	UpdatedAt time.Time         `json:"-"`
 }
-

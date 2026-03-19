@@ -37,6 +37,35 @@ func (q *Queries) DeleteMemberRoles(ctx context.Context, projectMemberID uuid.UU
 	return err
 }
 
+const listMemberRoleIDs = `-- name: ListMemberRoleIDs :many
+SELECT pmr.role_id
+FROM project_member_roles pmr
+WHERE pmr.project_member_id = $1
+`
+
+func (q *Queries) ListMemberRoleIDs(ctx context.Context, projectMemberID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.QueryContext(ctx, listMemberRoleIDs, projectMemberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var role_id uuid.UUID
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMemberRoles = `-- name: ListMemberRoles :many
 
 SELECT r.name

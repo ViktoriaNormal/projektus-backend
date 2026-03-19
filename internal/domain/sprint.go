@@ -15,15 +15,15 @@ const (
 )
 
 type Sprint struct {
-	ID        uuid.UUID
-	ProjectID uuid.UUID
-	Name      string
-	Goal      *string
-	StartDate time.Time
-	EndDate   time.Time
-	Status    SprintStatus
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        uuid.UUID    `json:"id"`
+	ProjectID uuid.UUID    `json:"project_id"`
+	Name      string       `json:"name"`
+	Goal      *string      `json:"goal,omitempty"`
+	StartDate time.Time    `json:"start_date"`
+	EndDate   time.Time    `json:"end_date"`
+	Status    SprintStatus `json:"status"`
+	CreatedAt time.Time    `json:"-"`
+	UpdatedAt time.Time    `json:"-"`
 }
 
 func (s *Sprint) CalculateStatus(now time.Time) SprintStatus {
@@ -35,4 +35,3 @@ func (s *Sprint) CalculateStatus(now time.Time) SprintStatus {
 	}
 	return SprintStatusActive
 }
-

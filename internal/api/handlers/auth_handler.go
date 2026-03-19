@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -48,16 +50,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	user, err := h.auth.Register(c.Request.Context(), req.Username, req.Email, req.Password, req.FullName)
 	if err != nil {
-		if err == domain.ErrPasswordPolicy {
+		if errors.Is(err, domain.ErrPasswordPolicy) {
 			writeError(c, http.StatusBadRequest, "PASSWORD_POLICY_VIOLATION", "Пароль не соответствует политике безопасности")
 			return
 		}
+		log.Printf("[Register] error: %v", err)
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		return
 	}
 
 	writeSuccess(c, gin.H{
-		"user": user,
+		"user": mapUserToResponse(user),
 	})
 }
 
@@ -69,16 +72,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	ip := c.ClientIP()
 
-	access, refresh, user, err := h.auth.Login(c.Request.Context(), req.Email, req.Password, ip)
+	access, refresh, user, err := h.auth.Login(c.Request.Context(), req.Username, req.Password, ip)
 	if err != nil {
-		switch err {
-		case domain.ErrInvalidCredentials:
-			writeError(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Неверный email или пароль")
-		case domain.ErrUserBlocked:
+		switch {
+		case errors.Is(err, domain.ErrInvalidCredentials):
+			writeError(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Неверный логин или пароль")
+		case errors.Is(err, domain.ErrUserBlocked):
 			writeError(c, http.StatusTooManyRequests, "USER_BLOCKED", "Пользователь временно заблокирован из-за неудачных попыток входа")
-		case domain.ErrIPBlocked:
+		case errors.Is(err, domain.ErrIPBlocked):
 			writeError(c, http.StatusTooManyRequests, "IP_BLOCKED", "IP-адрес временно заблокирован из-за неудачных попыток входа")
 		default:
+			log.Printf("[Login] error: %v", err)
 			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
 		return
@@ -93,7 +97,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	writeSuccess(c, dto.AuthResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
-		User:         user,
+		User:         mapUserToResponse(user),
 	})
 }
 
@@ -106,10 +110,11 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	access, refresh, err := h.auth.Refresh(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		switch err {
-		case domain.ErrInvalidToken, domain.ErrRefreshTokenRevoked:
+		switch {
+		case errors.Is(err, domain.ErrInvalidToken), errors.Is(err, domain.ErrRefreshTokenRevoked):
 			writeError(c, http.StatusUnauthorized, "INVALID_TOKEN", "Недействительный или отозванный refresh токен")
 		default:
+			log.Printf("[Refresh] error: %v", err)
 			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
 		return
@@ -152,14 +157,15 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	}
 
 	if err := h.auth.ChangePassword(c.Request.Context(), userID, req.OldPassword, req.NewPassword); err != nil {
-		switch err {
-		case domain.ErrInvalidCredentials:
+		switch {
+		case errors.Is(err, domain.ErrInvalidCredentials):
 			writeError(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Неверный текущий пароль")
-		case domain.ErrPasswordPolicy:
+		case errors.Is(err, domain.ErrPasswordPolicy):
 			writeError(c, http.StatusBadRequest, "PASSWORD_POLICY_VIOLATION", "Пароль не соответствует политике безопасности")
-		case domain.ErrPasswordReuse:
+		case errors.Is(err, domain.ErrPasswordReuse):
 			writeError(c, http.StatusBadRequest, "PASSWORD_REUSE", "Нельзя использовать один из последних паролей")
 		default:
+			log.Printf("[ChangePassword] error: %v", err)
 			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
 		return

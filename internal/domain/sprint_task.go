@@ -7,10 +7,9 @@ import (
 )
 
 type SprintTask struct {
-	ID       uuid.UUID
-	SprintID uuid.UUID
-	TaskID   uuid.UUID
-	Order    int
-	AddedAt  time.Time
+	ID       uuid.UUID `json:"id"`
+	SprintID uuid.UUID `json:"sprint_id"`
+	TaskID   uuid.UUID `json:"task_id"`
+	Order    int       `json:"order"`
+	AddedAt  time.Time `json:"added_at"`
 }
-

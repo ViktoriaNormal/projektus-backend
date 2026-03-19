@@ -7,10 +7,9 @@ import (
 )
 
 type ProjectTemplate struct {
-	ID          uuid.UUID
-	Name        string
-	Description *string
-	Type        ProjectType
-	CreatedAt   time.Time
+	ID          uuid.UUID   `json:"id"`
+	Name        string      `json:"name"`
+	Description *string     `json:"description,omitempty"`
+	Type        ProjectType `json:"project_type"`
+	CreatedAt   time.Time   `json:"-"`
 }
-

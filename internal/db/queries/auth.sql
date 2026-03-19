@@ -23,13 +23,13 @@ WHERE user_id = $1
 -- Login attempts
 
 -- name: InsertLoginAttempt :exec
-INSERT INTO login_attempts (email, ip_address, success)
+INSERT INTO login_attempts (username, ip_address, success)
 VALUES ($1, $2, $3);
 
--- name: CountFailedAttemptsByEmailSince :one
+-- name: CountFailedAttemptsByUsernameSince :one
 SELECT COUNT(*)::INT
 FROM login_attempts
-WHERE email = $1
+WHERE username = $1
   AND success = FALSE
   AND attempted_at >= $2;
 

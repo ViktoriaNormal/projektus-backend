@@ -12,7 +12,7 @@ import (
 )
 
 const listAllUsers = `-- name: ListAllUsers :many
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
 FROM users
 WHERE ($3::boolean IS TRUE OR deleted_at IS NULL)
 ORDER BY created_at DESC
@@ -46,6 +46,7 @@ func (q *Queries) ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]U
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.Position,
 		); err != nil {
 			return nil, err
 		}

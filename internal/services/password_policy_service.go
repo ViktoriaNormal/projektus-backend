@@ -65,9 +65,13 @@ func (s *PasswordPolicyService) UpdatePolicy(ctx context.Context, req UpdatePass
 }
 
 // ValidatePassword проверяет пароль по текущей политике из БД.
+// Если политика ещё не настроена — валидация пропускается.
 func (s *PasswordPolicyService) ValidatePassword(ctx context.Context, password string) error {
 	policy, err := s.GetCurrentPolicy(ctx)
 	if err != nil {
+		if errors.Is(err, ErrNoPasswordPolicy) {
+			return nil
+		}
 		return errctx.Wrap(err, "ValidatePassword")
 	}
 	return validatePasswordAgainstPolicy(password, policy)

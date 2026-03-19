@@ -18,12 +18,11 @@ const (
 )
 
 type Project struct {
-	ID          uuid.UUID
-	Key         string
-	Name        string
-	Description *string
-	Type        ProjectType
-	OwnerID     uuid.UUID
-	Status      ProjectStatus
+	ID          uuid.UUID     `json:"id"`
+	Key         string        `json:"key"`
+	Name        string        `json:"name"`
+	Description *string       `json:"description,omitempty"`
+	Type        ProjectType   `json:"project_type"`
+	OwnerID     uuid.UUID     `json:"owner_id"`
+	Status      ProjectStatus `json:"status"`
 }
-

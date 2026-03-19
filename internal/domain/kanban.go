@@ -29,24 +29,23 @@ const (
 )
 
 type SwimlaneConfig struct {
-	BoardID       uuid.UUID
-	SourceType    SwimlaneSourceType
-	CustomFieldID *uuid.UUID
-	ValueMappings map[string]string
+	BoardID       uuid.UUID          `json:"board_id"`
+	SourceType    SwimlaneSourceType `json:"source_type"`
+	CustomFieldID *uuid.UUID         `json:"custom_field_id,omitempty"`
+	ValueMappings map[string]string  `json:"value_mappings,omitempty"`
 }
 
 type WipLimit struct {
-	BoardID   uuid.UUID
-	ColumnID  *uuid.UUID
-	SwimlaneID *uuid.UUID
-	Limit     *int
+	BoardID    uuid.UUID  `json:"board_id"`
+	ColumnID   *uuid.UUID `json:"column_id,omitempty"`
+	SwimlaneID *uuid.UUID `json:"swimlane_id,omitempty"`
+	Limit      *int       `json:"limit,omitempty"`
 }
 
 type WipCount struct {
-	BoardID   uuid.UUID
-	ColumnID  *uuid.UUID
-	SwimlaneID *uuid.UUID
-	Count     int
-	Limit     *int
+	BoardID    uuid.UUID  `json:"board_id"`
+	ColumnID   *uuid.UUID `json:"column_id,omitempty"`
+	SwimlaneID *uuid.UUID `json:"swimlane_id,omitempty"`
+	Count      int        `json:"count"`
+	Limit      *int       `json:"limit,omitempty"`
 }
-

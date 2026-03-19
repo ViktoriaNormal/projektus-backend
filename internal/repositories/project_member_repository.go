@@ -11,12 +11,21 @@ import (
 	"projektus-backend/internal/domain"
 )
 
+type ProjectMemberWithProject struct {
+	MemberID    uuid.UUID
+	ProjectID   uuid.UUID
+	ProjectName string
+	Roles       []string
+	RoleIDs     []uuid.UUID
+}
+
 type ProjectMemberRepository interface {
 	ListByProject(ctx context.Context, projectID uuid.UUID) ([]domain.ProjectMember, error)
 	AddMember(ctx context.Context, projectID, userID uuid.UUID) (*domain.ProjectMember, error)
 	RemoveMember(ctx context.Context, memberID uuid.UUID) error
 	GetByID(ctx context.Context, memberID uuid.UUID) (*domain.ProjectMember, error)
 	ReplaceMemberRoles(ctx context.Context, memberID uuid.UUID, roleIDs []uuid.UUID) error
+	ListByUser(ctx context.Context, userID uuid.UUID) ([]ProjectMemberWithProject, error)
 }
 
 type projectMemberRepository struct {
@@ -91,6 +100,32 @@ func (r *projectMemberRepository) GetByID(ctx context.Context, memberID uuid.UUI
 		UserID:    row.UserID,
 		Roles:     roleNames,
 	}, nil
+}
+
+func (r *projectMemberRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]ProjectMemberWithProject, error) {
+	rows, err := r.q.ListProjectMembersByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ProjectMemberWithProject, 0, len(rows))
+	for _, row := range rows {
+		roleNames, err := r.q.ListMemberRoles(ctx, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		roleIDs, err := r.q.ListMemberRoleIDs(ctx, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, ProjectMemberWithProject{
+			MemberID:    row.ID,
+			ProjectID:   row.ProjectID,
+			ProjectName: row.ProjectName,
+			Roles:       roleNames,
+			RoleIDs:     roleIDs,
+		})
+	}
+	return result, nil
 }
 
 func (r *projectMemberRepository) ReplaceMemberRoles(ctx context.Context, memberID uuid.UUID, roleIDs []uuid.UUID) error {
