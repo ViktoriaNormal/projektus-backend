@@ -27,6 +27,7 @@ type RoleRepository interface {
 	ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]domain.Permission, error)
 	AddPermissionToRole(ctx context.Context, roleID, permissionID uuid.UUID) error
 	RemovePermissionFromRole(ctx context.Context, roleID, permissionID uuid.UUID) error
+	RemoveAllPermissionsFromRole(ctx context.Context, roleID uuid.UUID) error
 
 	ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error)
 	AssignRoleToUser(ctx context.Context, roleID, userID uuid.UUID) error
@@ -216,6 +217,10 @@ func (r *roleRepository) RemovePermissionFromRole(ctx context.Context, roleID, p
 		RoleID:       roleID,
 		PermissionID: permissionID,
 	})
+}
+
+func (r *roleRepository) RemoveAllPermissionsFromRole(ctx context.Context, roleID uuid.UUID) error {
+	return r.q.RemoveAllPermissionsFromRole(ctx, roleID)
 }
 
 func (r *roleRepository) ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error) {

@@ -151,6 +151,16 @@ func (q *Queries) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]
 	return items, nil
 }
 
+const removeAllPermissionsFromRole = `-- name: RemoveAllPermissionsFromRole :exec
+DELETE FROM role_permissions
+WHERE role_id = $1
+`
+
+func (q *Queries) RemoveAllPermissionsFromRole(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, removeAllPermissionsFromRole, roleID)
+	return err
+}
+
 const removePermissionFromRole = `-- name: RemovePermissionFromRole :exec
 DELETE FROM role_permissions
 WHERE role_id = $1 AND permission_id = $2

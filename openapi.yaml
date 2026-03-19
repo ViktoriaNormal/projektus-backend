@@ -751,6 +751,13 @@ components:
         inEmail:               { type: boolean }
         reminderOffsetMinutes: { type: integer, nullable: true }
 
+    # ── Permissions ─────────────────────────────────────────────────
+    PermissionResponse:
+      type: object
+      properties:
+        key:         { type: string, example: system.roles.manage }
+        description: { type: string, example: Управление ролями }
+
     # ── Roles ────────────────────────────────────────────────────────
     RoleResponse:
       type: object
@@ -774,6 +781,14 @@ components:
       properties:
         name:        { type: string }
         description: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: >
+            Массив кодов системных разрешений. Доступные:
+            system.roles.manage, system.users.manage, system.password_policy.manage,
+            system.project_templates.manage, system.projects.view_all, system.projects.create,
+            system.projects.delete, system.projects.archive, system.projects.edit_all
 
     UpdateRoleRequest:
       type: object
@@ -781,6 +796,12 @@ components:
       properties:
         name:        { type: string }
         description: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: >
+            Если передан — полностью заменяет текущие permissions роли.
+            Если не передан (null/отсутствует) — permissions не изменяются.
 
     AssignRolesRequest:
       type: object
@@ -834,17 +855,6 @@ components:
         requireUppercase: { type: boolean }
         requireSpecial:   { type: boolean }
         notes:            { type: string, nullable: true }
-
-    AuditLogEntryResponse:
-      type: object
-      properties:
-        id:         { type: string, format: uuid }
-        userId:     { type: string, format: uuid }
-        actionType: { type: string }
-        entityType: { type: string, nullable: true }
-        entityId:   { type: string, format: uuid, nullable: true }
-        createdAt:  { type: string, format: date-time }
-        metadata:   { type: object, nullable: true }
 
     ProjectTemplateResponse:
       type: object
@@ -999,6 +1009,30 @@ paths:
           description: "PASSWORD_POLICY_VIOLATION или PASSWORD_REUSE"
         '401':
           description: "INVALID_CREDENTIALS — неверный текущий пароль"
+
+  # ── Permissions ───────────────────────────────────────────────────
+  /v1/permissions:
+    get:
+      tags: [Admin]
+      summary: Каталог всех системных разрешений
+      description: >
+        Возвращает полный список доступных системных разрешений с описаниями.
+        Доступен всем авторизованным пользователям (используется на странице профиля и в модалке ролей).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список разрешений
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PermissionResponse' }
 
   # ── Users ──────────────────────────────────────────────────────────
   /v1/users:
@@ -2923,6 +2957,7 @@ paths:
     get:
       tags: [Admin]
       summary: Список системных ролей
+      description: "Требует разрешение: system.roles.manage"
       security:
         - bearerAuth: []
       responses:
@@ -2941,6 +2976,7 @@ paths:
     post:
       tags: [Admin]
       summary: Создать системную роль
+      description: "Требует разрешение: system.roles.manage"
       security:
         - bearerAuth: []
       requestBody:
@@ -2989,6 +3025,7 @@ paths:
     delete:
       tags: [Admin]
       summary: Удалить роль
+      description: "Требует разрешение: system.roles.manage. Роль «Админ» не может быть удалена."
       security:
         - bearerAuth: []
       parameters:
@@ -2996,11 +3033,14 @@ paths:
       responses:
         '200':
           description: Роль удалена
+        '403':
+          description: "FORBIDDEN — нельзя удалить системную роль администратора"
 
   /v1/admin/users:
     get:
       tags: [Admin]
       summary: Список всех пользователей
+      description: "Требует разрешение: system.users.manage"
       security:
         - bearerAuth: []
       responses:
@@ -3019,6 +3059,7 @@ paths:
     post:
       tags: [Admin]
       summary: Создать пользователя (администратором)
+      description: "Требует разрешение: system.users.manage"
       security:
         - bearerAuth: []
       requestBody:
@@ -3097,6 +3138,7 @@ paths:
     get:
       tags: [Admin]
       summary: Текущая парольная политика
+      description: "Требует разрешение: system.password_policy.manage"
       security:
         - bearerAuth: []
       responses:
@@ -3113,6 +3155,7 @@ paths:
     put:
       tags: [Admin]
       summary: Обновить парольную политику
+      description: "Требует разрешение: system.password_policy.manage"
       security:
         - bearerAuth: []
       requestBody:
@@ -3124,30 +3167,11 @@ paths:
         '200':
           description: Политика обновлена
 
-  /v1/admin/logs:
-    get:
-      tags: [Admin]
-      summary: Журнал аудита
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Записи журнала
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/APIResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items: { $ref: '#/components/schemas/AuditLogEntryResponse' }
-
   /v1/admin/project-templates:
     get:
       tags: [Admin]
       summary: Список шаблонов проектов
+      description: "Требует разрешение: system.project_templates.manage"
       security:
         - bearerAuth: []
       responses:
@@ -3166,6 +3190,7 @@ paths:
     post:
       tags: [Admin]
       summary: Создать шаблон проекта
+      description: "Требует разрешение: system.project_templates.manage"
       security:
         - bearerAuth: []
       requestBody:

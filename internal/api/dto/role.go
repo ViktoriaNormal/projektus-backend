@@ -10,12 +10,19 @@ type RoleResponse struct {
 }
 
 type CreateRoleRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
+	Name        string   `json:"name" binding:"required"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
 }
 
 type UpdateRoleRequest struct {
-	Name        string `json:"name" binding:"required"`
+	Name        string   `json:"name" binding:"required"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+}
+
+type PermissionResponse struct {
+	Key         string `json:"key"`
 	Description string `json:"description"`
 }
 

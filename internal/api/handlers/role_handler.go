@@ -32,6 +32,24 @@ func (h *RoleHandler) mapRoleToResponse(c *gin.Context, r domain.Role) dto.RoleR
 	}
 }
 
+func (h *RoleHandler) ListPermissions(c *gin.Context) {
+	perms, err := h.roleService.ListPermissions(c.Request.Context())
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список разрешений")
+		return
+	}
+
+	resp := make([]dto.PermissionResponse, 0, len(perms))
+	for _, p := range perms {
+		resp = append(resp, dto.PermissionResponse{
+			Key:         p.Code,
+			Description: p.Description,
+		})
+	}
+
+	writeSuccess(c, resp)
+}
+
 func (h *RoleHandler) ListSystemRoles(c *gin.Context) {
 	roles, err := h.roleService.ListSystemRoles(c.Request.Context())
 	if err != nil {
@@ -75,7 +93,7 @@ func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.roleService.CreateSystemRole(c.Request.Context(), req.Name, req.Description)
+	role, err := h.roleService.CreateSystemRole(c.Request.Context(), req.Name, req.Description, req.Permissions)
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя роли обязательно")
@@ -102,7 +120,7 @@ func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.roleService.UpdateSystemRole(c.Request.Context(), id, req.Name, req.Description)
+	role, err := h.roleService.UpdateSystemRole(c.Request.Context(), id, req.Name, req.Description, req.Permissions)
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя роли обязательно")
@@ -128,6 +146,14 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 	}
 
 	if err := h.roleService.DeleteSystemRole(c.Request.Context(), id); err != nil {
+		if err == domain.ErrForbidden {
+			writeError(c, http.StatusForbidden, "FORBIDDEN", "Нельзя удалить системную роль администратора")
+			return
+		}
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить роль")
 		return
 	}

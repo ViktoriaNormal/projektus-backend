@@ -14,13 +14,12 @@ import (
 )
 
 type AuthHandler struct {
-	auth     services.AuthService
-	auditLog *services.AuditLogService
-	roleSvc  *services.RoleService
+	auth    services.AuthService
+	roleSvc *services.RoleService
 }
 
-func NewAuthHandler(auth services.AuthService, auditLog *services.AuditLogService, roleSvc *services.RoleService) *AuthHandler {
-	return &AuthHandler{auth: auth, auditLog: auditLog, roleSvc: roleSvc}
+func NewAuthHandler(auth services.AuthService, roleSvc *services.RoleService) *AuthHandler {
+	return &AuthHandler{auth: auth, roleSvc: roleSvc}
 }
 
 func writeError(c *gin.Context, status int, code, message string) {
@@ -90,10 +89,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	uid, _ := uuid.Parse(user.ID)
-
-	if h.auditLog != nil {
-		_ = h.auditLog.Log(c.Request.Context(), uid, "auth.login", "user", &uid, map[string]string{"ip": ip})
-	}
 
 	// Подтягиваем системные роли с permissions
 	var roleResponses []dto.RoleResponse
@@ -189,11 +184,6 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
 		return
-	}
-	if h.auditLog != nil {
-		if uid, err := uuid.Parse(userID); err == nil {
-			_ = h.auditLog.Log(c.Request.Context(), uid, "auth.password.change", "user", &uid, nil)
-		}
 	}
 	writeSuccess(c, gin.H{
 		"message": "Пароль успешно изменен",

@@ -10,7 +10,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, notificationHandler *handlers.NotificationHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, kanbanAnalyticsHandler *handlers.KanbanAnalyticsHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, adminAuditLogHandler *handlers.AdminAuditLogHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, notificationHandler *handlers.NotificationHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, kanbanAnalyticsHandler *handlers.KanbanAnalyticsHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	// Раздача статических файлов (аватары, вложения)
@@ -18,6 +18,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.CORSMiddleware(cfg))
+	v1.Use(middleware.AuditFileLogger("audit.log"))
 	{
 		auth := v1.Group("/auth")
 		{
@@ -32,6 +33,12 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			{
 				protected.POST("/change-password", authHandler.ChangePassword)
 			}
+		}
+
+		permissions := v1.Group("/permissions")
+		permissions.Use(middleware.AuthMiddleware(cfg))
+		{
+			permissions.GET("", roleHandler.ListPermissions)
 		}
 
 		users := v1.Group("/users")
@@ -187,13 +194,11 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 		}
 
 		admin := v1.Group("/admin")
-		admin.Use(middleware.AuthMiddleware(cfg), middleware.RequireSystemPermission(services.SystemPermissionManageRoles, permissionSvc))
+		admin.Use(middleware.AuthMiddleware(cfg))
 		{
-			admin.GET("/password-policy", adminPasswordPolicyHandler.GetPasswordPolicy)
-			admin.PUT("/password-policy", adminPasswordPolicyHandler.UpdatePasswordPolicy)
-			admin.GET("/logs", adminAuditLogHandler.GetLogs)
-
+			// Roles — require system.roles.manage
 			roles := admin.Group("/roles")
+			roles.Use(middleware.RequireSystemPermission(services.SystemPermissionManageRoles, permissionSvc))
 			{
 				roles.GET("", roleHandler.ListSystemRoles)
 				roles.POST("", roleHandler.CreateSystemRole)
@@ -202,7 +207,9 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 				roles.DELETE("/:roleId", roleHandler.DeleteRole)
 			}
 
+			// Users — require system.users.manage
 			adminUsers := admin.Group("/users")
+			adminUsers.Use(middleware.RequireSystemPermission(services.SystemPermissionManageUsers, permissionSvc))
 			{
 				adminUsers.GET("", adminUserHandler.ListUsers)
 				adminUsers.POST("", adminUserHandler.CreateUser)
@@ -211,7 +218,17 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 				adminUsers.POST("/:userId/roles", roleHandler.AssignUserRoles)
 			}
 
+			// Password policy — require system.password_policy.manage
+			passwordPolicy := admin.Group("/password-policy")
+			passwordPolicy.Use(middleware.RequireSystemPermission(services.SystemPermissionManagePasswordPolicy, permissionSvc))
+			{
+				passwordPolicy.GET("", adminPasswordPolicyHandler.GetPasswordPolicy)
+				passwordPolicy.PUT("", adminPasswordPolicyHandler.UpdatePasswordPolicy)
+			}
+
+			// Project templates — require system.project_templates.manage
 			templates := admin.Group("/project-templates")
+			templates.Use(middleware.RequireSystemPermission(services.SystemPermissionManageTemplates, permissionSvc))
 			{
 				templates.GET("", templateHandler.ListTemplates)
 				templates.POST("", templateHandler.CreateTemplate)

@@ -35,3 +35,7 @@ ON CONFLICT DO NOTHING;
 DELETE FROM role_permissions
 WHERE role_id = $1 AND permission_id = $2;
 
+-- name: RemoveAllPermissionsFromRole :exec
+DELETE FROM role_permissions
+WHERE role_id = $1;
+

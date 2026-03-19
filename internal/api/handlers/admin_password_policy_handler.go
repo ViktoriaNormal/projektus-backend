@@ -14,11 +14,10 @@ import (
 
 type AdminPasswordPolicyHandler struct {
 	policySvc *services.PasswordPolicyService
-	auditLog  *services.AuditLogService
 }
 
-func NewAdminPasswordPolicyHandler(policySvc *services.PasswordPolicyService, auditLog *services.AuditLogService) *AdminPasswordPolicyHandler {
-	return &AdminPasswordPolicyHandler{policySvc: policySvc, auditLog: auditLog}
+func NewAdminPasswordPolicyHandler(policySvc *services.PasswordPolicyService) *AdminPasswordPolicyHandler {
+	return &AdminPasswordPolicyHandler{policySvc: policySvc}
 }
 
 // GetPasswordPolicy GET /admin/password-policy — текущая парольная политика.
@@ -119,9 +118,6 @@ func (h *AdminPasswordPolicyHandler) UpdatePasswordPolicy(c *gin.Context) {
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить политику паролей")
 		return
-	}
-	if h.auditLog != nil {
-		_ = h.auditLog.Log(c.Request.Context(), userID, "admin.password_policy.update", "password_policy", nil, nil)
 	}
 	resp := dto.PasswordPolicyResponse{
 		MinLength:        updated.MinLength,

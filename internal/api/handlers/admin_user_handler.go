@@ -15,11 +15,10 @@ import (
 
 type AdminUserHandler struct {
 	adminUserSvc *services.AdminUserService
-	auditLog     *services.AuditLogService
 }
 
-func NewAdminUserHandler(adminUserSvc *services.AdminUserService, auditLog *services.AuditLogService) *AdminUserHandler {
-	return &AdminUserHandler{adminUserSvc: adminUserSvc, auditLog: auditLog}
+func NewAdminUserHandler(adminUserSvc *services.AdminUserService) *AdminUserHandler {
+	return &AdminUserHandler{adminUserSvc: adminUserSvc}
 }
 
 // ListUsers GET /admin/users — список всех пользователей с пагинацией.
@@ -87,15 +86,6 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать пользователя")
 		return
 	}
-	if h.auditLog != nil {
-		if adminIDStr := c.GetString("userID"); adminIDStr != "" {
-			if adminID, err := uuid.Parse(adminIDStr); err == nil {
-				if createdID, err := uuid.Parse(user.ID); err == nil {
-					_ = h.auditLog.Log(c.Request.Context(), adminID, "admin.user.create", "user", &createdID, nil)
-				}
-			}
-		}
-	}
 	c.JSON(http.StatusCreated, dto.APIResponse{
 		Success: true,
 		Data: dto.AdminUserResponse{
@@ -141,9 +131,6 @@ func (h *AdminUserHandler) DeleteUser(c *gin.Context) {
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить пользователя")
 		return
-	}
-	if h.auditLog != nil {
-		_ = h.auditLog.Log(c.Request.Context(), currentID, "admin.user.delete", "user", &targetID, nil)
 	}
 	c.Status(http.StatusNoContent)
 }
