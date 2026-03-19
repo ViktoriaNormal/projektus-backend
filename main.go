@@ -66,7 +66,7 @@ func main() {
 	rateLimitSvc := services.NewRateLimitService(cfg, authRepo)
 	authSvc := services.NewAuthService(cfg, userRepo, authRepo, passwordSvc, passwordPolicySvc, rateLimitSvc, roleSvc)
 
-	authHandler := handlers.NewAuthHandler(authSvc, auditLogSvc)
+	authHandler := handlers.NewAuthHandler(authSvc, auditLogSvc, roleSvc)
 	userSvc := services.NewUserService(userRepo)
 	userHandler := handlers.NewUserHandler(userSvc, projectMemberRepo, roleRepo)
 	notificationSvc := services.NewNotificationService(notificationRepo)

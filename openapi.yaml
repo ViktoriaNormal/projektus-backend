@@ -140,6 +140,10 @@ components:
         refresh_token: { type: string }
         user:
           $ref: '#/components/schemas/UserResponse'
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/RoleResponse' }
+          description: Системные роли пользователя с permissions
 
     # ── Users ────────────────────────────────────────────────────────
     UserResponse:

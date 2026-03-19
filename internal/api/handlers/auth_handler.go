@@ -14,12 +14,13 @@ import (
 )
 
 type AuthHandler struct {
-	auth      services.AuthService
-	auditLog  *services.AuditLogService
+	auth     services.AuthService
+	auditLog *services.AuditLogService
+	roleSvc  *services.RoleService
 }
 
-func NewAuthHandler(auth services.AuthService, auditLog *services.AuditLogService) *AuthHandler {
-	return &AuthHandler{auth: auth, auditLog: auditLog}
+func NewAuthHandler(auth services.AuthService, auditLog *services.AuditLogService, roleSvc *services.RoleService) *AuthHandler {
+	return &AuthHandler{auth: auth, auditLog: auditLog, roleSvc: roleSvc}
 }
 
 func writeError(c *gin.Context, status int, code, message string) {
@@ -88,16 +89,35 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	uid, _ := uuid.Parse(user.ID)
+
 	if h.auditLog != nil {
-		if uid, err := uuid.Parse(user.ID); err == nil {
-			_ = h.auditLog.Log(c.Request.Context(), uid, "auth.login", "user", &uid, map[string]string{"ip": ip})
+		_ = h.auditLog.Log(c.Request.Context(), uid, "auth.login", "user", &uid, map[string]string{"ip": ip})
+	}
+
+	// Подтягиваем системные роли с permissions
+	var roleResponses []dto.RoleResponse
+	if roles, err := h.roleSvc.GetUserSystemRoles(c.Request.Context(), uid); err == nil {
+		roleResponses = make([]dto.RoleResponse, 0, len(roles))
+		for _, r := range roles {
+			perms, _ := h.roleSvc.GetRolePermissions(c.Request.Context(), r.ID)
+			if perms == nil {
+				perms = []string{}
+			}
+			roleResponses = append(roleResponses, dto.RoleResponse{
+				ID:          r.ID,
+				Name:        r.Name,
+				Description: r.Description,
+				Permissions: perms,
+			})
 		}
 	}
-	// Пока возвращаем только токены и пользователя, без явного списка ролей.
+
 	writeSuccess(c, dto.AuthResponse{
 		AccessToken:  access,
 		RefreshToken: refresh,
 		User:         mapUserToResponse(user),
+		Roles:        roleResponses,
 	})
 }
 
