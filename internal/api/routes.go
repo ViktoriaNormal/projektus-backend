@@ -213,9 +213,9 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			{
 				adminUsers.GET("", adminUserHandler.ListUsers)
 				adminUsers.POST("", adminUserHandler.CreateUser)
+				adminUsers.GET("/:id", adminUserHandler.GetUser)
+				adminUsers.PUT("/:id", adminUserHandler.UpdateUser)
 				adminUsers.DELETE("/:id", adminUserHandler.DeleteUser)
-				adminUsers.GET("/:userId/roles", roleHandler.GetUserRoles)
-				adminUsers.POST("/:userId/roles", roleHandler.AssignUserRoles)
 			}
 
 			// Password policy — require system.password_policy.manage

@@ -47,20 +47,35 @@ func (h *AdminUserHandler) ListUsers(c *gin.Context) {
 
 	resp := make([]dto.AdminUserResponse, 0, len(users))
 	for _, u := range users {
-		resp = append(resp, dto.AdminUserResponse{
-			ID:        u.ID,
-			Username:  u.Username,
-			Email:     u.Email,
-			FullName:  u.FullName,
-			IsActive:  u.IsActive,
-			CreatedAt: u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
+		resp = append(resp, mapAdminUserToResponse(u))
 	}
 
 	writeSuccess(c, gin.H{
 		"users": resp,
 		"total": total,
 	})
+}
+
+// GetUser GET /admin/users/:id — получение пользователя по ID.
+func (h *AdminUserHandler) GetUser(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пользователя")
+		return
+	}
+
+	user, err := h.adminUserSvc.GetUser(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить пользователя")
+		return
+	}
+
+	writeSuccess(c, mapAdminUserToResponse(*user))
 }
 
 // CreateUser POST /admin/users — создание пользователя с начальным паролем.
@@ -72,11 +87,13 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 	}
 
 	user, err := h.adminUserSvc.CreateUser(c.Request.Context(), services.AdminCreateUserRequest{
-		Username:        req.Username,
-		Email:           req.Email,
-		FullName:        req.FullName,
-		InitialPassword: req.InitialPassword,
-		SystemRoleIDs:   req.SystemRoles,
+		Username:      req.Username,
+		Email:         req.Email,
+		FullName:      req.FullName,
+		Position:      req.Position,
+		Password:      req.Password,
+		IsActive:      req.IsActive,
+		SystemRoleIDs: req.RoleIDs,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrPasswordPolicy) {
@@ -88,16 +105,44 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, dto.APIResponse{
 		Success: true,
-		Data: dto.AdminUserResponse{
-			ID:        user.ID,
-			Username:  user.Username,
-			Email:     user.Email,
-			FullName:  user.FullName,
-			IsActive:  user.IsActive,
-			CreatedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		},
-		Error: nil,
+		Data:    mapAdminUserToResponse(*user),
+		Error:   nil,
 	})
+}
+
+// UpdateUser PUT /admin/users/:id — обновление данных пользователя.
+func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пользователя")
+		return
+	}
+
+	var req dto.AdminUpdateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+		return
+	}
+
+	user, err := h.adminUserSvc.UpdateUser(c.Request.Context(), userID, services.AdminUpdateUserRequest{
+		Username: req.Username,
+		Email:    req.Email,
+		FullName: req.FullName,
+		Position: req.Position,
+		IsActive: req.IsActive,
+		RoleIDs:  req.RoleIDs,
+	})
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить пользователя")
+		return
+	}
+
+	writeSuccess(c, mapAdminUserToResponse(*user))
 }
 
 // DeleteUser DELETE /admin/users/:id — мягкое удаление пользователя.
@@ -133,4 +178,25 @@ func (h *AdminUserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func mapAdminUserToResponse(u services.AdminUserWithRoles) dto.AdminUserResponse {
+	roles := make([]dto.AdminRoleResponse, 0, len(u.Roles))
+	for _, r := range u.Roles {
+		roles = append(roles, dto.AdminRoleResponse{
+			ID:   r.ID.String(),
+			Name: r.Name,
+		})
+	}
+	return dto.AdminUserResponse{
+		ID:        u.User.ID,
+		Username:  u.User.Username,
+		Email:     u.User.Email,
+		FullName:  u.User.FullName,
+		AvatarURL: u.User.AvatarURL,
+		Position:  u.User.Position,
+		IsActive:  u.User.IsActive,
+		Roles:     roles,
+		CreatedAt: u.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
 }

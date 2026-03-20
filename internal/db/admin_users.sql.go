@@ -7,9 +7,131 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
+
+const adminCreateUser = `-- name: AdminCreateUser :one
+INSERT INTO users (username, email, password_hash, full_name, avatar_url, position, is_active)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
+`
+
+type AdminCreateUserParams struct {
+	Username     string         `json:"username"`
+	Email        string         `json:"email"`
+	PasswordHash string         `json:"password_hash"`
+	FullName     string         `json:"full_name"`
+	AvatarUrl    sql.NullString `json:"avatar_url"`
+	Position     sql.NullString `json:"position"`
+	IsActive     bool           `json:"is_active"`
+}
+
+// Admin: create user with position
+func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, adminCreateUser,
+		arg.Username,
+		arg.Email,
+		arg.PasswordHash,
+		arg.FullName,
+		arg.AvatarUrl,
+		arg.Position,
+		arg.IsActive,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FullName,
+		&i.AvatarUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Position,
+	)
+	return i, err
+}
+
+const adminGetUserByID = `-- name: AdminGetUserByID :one
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position FROM users
+WHERE id = $1
+`
+
+// Admin: get user by ID (including deleted)
+func (q *Queries) AdminGetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRowContext(ctx, adminGetUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FullName,
+		&i.AvatarUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Position,
+	)
+	return i, err
+}
+
+const adminUpdateUser = `-- name: AdminUpdateUser :one
+UPDATE users
+SET username   = COALESCE(NULLIF($1::text, ''), username),
+    email      = COALESCE(NULLIF($2::text, ''), email),
+    full_name  = COALESCE(NULLIF($3::text, ''), full_name),
+    position   = CASE WHEN $4::boolean THEN $5 ELSE position END,
+    is_active  = CASE WHEN $6::boolean THEN $7::boolean ELSE is_active END,
+    updated_at = NOW()
+WHERE id = $8
+RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
+`
+
+type AdminUpdateUserParams struct {
+	Username    string         `json:"username"`
+	Email       string         `json:"email"`
+	FullName    string         `json:"full_name"`
+	SetPosition bool           `json:"set_position"`
+	Position    sql.NullString `json:"position"`
+	SetIsActive bool           `json:"set_is_active"`
+	IsActive    bool           `json:"is_active"`
+	ID          uuid.UUID      `json:"id"`
+}
+
+// Admin: update user fields
+func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, adminUpdateUser,
+		arg.Username,
+		arg.Email,
+		arg.FullName,
+		arg.SetPosition,
+		arg.Position,
+		arg.SetIsActive,
+		arg.IsActive,
+		arg.ID,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FullName,
+		&i.AvatarUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Position,
+	)
+	return i, err
+}
 
 const listAllUsers = `-- name: ListAllUsers :many
 SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
