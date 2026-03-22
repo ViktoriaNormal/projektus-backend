@@ -41,6 +41,7 @@ type TemplateBoardColumn struct {
 	WipLimit   *int32    `json:"wip_limit"`
 	Order      int32     `json:"order"`
 	IsLocked   bool      `json:"is_locked"`
+	Note       *string   `json:"note"`
 }
 
 type TemplateBoardSwimlane struct {
@@ -50,6 +51,7 @@ type TemplateBoardSwimlane struct {
 	Value    string    `json:"value"`
 	WipLimit *int32    `json:"wip_limit"`
 	Order    int32     `json:"order"`
+	Note     *string   `json:"note"`
 }
 
 type TemplateBoardPriorityValue struct {

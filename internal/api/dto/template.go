@@ -50,6 +50,7 @@ type TemplateBoardColumnResponse struct {
 	WipLimit   *int32    `json:"wipLimit"`
 	Order      int32     `json:"order"`
 	IsLocked   bool      `json:"isLocked"`
+	Note       *string   `json:"note"`
 }
 
 type TemplateBoardSwimlaneResponse struct {
@@ -57,6 +58,7 @@ type TemplateBoardSwimlaneResponse struct {
 	Name     string    `json:"name"`
 	WipLimit *int32    `json:"wipLimit"`
 	Order    int32     `json:"order"`
+	Note     *string   `json:"note"`
 }
 
 type TemplateBoardPriorityValueResponse struct {
@@ -144,20 +146,23 @@ type ReorderFieldsRequest struct {
 }
 
 type CreateTemplateBoardColumnRequest struct {
-	Name       string `json:"name" binding:"required"`
-	SystemType string `json:"systemType" binding:"required,oneof=initial in_progress completed"`
-	WipLimit   *int32 `json:"wipLimit"`
-	Order      int32  `json:"order"`
+	Name       string  `json:"name" binding:"required"`
+	SystemType string  `json:"systemType" binding:"required,oneof=initial in_progress completed"`
+	WipLimit   *int32  `json:"wipLimit"`
+	Order      int32   `json:"order"`
+	Note       *string `json:"note"`
 }
 
 type UpdateTemplateBoardColumnRequest struct {
 	Name       *string `json:"name"`
 	SystemType *string `json:"systemType"`
 	WipLimit   *int32  `json:"wipLimit"`
+	Note       *string `json:"note"`
 }
 
 type UpdateTemplateBoardSwimlaneRequest struct {
-	WipLimit *int32 `json:"wipLimit"`
+	WipLimit *int32  `json:"wipLimit"`
+	Note     *string `json:"note"`
 }
 
 type PriorityValueItem struct {

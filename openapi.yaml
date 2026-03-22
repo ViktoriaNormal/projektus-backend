@@ -964,6 +964,7 @@ components:
         wipLimit:   { type: integer, nullable: true }
         order:      { type: integer }
         isLocked:   { type: boolean }
+        note:       { type: string, nullable: true }
 
     TemplateBoardSwimlaneResponse:
       type: object
@@ -972,6 +973,7 @@ components:
         name:     { type: string }
         wipLimit: { type: integer, nullable: true }
         order:    { type: integer }
+        note:     { type: string, nullable: true }
 
     TemplateBoardPriorityValueResponse:
       type: object
@@ -1035,6 +1037,7 @@ components:
         systemType: { type: string, enum: [initial, in_progress, completed] }
         wipLimit:   { type: integer, nullable: true }
         order:      { type: integer }
+        note:       { type: string, nullable: true }
 
     UpdateTemplateBoardColumnRequest:
       type: object
@@ -1042,11 +1045,13 @@ components:
         name:       { type: string }
         systemType: { type: string, enum: [initial, in_progress, completed] }
         wipLimit:   { type: integer, nullable: true }
+        note:       { type: string, nullable: true }
 
     UpdateTemplateBoardSwimlaneRequest:
       type: object
       properties:
         wipLimit: { type: integer, nullable: true }
+        note:     { type: string, nullable: true }
 
     PriorityValueItem:
       type: object

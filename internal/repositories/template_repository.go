@@ -45,7 +45,7 @@ type TemplateRepository interface {
 	ListSwimlanes(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardSwimlane, error)
 	GetSwimlaneByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardSwimlane, error)
 	CreateSwimlane(ctx context.Context, params db.CreateTemplateBoardSwimlaneParams) (db.TemplateBoardSwimlane, error)
-	UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt32) (db.TemplateBoardSwimlane, error)
+	UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt32, note string) (db.TemplateBoardSwimlane, error)
 	DeleteSwimlane(ctx context.Context, id uuid.UUID) error
 	DeleteSwimlanesByBoardID(ctx context.Context, boardID uuid.UUID) error
 	UpdateSwimlaneOrder(ctx context.Context, id uuid.UUID, order int32) error
@@ -223,8 +223,8 @@ func (r *templateRepository) CreateSwimlane(ctx context.Context, params db.Creat
 	return r.q.CreateTemplateBoardSwimlane(ctx, params)
 }
 
-func (r *templateRepository) UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt32) (db.TemplateBoardSwimlane, error) {
-	return r.q.UpdateTemplateBoardSwimlane(ctx, db.UpdateTemplateBoardSwimlaneParams{ID: id, WipLimit: wipLimit})
+func (r *templateRepository) UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt32, note string) (db.TemplateBoardSwimlane, error) {
+	return r.q.UpdateTemplateBoardSwimlane(ctx, db.UpdateTemplateBoardSwimlaneParams{ID: id, WipLimit: wipLimit, Note: note})
 }
 
 func (r *templateRepository) DeleteSwimlane(ctx context.Context, id uuid.UUID) error {

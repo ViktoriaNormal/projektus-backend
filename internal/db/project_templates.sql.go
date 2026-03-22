@@ -95,9 +95,9 @@ func (q *Queries) CreateTemplateBoard(ctx context.Context, arg CreateTemplateBoa
 }
 
 const createTemplateBoardColumn = `-- name: CreateTemplateBoardColumn :one
-INSERT INTO template_board_columns (board_id, name, system_type, wip_limit, "order", is_locked)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked
+INSERT INTO template_board_columns (board_id, name, system_type, wip_limit, "order", is_locked, note)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked, note
 `
 
 type CreateTemplateBoardColumnParams struct {
@@ -107,6 +107,7 @@ type CreateTemplateBoardColumnParams struct {
 	WipLimit   sql.NullInt32 `json:"wip_limit"`
 	Order      int32         `json:"order"`
 	IsLocked   bool          `json:"is_locked"`
+	Note       string        `json:"note"`
 }
 
 func (q *Queries) CreateTemplateBoardColumn(ctx context.Context, arg CreateTemplateBoardColumnParams) (TemplateBoardColumn, error) {
@@ -117,6 +118,7 @@ func (q *Queries) CreateTemplateBoardColumn(ctx context.Context, arg CreateTempl
 		arg.WipLimit,
 		arg.Order,
 		arg.IsLocked,
+		arg.Note,
 	)
 	var i TemplateBoardColumn
 	err := row.Scan(
@@ -127,6 +129,7 @@ func (q *Queries) CreateTemplateBoardColumn(ctx context.Context, arg CreateTempl
 		&i.WipLimit,
 		&i.Order,
 		&i.IsLocked,
+		&i.Note,
 	)
 	return i, err
 }
@@ -205,9 +208,9 @@ func (q *Queries) CreateTemplateBoardPriorityValue(ctx context.Context, arg Crea
 }
 
 const createTemplateBoardSwimlane = `-- name: CreateTemplateBoardSwimlane :one
-INSERT INTO template_board_swimlanes (board_id, name, value, wip_limit, "order")
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, board_id, name, value, wip_limit, "order"
+INSERT INTO template_board_swimlanes (board_id, name, value, wip_limit, "order", note)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, board_id, name, value, wip_limit, "order", note
 `
 
 type CreateTemplateBoardSwimlaneParams struct {
@@ -216,6 +219,7 @@ type CreateTemplateBoardSwimlaneParams struct {
 	Value    string        `json:"value"`
 	WipLimit sql.NullInt32 `json:"wip_limit"`
 	Order    int32         `json:"order"`
+	Note     string        `json:"note"`
 }
 
 func (q *Queries) CreateTemplateBoardSwimlane(ctx context.Context, arg CreateTemplateBoardSwimlaneParams) (TemplateBoardSwimlane, error) {
@@ -225,6 +229,7 @@ func (q *Queries) CreateTemplateBoardSwimlane(ctx context.Context, arg CreateTem
 		arg.Value,
 		arg.WipLimit,
 		arg.Order,
+		arg.Note,
 	)
 	var i TemplateBoardSwimlane
 	err := row.Scan(
@@ -234,6 +239,7 @@ func (q *Queries) CreateTemplateBoardSwimlane(ctx context.Context, arg CreateTem
 		&i.Value,
 		&i.WipLimit,
 		&i.Order,
+		&i.Note,
 	)
 	return i, err
 }
@@ -381,7 +387,7 @@ func (q *Queries) GetTemplateBoardByID(ctx context.Context, id uuid.UUID) (Templ
 }
 
 const getTemplateBoardColumnByID = `-- name: GetTemplateBoardColumnByID :one
-SELECT id, board_id, name, system_type, wip_limit, "order", is_locked
+SELECT id, board_id, name, system_type, wip_limit, "order", is_locked, note
 FROM template_board_columns
 WHERE id = $1
 `
@@ -397,6 +403,7 @@ func (q *Queries) GetTemplateBoardColumnByID(ctx context.Context, id uuid.UUID) 
 		&i.WipLimit,
 		&i.Order,
 		&i.IsLocked,
+		&i.Note,
 	)
 	return i, err
 }
@@ -427,7 +434,7 @@ func (q *Queries) GetTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) (
 }
 
 const getTemplateBoardSwimlaneByID = `-- name: GetTemplateBoardSwimlaneByID :one
-SELECT id, board_id, name, value, wip_limit, "order"
+SELECT id, board_id, name, value, wip_limit, "order", note
 FROM template_board_swimlanes
 WHERE id = $1
 `
@@ -442,6 +449,7 @@ func (q *Queries) GetTemplateBoardSwimlaneByID(ctx context.Context, id uuid.UUID
 		&i.Value,
 		&i.WipLimit,
 		&i.Order,
+		&i.Note,
 	)
 	return i, err
 }
@@ -509,7 +517,7 @@ func (q *Queries) ListProjectTemplates(ctx context.Context) ([]ListProjectTempla
 
 const listTemplateBoardColumns = `-- name: ListTemplateBoardColumns :many
 
-SELECT id, board_id, name, system_type, wip_limit, "order", is_locked
+SELECT id, board_id, name, system_type, wip_limit, "order", is_locked, note
 FROM template_board_columns
 WHERE board_id = $1
 ORDER BY "order" ASC
@@ -533,6 +541,7 @@ func (q *Queries) ListTemplateBoardColumns(ctx context.Context, boardID uuid.UUI
 			&i.WipLimit,
 			&i.Order,
 			&i.IsLocked,
+			&i.Note,
 		); err != nil {
 			return nil, err
 		}
@@ -672,7 +681,7 @@ func (q *Queries) ListTemplateBoardPriorityValues(ctx context.Context, boardID u
 
 const listTemplateBoardSwimlanes = `-- name: ListTemplateBoardSwimlanes :many
 
-SELECT id, board_id, name, value, wip_limit, "order"
+SELECT id, board_id, name, value, wip_limit, "order", note
 FROM template_board_swimlanes
 WHERE board_id = $1
 ORDER BY "order" ASC
@@ -695,6 +704,7 @@ func (q *Queries) ListTemplateBoardSwimlanes(ctx context.Context, boardID uuid.U
 			&i.Value,
 			&i.WipLimit,
 			&i.Order,
+			&i.Note,
 		); err != nil {
 			return nil, err
 		}
@@ -833,9 +843,9 @@ func (q *Queries) UpdateTemplateBoard(ctx context.Context, arg UpdateTemplateBoa
 
 const updateTemplateBoardColumn = `-- name: UpdateTemplateBoardColumn :one
 UPDATE template_board_columns
-SET name = $2, system_type = $3, wip_limit = $4
+SET name = $2, system_type = $3, wip_limit = $4, note = $5
 WHERE id = $1
-RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked
+RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked, note
 `
 
 type UpdateTemplateBoardColumnParams struct {
@@ -843,6 +853,7 @@ type UpdateTemplateBoardColumnParams struct {
 	Name       string        `json:"name"`
 	SystemType string        `json:"system_type"`
 	WipLimit   sql.NullInt32 `json:"wip_limit"`
+	Note       string        `json:"note"`
 }
 
 func (q *Queries) UpdateTemplateBoardColumn(ctx context.Context, arg UpdateTemplateBoardColumnParams) (TemplateBoardColumn, error) {
@@ -851,6 +862,7 @@ func (q *Queries) UpdateTemplateBoardColumn(ctx context.Context, arg UpdateTempl
 		arg.Name,
 		arg.SystemType,
 		arg.WipLimit,
+		arg.Note,
 	)
 	var i TemplateBoardColumn
 	err := row.Scan(
@@ -861,6 +873,7 @@ func (q *Queries) UpdateTemplateBoardColumn(ctx context.Context, arg UpdateTempl
 		&i.WipLimit,
 		&i.Order,
 		&i.IsLocked,
+		&i.Note,
 	)
 	return i, err
 }
@@ -947,18 +960,19 @@ func (q *Queries) UpdateTemplateBoardOrder(ctx context.Context, arg UpdateTempla
 
 const updateTemplateBoardSwimlane = `-- name: UpdateTemplateBoardSwimlane :one
 UPDATE template_board_swimlanes
-SET wip_limit = $2
+SET wip_limit = $2, note = $3
 WHERE id = $1
-RETURNING id, board_id, name, value, wip_limit, "order"
+RETURNING id, board_id, name, value, wip_limit, "order", note
 `
 
 type UpdateTemplateBoardSwimlaneParams struct {
 	ID       uuid.UUID     `json:"id"`
 	WipLimit sql.NullInt32 `json:"wip_limit"`
+	Note     string        `json:"note"`
 }
 
 func (q *Queries) UpdateTemplateBoardSwimlane(ctx context.Context, arg UpdateTemplateBoardSwimlaneParams) (TemplateBoardSwimlane, error) {
-	row := q.db.QueryRowContext(ctx, updateTemplateBoardSwimlane, arg.ID, arg.WipLimit)
+	row := q.db.QueryRowContext(ctx, updateTemplateBoardSwimlane, arg.ID, arg.WipLimit, arg.Note)
 	var i TemplateBoardSwimlane
 	err := row.Scan(
 		&i.ID,
@@ -967,6 +981,7 @@ func (q *Queries) UpdateTemplateBoardSwimlane(ctx context.Context, arg UpdateTem
 		&i.Value,
 		&i.WipLimit,
 		&i.Order,
+		&i.Note,
 	)
 	return i, err
 }

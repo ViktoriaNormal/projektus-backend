@@ -285,7 +285,7 @@ func (s *TemplateService) ReorderBoards(ctx context.Context, templateID uuid.UUI
 
 // --- Columns ---
 
-func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID uuid.UUID, name, systemType string, wipLimit *int32, order int32) (domain.TemplateBoardColumn, error) {
+func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID uuid.UUID, name, systemType string, wipLimit *int32, order int32, note string) (domain.TemplateBoardColumn, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || board.TemplateID != templateID {
 		return domain.TemplateBoardColumn{}, domain.ErrNotFound
@@ -303,6 +303,7 @@ func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID 
 		WipLimit:   wl,
 		Order:      order,
 		IsLocked:   false,
+		Note:       note,
 	})
 	if err != nil {
 		return domain.TemplateBoardColumn{}, err
@@ -318,7 +319,7 @@ func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID 
 	return mapDBColumnToDomain(col), nil
 }
 
-func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID, columnID uuid.UUID, name, systemType *string, wipLimit *int32) (domain.TemplateBoardColumn, error) {
+func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID, columnID uuid.UUID, name, systemType *string, wipLimit *int32, note *string) (domain.TemplateBoardColumn, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || board.TemplateID != templateID {
 		return domain.TemplateBoardColumn{}, domain.ErrNotFound
@@ -345,12 +346,17 @@ func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID,
 	if wipLimit != nil {
 		finalWipLimit = sql.NullInt32{Int32: *wipLimit, Valid: true}
 	}
+	finalNote := col.Note
+	if note != nil {
+		finalNote = *note
+	}
 
 	updated, err := s.repo.UpdateColumn(ctx, db.UpdateTemplateBoardColumnParams{
 		ID:         columnID,
 		Name:       finalName,
 		SystemType: finalSystemType,
 		WipLimit:   finalWipLimit,
+		Note:       finalNote,
 	})
 	if err != nil {
 		return domain.TemplateBoardColumn{}, err
@@ -393,7 +399,7 @@ func (s *TemplateService) DeleteColumn(ctx context.Context, templateID, boardID,
 	if err := validateColumnOrder(columns); err != nil {
 		// Re-create the column
 		_, _ = s.repo.CreateColumn(ctx, db.CreateTemplateBoardColumnParams{
-			BoardID: boardID, Name: col.Name, SystemType: col.SystemType, WipLimit: col.WipLimit, Order: col.Order, IsLocked: col.IsLocked,
+			BoardID: boardID, Name: col.Name, SystemType: col.SystemType, WipLimit: col.WipLimit, Order: col.Order, IsLocked: col.IsLocked, Note: col.Note,
 		})
 		return err
 	}
@@ -442,18 +448,29 @@ func (s *TemplateService) ReorderColumns(ctx context.Context, templateID, boardI
 
 // --- Swimlanes ---
 
-func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardID, swimlaneID uuid.UUID, wipLimit *int32) (domain.TemplateBoardSwimlane, error) {
+func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardID, swimlaneID uuid.UUID, wipLimit *int32, note *string) (domain.TemplateBoardSwimlane, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || board.TemplateID != templateID {
+		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
+	}
+
+	existing, err := s.repo.GetSwimlaneByID(ctx, swimlaneID)
+	if err != nil {
 		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
 	}
 
 	wl := sql.NullInt32{}
 	if wipLimit != nil {
 		wl = sql.NullInt32{Int32: *wipLimit, Valid: true}
+	} else if existing.WipLimit.Valid {
+		wl = existing.WipLimit
+	}
+	finalNote := existing.Note
+	if note != nil {
+		finalNote = *note
 	}
 
-	sw, err := s.repo.UpdateSwimlane(ctx, swimlaneID, wl)
+	sw, err := s.repo.UpdateSwimlane(ctx, swimlaneID, wl, finalNote)
 	if err != nil {
 		return domain.TemplateBoardSwimlane{}, err
 	}
@@ -775,6 +792,7 @@ func (s *TemplateService) createDefaultColumns(ctx context.Context, boardID uuid
 			WipLimit:   sql.NullInt32{},
 			Order:      d.order,
 			IsLocked:   d.isLocked,
+			Note:       "",
 		})
 		if err != nil {
 			return nil, err
@@ -832,6 +850,7 @@ func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID u
 			Value:    name,
 			WipLimit: sql.NullInt32{},
 			Order:    int32(i + 1),
+			Note:     "",
 		})
 		if err != nil {
 			return nil, err
@@ -848,9 +867,13 @@ func mapDBColumnToDomain(c db.TemplateBoardColumn) domain.TemplateBoardColumn {
 	if c.WipLimit.Valid {
 		wl = &c.WipLimit.Int32
 	}
+	var note *string
+	if c.Note != "" {
+		note = &c.Note
+	}
 	return domain.TemplateBoardColumn{
 		ID: c.ID, BoardID: c.BoardID, Name: c.Name, SystemType: c.SystemType,
-		WipLimit: wl, Order: c.Order, IsLocked: c.IsLocked,
+		WipLimit: wl, Order: c.Order, IsLocked: c.IsLocked, Note: note,
 	}
 }
 
@@ -859,9 +882,13 @@ func mapDBSwimlaneToDomain(sw db.TemplateBoardSwimlane) domain.TemplateBoardSwim
 	if sw.WipLimit.Valid {
 		wl = &sw.WipLimit.Int32
 	}
+	var note *string
+	if sw.Note != "" {
+		note = &sw.Note
+	}
 	return domain.TemplateBoardSwimlane{
 		ID: sw.ID, BoardID: sw.BoardID, Name: sw.Name, Value: sw.Value,
-		WipLimit: wl, Order: sw.Order,
+		WipLimit: wl, Order: sw.Order, Note: note,
 	}
 }
 

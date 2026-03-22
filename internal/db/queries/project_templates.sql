@@ -70,26 +70,26 @@ UPDATE template_boards SET "order" = $2 WHERE id = $1;
 -- Template board columns
 
 -- name: ListTemplateBoardColumns :many
-SELECT id, board_id, name, system_type, wip_limit, "order", is_locked
+SELECT id, board_id, name, system_type, wip_limit, "order", is_locked, note
 FROM template_board_columns
 WHERE board_id = $1
 ORDER BY "order" ASC;
 
 -- name: GetTemplateBoardColumnByID :one
-SELECT id, board_id, name, system_type, wip_limit, "order", is_locked
+SELECT id, board_id, name, system_type, wip_limit, "order", is_locked, note
 FROM template_board_columns
 WHERE id = $1;
 
 -- name: CreateTemplateBoardColumn :one
-INSERT INTO template_board_columns (board_id, name, system_type, wip_limit, "order", is_locked)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked;
+INSERT INTO template_board_columns (board_id, name, system_type, wip_limit, "order", is_locked, note)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked, note;
 
 -- name: UpdateTemplateBoardColumn :one
 UPDATE template_board_columns
-SET name = $2, system_type = $3, wip_limit = $4
+SET name = $2, system_type = $3, wip_limit = $4, note = $5
 WHERE id = $1
-RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked;
+RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked, note;
 
 -- name: DeleteTemplateBoardColumnByID :exec
 DELETE FROM template_board_columns WHERE id = $1;
@@ -103,26 +103,26 @@ UPDATE template_board_columns SET "order" = $2 WHERE id = $1;
 -- Template board swimlanes
 
 -- name: ListTemplateBoardSwimlanes :many
-SELECT id, board_id, name, value, wip_limit, "order"
+SELECT id, board_id, name, value, wip_limit, "order", note
 FROM template_board_swimlanes
 WHERE board_id = $1
 ORDER BY "order" ASC;
 
 -- name: GetTemplateBoardSwimlaneByID :one
-SELECT id, board_id, name, value, wip_limit, "order"
+SELECT id, board_id, name, value, wip_limit, "order", note
 FROM template_board_swimlanes
 WHERE id = $1;
 
 -- name: CreateTemplateBoardSwimlane :one
-INSERT INTO template_board_swimlanes (board_id, name, value, wip_limit, "order")
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, board_id, name, value, wip_limit, "order";
+INSERT INTO template_board_swimlanes (board_id, name, value, wip_limit, "order", note)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, board_id, name, value, wip_limit, "order", note;
 
 -- name: UpdateTemplateBoardSwimlane :one
 UPDATE template_board_swimlanes
-SET wip_limit = $2
+SET wip_limit = $2, note = $3
 WHERE id = $1
-RETURNING id, board_id, name, value, wip_limit, "order";
+RETURNING id, board_id, name, value, wip_limit, "order", note;
 
 -- name: DeleteTemplateBoardSwimlaneByID :exec
 DELETE FROM template_board_swimlanes WHERE id = $1;

@@ -331,7 +331,11 @@ func (h *TemplateHandler) CreateColumn(c *gin.Context) {
 		return
 	}
 
-	col, err := h.service.CreateColumn(c.Request.Context(), templateID, boardID, req.Name, req.SystemType, req.WipLimit, req.Order)
+	note := ""
+	if req.Note != nil {
+		note = *req.Note
+	}
+	col, err := h.service.CreateColumn(c.Request.Context(), templateID, boardID, req.Name, req.SystemType, req.WipLimit, req.Order, note)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
@@ -372,7 +376,7 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 		return
 	}
 
-	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, req.WipLimit)
+	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, req.WipLimit, req.Note)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Колонка не найдена")
@@ -497,7 +501,7 @@ func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 		return
 	}
 
-	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, req.WipLimit)
+	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, req.WipLimit, req.Note)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")
@@ -828,6 +832,7 @@ func mapColumnToResponse(col domain.TemplateBoardColumn) dto.TemplateBoardColumn
 		WipLimit:   col.WipLimit,
 		Order:      col.Order,
 		IsLocked:   col.IsLocked,
+		Note:       col.Note,
 	}
 }
 
@@ -837,6 +842,7 @@ func mapSwimlaneToResponse(sw domain.TemplateBoardSwimlane) dto.TemplateBoardSwi
 		Name:     sw.Name,
 		WipLimit: sw.WipLimit,
 		Order:    sw.Order,
+		Note:     sw.Note,
 	}
 }
 

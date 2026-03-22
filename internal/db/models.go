@@ -432,6 +432,7 @@ type TemplateBoardColumn struct {
 	WipLimit   sql.NullInt32 `json:"wip_limit"`
 	Order      int32         `json:"order"`
 	IsLocked   bool          `json:"is_locked"`
+	Note       string        `json:"note"`
 }
 
 type TemplateBoardField struct {
@@ -462,6 +463,7 @@ type TemplateBoardSwimlane struct {
 	Value    string        `json:"value"`
 	WipLimit sql.NullInt32 `json:"wip_limit"`
 	Order    int32         `json:"order"`
+	Note     string        `json:"note"`
 }
 
 type User struct {
