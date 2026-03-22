@@ -120,7 +120,8 @@ func main() {
 	projectMemberSvc := services.NewProjectMemberService(projectMemberRepo, userRepo, roleRepo)
 	projectMemberHandler := handlers.NewProjectMemberHandler(projectMemberSvc)
 
-	templateSvc := services.NewTemplateService(templateRepo)
+	referenceRepo := repositories.NewReferenceRepository(queries)
+	templateSvc := services.NewTemplateService(templateRepo, referenceRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
 	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, adminUserHandler, adminPasswordPolicyHandler, projectSvc, permissionSvc)

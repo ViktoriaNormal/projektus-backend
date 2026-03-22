@@ -79,6 +79,31 @@ components:
       name: roleId
       required: true
       schema: { type: string, format: uuid }
+    TemplateId:
+      in: path
+      name: templateId
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateBoardId:
+      in: path
+      name: boardId
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateColumnId:
+      in: path
+      name: columnId
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateSwimlaneId:
+      in: path
+      name: swimlaneId
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateFieldId:
+      in: path
+      name: fieldId
+      required: true
+      schema: { type: string, format: uuid }
 
   schemas:
     # ── Обёртки ответов ──────────────────────────────────────────────
@@ -814,25 +839,50 @@ components:
     # ── Admin ────────────────────────────────────────────────────────
     AdminCreateUserRequest:
       type: object
-      required: [username, email, fullName, initialPassword]
+      required: [username, email, full_name, password]
       properties:
-        username:        { type: string, minLength: 3, maxLength: 50 }
-        email:           { type: string, format: email }
-        fullName:        { type: string }
-        initialPassword: { type: string, minLength: 6 }
-        systemRoles:
+        username:  { type: string, minLength: 3, maxLength: 50 }
+        email:     { type: string, format: email }
+        full_name: { type: string }
+        position:  { type: string, nullable: true }
+        password:  { type: string, minLength: 6 }
+        is_active: { type: boolean, default: true }
+        role_ids:
           type: array
           items: { type: string, format: uuid }
+
+    AdminUpdateUserRequest:
+      type: object
+      properties:
+        username:  { type: string, minLength: 3, maxLength: 50 }
+        email:     { type: string, format: email }
+        full_name: { type: string }
+        position:  { type: string, nullable: true }
+        is_active: { type: boolean }
+        role_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    AdminRoleResponse:
+      type: object
+      properties:
+        id:   { type: string, format: uuid }
+        name: { type: string }
 
     AdminUserResponse:
       type: object
       properties:
-        id:        { type: string, format: uuid }
-        username:  { type: string }
-        email:     { type: string }
-        fullName:  { type: string }
-        isActive:  { type: boolean }
-        createdAt: { type: string, format: date-time }
+        id:         { type: string, format: uuid }
+        username:   { type: string }
+        email:      { type: string }
+        full_name:  { type: string }
+        avatar_url: { type: string, nullable: true }
+        position:   { type: string, nullable: true }
+        is_active:  { type: boolean }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/AdminRoleResponse' }
+        created_at: { type: string, format: date-time }
 
     PasswordPolicyResponse:
       type: object
@@ -856,21 +906,289 @@ components:
         requireSpecial:   { type: boolean }
         notes:            { type: string, nullable: true }
 
+    # ── Project Templates ──────────────────────────────────────────
     ProjectTemplateResponse:
       type: object
       properties:
-        id:           { type: string, format: uuid }
-        name:         { type: string }
-        description:  { type: string }
-        project_type: { type: string, enum: [scrum, kanban] }
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string }
+        projectType: { type: string, enum: [scrum, kanban] }
+        boardCount:  { type: integer }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    ProjectTemplateResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string }
+        projectType: { type: string, enum: [scrum, kanban] }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+        boards:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateBoardResponse' }
+
+    TemplateBoardResponse:
+      type: object
+      properties:
+        id:              { type: string, format: uuid }
+        name:            { type: string }
+        description:     { type: string }
+        isDefault:       { type: boolean }
+        order:           { type: integer }
+        priorityType:    { type: string, enum: [priority, service_class] }
+        estimationUnit:  { type: string, enum: [story_points, time] }
+        swimlaneGroupBy: { type: string, nullable: true }
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateBoardColumnResponse' }
+        swimlanes:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateBoardSwimlaneResponse' }
+        priorityValues:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateBoardPriorityValueResponse' }
+        customFields:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateBoardCustomFieldResponse' }
+
+    TemplateBoardColumnResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        name:       { type: string }
+        systemType: { type: string, enum: [initial, in_progress, completed] }
+        wipLimit:   { type: integer, nullable: true }
+        order:      { type: integer }
+        isLocked:   { type: boolean }
+
+    TemplateBoardSwimlaneResponse:
+      type: object
+      properties:
+        id:       { type: string, format: uuid }
+        name:     { type: string }
+        wipLimit: { type: integer, nullable: true }
+        order:    { type: integer }
+
+    TemplateBoardPriorityValueResponse:
+      type: object
+      properties:
+        id:    { type: string, format: uuid }
+        value: { type: string }
+        order: { type: integer }
+
+    TemplateBoardCustomFieldResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        name:       { type: string }
+        fieldType:  { type: string }
+        isSystem:   { type: boolean }
+        isRequired: { type: boolean }
+        order:      { type: integer }
+        options:    { type: array, items: { type: string } }
 
     CreateTemplateRequest:
       type: object
-      required: [name, project_type]
+      required: [name, projectType]
       properties:
-        name:         { type: string }
-        description:  { type: string }
-        project_type: { type: string, enum: [scrum, kanban] }
+        name:        { type: string }
+        description: { type: string }
+        projectType: { type: string, enum: [scrum, kanban] }
+
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string }
+
+    CreateTemplateBoardRequest:
+      type: object
+      required: [name, priorityType, estimationUnit]
+      properties:
+        name:            { type: string }
+        description:     { type: string }
+        isDefault:       { type: boolean }
+        priorityType:    { type: string, enum: [priority, service_class] }
+        estimationUnit:  { type: string, enum: [story_points, time] }
+        swimlaneGroupBy: { type: string, nullable: true }
+
+    UpdateTemplateBoardRequest:
+      type: object
+      properties:
+        name:            { type: string }
+        description:     { type: string }
+        isDefault:       { type: boolean }
+        order:           { type: integer }
+        priorityType:    { type: string, enum: [priority, service_class] }
+        estimationUnit:  { type: string, enum: [story_points, time] }
+        swimlaneGroupBy: { type: string, nullable: true }
+
+    CreateTemplateBoardColumnRequest:
+      type: object
+      required: [name, systemType]
+      properties:
+        name:       { type: string }
+        systemType: { type: string, enum: [initial, in_progress, completed] }
+        wipLimit:   { type: integer, nullable: true }
+        order:      { type: integer }
+
+    UpdateTemplateBoardColumnRequest:
+      type: object
+      properties:
+        name:       { type: string }
+        systemType: { type: string, enum: [initial, in_progress, completed] }
+        wipLimit:   { type: integer, nullable: true }
+
+    UpdateTemplateBoardSwimlaneRequest:
+      type: object
+      properties:
+        wipLimit: { type: integer, nullable: true }
+
+    PriorityValueItem:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+        order: { type: integer }
+
+    CreateTemplateBoardCustomFieldRequest:
+      type: object
+      required: [name, fieldType]
+      properties:
+        name:       { type: string }
+        fieldType:  { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user] }
+        isRequired: { type: boolean }
+        order:      { type: integer }
+        options:    { type: array, items: { type: string } }
+
+    UpdateTemplateBoardCustomFieldRequest:
+      type: object
+      properties:
+        name:       { type: string }
+        isRequired: { type: boolean }
+        options:    { type: array, items: { type: string } }
+
+    ReorderBoardsRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              boardId: { type: string, format: uuid }
+              order:   { type: integer }
+
+    ReorderColumnsRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              columnId: { type: string, format: uuid }
+              order:    { type: integer }
+
+    ReorderSwimlanesRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              swimlaneId: { type: string, format: uuid }
+              order:      { type: integer }
+
+    ReorderFieldsRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              fieldId: { type: string, format: uuid }
+              order:   { type: integer }
+
+    ReferencesResponse:
+      type: object
+      properties:
+        columnSystemTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              key:         { type: string }
+              name:        { type: string }
+              description: { type: string }
+              order:       { type: integer }
+        taskStatusTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              key:          { type: string }
+              name:         { type: string }
+              description:  { type: string }
+              isColumnType: { type: boolean }
+        fieldTypes:
+          type: array
+          items:
+            type: object
+            properties:
+              key:  { type: string }
+              name: { type: string }
+        estimationUnits:
+          type: array
+          items:
+            type: object
+            properties:
+              key:          { type: string }
+              name:         { type: string }
+              availableFor: { type: array, items: { type: string } }
+        swimlaneGroupOptions:
+          type: array
+          description: "Системные опции группировки дорожек (из полей с дискретными значениями + теги)"
+          items:
+            type: object
+            properties:
+              key:          { type: string }
+              name:         { type: string }
+              availableFor: { type: array, items: { type: string } }
+        swimlaneGroupableFieldTypes:
+          type: array
+          description: "Типы кастомных полей, которые можно использовать для группировки дорожек"
+          items: { type: string }
+          example: ["select", "multiselect", "checkbox", "user", "sprint", "tags"]
+        priorityTypeOptions:
+          type: array
+          items:
+            type: object
+            properties:
+              key:           { type: string }
+              name:          { type: string }
+              availableFor:  { type: array, items: { type: string } }
+              defaultValues: { type: array, items: { type: string } }
+        systemTaskFields:
+          type: array
+          items:
+            type: object
+            properties:
+              key:          { type: string }
+              name:         { type: string }
+              fieldType:    { type: string }
+              availableFor: { type: array, items: { type: string } }
+              description:  { type: string }
 
 # ────────────────────────────────────────────────────────────────────
 # PATHS
@@ -3043,6 +3361,16 @@ paths:
       description: "Требует разрешение: system.users.manage"
       security:
         - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0, minimum: 0 }
+        - in: query
+          name: includeDeleted
+          schema: { type: boolean, default: false }
       responses:
         '200':
           description: Пользователи
@@ -3054,8 +3382,12 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items: { $ref: '#/components/schemas/AdminUserResponse' }
+                        type: object
+                        properties:
+                          users:
+                            type: array
+                            items: { $ref: '#/components/schemas/AdminUserResponse' }
+                          total: { type: integer }
     post:
       tags: [Admin]
       summary: Создать пользователя (администратором)
@@ -3068,7 +3400,7 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AdminCreateUserRequest' }
       responses:
-        '200':
+        '201':
           description: Пользователь создан
           content:
             application/json:
@@ -3080,31 +3412,17 @@ paths:
                       data: { $ref: '#/components/schemas/AdminUserResponse' }
 
   /v1/admin/users/{id}:
-    delete:
+    get:
       tags: [Admin]
-      summary: Удалить пользователя
+      summary: Получить пользователя по ID
+      description: "Требует разрешение: system.users.manage"
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/UserId'
       responses:
         '200':
-          description: Пользователь удалён
-
-  /v1/admin/users/{userId}/roles:
-    get:
-      tags: [Admin]
-      summary: Системные роли пользователя
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: Роли пользователя
+          description: Пользователь
           content:
             application/json:
               schema:
@@ -3112,27 +3430,50 @@ paths:
                   - $ref: '#/components/schemas/APIResponse'
                   - type: object
                     properties:
-                      data:
-                        type: array
-                        items: { $ref: '#/components/schemas/RoleResponse' }
-    post:
+                      data: { $ref: '#/components/schemas/AdminUserResponse' }
+        '404':
+          description: Пользователь не найден
+    put:
       tags: [Admin]
-      summary: Назначить системные роли пользователю
+      summary: Обновить пользователя
+      description: "Требует разрешение: system.users.manage. Все поля опциональны."
       security:
         - bearerAuth: []
       parameters:
-        - in: path
-          name: userId
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/UserId'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AssignRolesRequest' }
+            schema: { $ref: '#/components/schemas/AdminUpdateUserRequest' }
       responses:
         '200':
-          description: Роли назначены
+          description: Пользователь обновлён
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AdminUserResponse' }
+        '404':
+          description: Пользователь не найден
+    delete:
+      tags: [Admin]
+      summary: Удалить пользователя (soft delete)
+      description: "Требует разрешение: system.users.manage. Нельзя удалить самого себя."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Пользователь удалён
+        '400':
+          description: Нельзя удалить свой аккаунт
+        '404':
+          description: Пользователь не найден
 
   /v1/admin/password-policy:
     get:
@@ -3166,6 +3507,25 @@ paths:
       responses:
         '200':
           description: Политика обновлена
+
+  /v1/admin/project-templates/references:
+    get:
+      tags: [Admin]
+      summary: Справочники для шаблонов проектов
+      description: "Требует разрешение: system.project_templates.manage"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Справочные данные
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ReferencesResponse' }
 
   /v1/admin/project-templates:
     get:
@@ -3209,3 +3569,407 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/ProjectTemplateResponse' }
+
+  /v1/admin/project-templates/{templateId}:
+    get:
+      tags: [Admin]
+      summary: Получить шаблон с полной структурой
+      description: "Требует разрешение: system.project_templates.manage"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Шаблон
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectTemplateResponse' }
+    patch:
+      tags: [Admin]
+      summary: Обновить шаблон
+      description: "Требует разрешение: system.project_templates.manage. projectType изменить нельзя."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateRequest' }
+      responses:
+        '200':
+          description: Шаблон обновлён
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProjectTemplateResponse' }
+    delete:
+      tags: [Admin]
+      summary: Удалить шаблон
+      description: "Требует разрешение: system.project_templates.manage"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Шаблон удалён
+        '400':
+          description: "TEMPLATE_IN_USE — шаблон используется проектами"
+
+  /v1/admin/project-templates/{templateId}/boards:
+    post:
+      tags: [Admin]
+      summary: Добавить доску в шаблон
+      description: "Автоматически создаёт дефолтные колонки и значения приоритетов"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateBoardRequest' }
+      responses:
+        '200':
+          description: Доска создана
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardResponse' }
+
+  /v1/admin/project-templates/{templateId}/boards/reorder:
+    patch:
+      tags: [Admin]
+      summary: Изменить порядок досок
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderBoardsRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}:
+    patch:
+      tags: [Admin]
+      summary: Обновить доску шаблона
+      description: "При смене priorityType заменяются priorityValues. При смене swimlaneGroupBy пересоздаются дорожки."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateBoardRequest' }
+      responses:
+        '200':
+          description: Доска обновлена
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardResponse' }
+    delete:
+      tags: [Admin]
+      summary: Удалить доску шаблона
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      responses:
+        '200':
+          description: Доска удалена
+        '400':
+          description: "LAST_BOARD — нельзя удалить единственную доску"
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/columns:
+    post:
+      tags: [Admin]
+      summary: Добавить колонку
+      description: "Валидируется порядок типов: initial < in_progress < completed"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateBoardColumnRequest' }
+      responses:
+        '200':
+          description: Колонка создана
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardColumnResponse' }
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/columns/reorder:
+    patch:
+      tags: [Admin]
+      summary: Изменить порядок колонок
+      description: "Валидируется порядок типов. Заблокированные колонки нельзя перемещать."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderColumnsRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/columns/{columnId}:
+    patch:
+      tags: [Admin]
+      summary: Обновить колонку
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+        - $ref: '#/components/parameters/TemplateColumnId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateBoardColumnRequest' }
+      responses:
+        '200':
+          description: Колонка обновлена
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardColumnResponse' }
+        '400':
+          description: "COLUMN_LOCKED или INVALID_COLUMN_ORDER"
+    delete:
+      tags: [Admin]
+      summary: Удалить колонку
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+        - $ref: '#/components/parameters/TemplateColumnId'
+      responses:
+        '200':
+          description: Колонка удалена
+        '400':
+          description: "COLUMN_LOCKED или INVALID_COLUMN_ORDER"
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/swimlanes/reorder:
+    patch:
+      tags: [Admin]
+      summary: Изменить порядок дорожек
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderSwimlanesRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/swimlanes/{swimlaneId}:
+    patch:
+      tags: [Admin]
+      summary: Обновить дорожку
+      description: "Можно изменить только wipLimit. Имя задаётся автоматически."
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+        - $ref: '#/components/parameters/TemplateSwimlaneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateBoardSwimlaneRequest' }
+      responses:
+        '200':
+          description: Дорожка обновлена
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardSwimlaneResponse' }
+    delete:
+      tags: [Admin]
+      summary: Удалить дорожку
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+        - $ref: '#/components/parameters/TemplateSwimlaneId'
+      responses:
+        '200':
+          description: Дорожка удалена
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/priority-values:
+    put:
+      tags: [Admin]
+      summary: Массовое обновление значений приоритетов
+      description: "Удаляет старые значения и создаёт новые"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/PriorityValueItem' }
+      responses:
+        '200':
+          description: Значения обновлены
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TemplateBoardPriorityValueResponse' }
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/custom-fields:
+    post:
+      tags: [Admin]
+      summary: Добавить кастомное поле
+      description: "options передаётся только для select/multiselect"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateBoardCustomFieldRequest' }
+      responses:
+        '200':
+          description: Поле создано
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardCustomFieldResponse' }
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/custom-fields/reorder:
+    patch:
+      tags: [Admin]
+      summary: Изменить порядок кастомных полей
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderFieldsRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/admin/project-templates/{templateId}/boards/{boardId}/custom-fields/{fieldId}:
+    patch:
+      tags: [Admin]
+      summary: Обновить кастомное поле
+      description: "fieldType менять нельзя после создания"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+        - $ref: '#/components/parameters/TemplateFieldId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateBoardCustomFieldRequest' }
+      responses:
+        '200':
+          description: Поле обновлено
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateBoardCustomFieldResponse' }
+    delete:
+      tags: [Admin]
+      summary: Удалить кастомное поле
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateBoardId'
+        - $ref: '#/components/parameters/TemplateFieldId'
+      responses:
+        '200':
+          description: Поле удалено

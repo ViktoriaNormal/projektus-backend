@@ -8,12 +8,27 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
+
+const countTemplateBoardsByTemplateID = `-- name: CountTemplateBoardsByTemplateID :one
+SELECT COUNT(*)::int AS count FROM template_boards WHERE template_id = $1
+`
+
+func (q *Queries) CountTemplateBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countTemplateBoardsByTemplateID, templateID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createProjectTemplate = `-- name: CreateProjectTemplate :one
 INSERT INTO project_templates (name, description, project_type)
 VALUES ($1, $2, $3)
-RETURNING id, name, description, project_type, created_at
+RETURNING id, name, description, project_type, created_at, updated_at
 `
 
 type CreateProjectTemplateParams struct {
@@ -31,33 +46,453 @@ func (q *Queries) CreateProjectTemplate(ctx context.Context, arg CreateProjectTe
 		&i.Description,
 		&i.ProjectType,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const listProjectTemplates = `-- name: ListProjectTemplates :many
-
-SELECT id, name, description, project_type, created_at
-FROM project_templates
-ORDER BY created_at DESC
+const createTemplateBoard = `-- name: CreateTemplateBoard :one
+INSERT INTO template_boards (template_id, name, description, is_default, "order", priority_type, estimation_unit, swimlane_group_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, template_id, name, description, is_default, "order", priority_type, estimation_unit, swimlane_group_by
 `
 
+type CreateTemplateBoardParams struct {
+	TemplateID      uuid.UUID `json:"template_id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	IsDefault       bool      `json:"is_default"`
+	Order           int32     `json:"order"`
+	PriorityType    string    `json:"priority_type"`
+	EstimationUnit  string    `json:"estimation_unit"`
+	SwimlaneGroupBy string    `json:"swimlane_group_by"`
+}
+
+func (q *Queries) CreateTemplateBoard(ctx context.Context, arg CreateTemplateBoardParams) (TemplateBoard, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateBoard,
+		arg.TemplateID,
+		arg.Name,
+		arg.Description,
+		arg.IsDefault,
+		arg.Order,
+		arg.PriorityType,
+		arg.EstimationUnit,
+		arg.SwimlaneGroupBy,
+	)
+	var i TemplateBoard
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateID,
+		&i.Name,
+		&i.Description,
+		&i.IsDefault,
+		&i.Order,
+		&i.PriorityType,
+		&i.EstimationUnit,
+		&i.SwimlaneGroupBy,
+	)
+	return i, err
+}
+
+const createTemplateBoardColumn = `-- name: CreateTemplateBoardColumn :one
+INSERT INTO template_board_columns (board_id, name, system_type, wip_limit, "order", is_locked)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked
+`
+
+type CreateTemplateBoardColumnParams struct {
+	BoardID    uuid.UUID     `json:"board_id"`
+	Name       string        `json:"name"`
+	SystemType string        `json:"system_type"`
+	WipLimit   sql.NullInt32 `json:"wip_limit"`
+	Order      int32         `json:"order"`
+	IsLocked   bool          `json:"is_locked"`
+}
+
+func (q *Queries) CreateTemplateBoardColumn(ctx context.Context, arg CreateTemplateBoardColumnParams) (TemplateBoardColumn, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateBoardColumn,
+		arg.BoardID,
+		arg.Name,
+		arg.SystemType,
+		arg.WipLimit,
+		arg.Order,
+		arg.IsLocked,
+	)
+	var i TemplateBoardColumn
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.SystemType,
+		&i.WipLimit,
+		&i.Order,
+		&i.IsLocked,
+	)
+	return i, err
+}
+
+const createTemplateBoardField = `-- name: CreateTemplateBoardField :one
+INSERT INTO template_board_fields (board_id, code, name, field_type, is_system, is_required, is_active, "order", options, config)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, board_id, code, name, field_type, is_system, is_required, is_active, "order", options, config
+`
+
+type CreateTemplateBoardFieldParams struct {
+	BoardID    uuid.UUID             `json:"board_id"`
+	Code       string                `json:"code"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsSystem   bool                  `json:"is_system"`
+	IsRequired bool                  `json:"is_required"`
+	IsActive   bool                  `json:"is_active"`
+	Order      int32                 `json:"order"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Config     pqtype.NullRawMessage `json:"config"`
+}
+
+func (q *Queries) CreateTemplateBoardField(ctx context.Context, arg CreateTemplateBoardFieldParams) (TemplateBoardField, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateBoardField,
+		arg.BoardID,
+		arg.Code,
+		arg.Name,
+		arg.FieldType,
+		arg.IsSystem,
+		arg.IsRequired,
+		arg.IsActive,
+		arg.Order,
+		arg.Options,
+		arg.Config,
+	)
+	var i TemplateBoardField
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Code,
+		&i.Name,
+		&i.FieldType,
+		&i.IsSystem,
+		&i.IsRequired,
+		&i.IsActive,
+		&i.Order,
+		&i.Options,
+		&i.Config,
+	)
+	return i, err
+}
+
+const createTemplateBoardPriorityValue = `-- name: CreateTemplateBoardPriorityValue :one
+INSERT INTO template_board_priority_values (board_id, value, "order")
+VALUES ($1, $2, $3)
+RETURNING id, board_id, value, "order"
+`
+
+type CreateTemplateBoardPriorityValueParams struct {
+	BoardID uuid.UUID `json:"board_id"`
+	Value   string    `json:"value"`
+	Order   int32     `json:"order"`
+}
+
+func (q *Queries) CreateTemplateBoardPriorityValue(ctx context.Context, arg CreateTemplateBoardPriorityValueParams) (TemplateBoardPriorityValue, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateBoardPriorityValue, arg.BoardID, arg.Value, arg.Order)
+	var i TemplateBoardPriorityValue
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Value,
+		&i.Order,
+	)
+	return i, err
+}
+
+const createTemplateBoardSwimlane = `-- name: CreateTemplateBoardSwimlane :one
+INSERT INTO template_board_swimlanes (board_id, name, value, wip_limit, "order")
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, board_id, name, value, wip_limit, "order"
+`
+
+type CreateTemplateBoardSwimlaneParams struct {
+	BoardID  uuid.UUID     `json:"board_id"`
+	Name     string        `json:"name"`
+	Value    string        `json:"value"`
+	WipLimit sql.NullInt32 `json:"wip_limit"`
+	Order    int32         `json:"order"`
+}
+
+func (q *Queries) CreateTemplateBoardSwimlane(ctx context.Context, arg CreateTemplateBoardSwimlaneParams) (TemplateBoardSwimlane, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateBoardSwimlane,
+		arg.BoardID,
+		arg.Name,
+		arg.Value,
+		arg.WipLimit,
+		arg.Order,
+	)
+	var i TemplateBoardSwimlane
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.Value,
+		&i.WipLimit,
+		&i.Order,
+	)
+	return i, err
+}
+
+const deleteNonSystemFieldsByBoardID = `-- name: DeleteNonSystemFieldsByBoardID :exec
+DELETE FROM template_board_fields WHERE board_id = $1 AND is_system = false
+`
+
+func (q *Queries) DeleteNonSystemFieldsByBoardID(ctx context.Context, boardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteNonSystemFieldsByBoardID, boardID)
+	return err
+}
+
+const deleteProjectTemplate = `-- name: DeleteProjectTemplate :exec
+DELETE FROM project_templates WHERE id = $1
+`
+
+func (q *Queries) DeleteProjectTemplate(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteProjectTemplate, id)
+	return err
+}
+
+const deleteTemplateBoardByID = `-- name: DeleteTemplateBoardByID :exec
+DELETE FROM template_boards WHERE id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardByID(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardByID, id)
+	return err
+}
+
+const deleteTemplateBoardColumnByID = `-- name: DeleteTemplateBoardColumnByID :exec
+DELETE FROM template_board_columns WHERE id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardColumnByID(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardColumnByID, id)
+	return err
+}
+
+const deleteTemplateBoardColumnsByBoardID = `-- name: DeleteTemplateBoardColumnsByBoardID :exec
+DELETE FROM template_board_columns WHERE board_id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardColumnsByBoardID(ctx context.Context, boardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardColumnsByBoardID, boardID)
+	return err
+}
+
+const deleteTemplateBoardFieldByID = `-- name: DeleteTemplateBoardFieldByID :exec
+DELETE FROM template_board_fields WHERE id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardFieldByID, id)
+	return err
+}
+
+const deleteTemplateBoardFieldsByBoardID = `-- name: DeleteTemplateBoardFieldsByBoardID :exec
+DELETE FROM template_board_fields WHERE board_id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardFieldsByBoardID(ctx context.Context, boardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardFieldsByBoardID, boardID)
+	return err
+}
+
+const deleteTemplateBoardPriorityValuesByBoardID = `-- name: DeleteTemplateBoardPriorityValuesByBoardID :exec
+DELETE FROM template_board_priority_values WHERE board_id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardPriorityValuesByBoardID(ctx context.Context, boardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardPriorityValuesByBoardID, boardID)
+	return err
+}
+
+const deleteTemplateBoardSwimlaneByID = `-- name: DeleteTemplateBoardSwimlaneByID :exec
+DELETE FROM template_board_swimlanes WHERE id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardSwimlaneByID(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardSwimlaneByID, id)
+	return err
+}
+
+const deleteTemplateBoardSwimlanesByBoardID = `-- name: DeleteTemplateBoardSwimlanesByBoardID :exec
+DELETE FROM template_board_swimlanes WHERE board_id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardSwimlanesByBoardID(ctx context.Context, boardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardSwimlanesByBoardID, boardID)
+	return err
+}
+
+const deleteTemplateBoardsByTemplateID = `-- name: DeleteTemplateBoardsByTemplateID :exec
+DELETE FROM template_boards WHERE template_id = $1
+`
+
+func (q *Queries) DeleteTemplateBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTemplateBoardsByTemplateID, templateID)
+	return err
+}
+
+const getProjectTemplateByID = `-- name: GetProjectTemplateByID :one
+SELECT id, name, description, project_type, created_at, updated_at
+FROM project_templates
+WHERE id = $1
+`
+
+func (q *Queries) GetProjectTemplateByID(ctx context.Context, id uuid.UUID) (ProjectTemplate, error) {
+	row := q.db.QueryRowContext(ctx, getProjectTemplateByID, id)
+	var i ProjectTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.ProjectType,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTemplateBoardByID = `-- name: GetTemplateBoardByID :one
+SELECT id, template_id, name, description, is_default, "order", priority_type, estimation_unit, swimlane_group_by
+FROM template_boards
+WHERE id = $1
+`
+
+func (q *Queries) GetTemplateBoardByID(ctx context.Context, id uuid.UUID) (TemplateBoard, error) {
+	row := q.db.QueryRowContext(ctx, getTemplateBoardByID, id)
+	var i TemplateBoard
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateID,
+		&i.Name,
+		&i.Description,
+		&i.IsDefault,
+		&i.Order,
+		&i.PriorityType,
+		&i.EstimationUnit,
+		&i.SwimlaneGroupBy,
+	)
+	return i, err
+}
+
+const getTemplateBoardColumnByID = `-- name: GetTemplateBoardColumnByID :one
+SELECT id, board_id, name, system_type, wip_limit, "order", is_locked
+FROM template_board_columns
+WHERE id = $1
+`
+
+func (q *Queries) GetTemplateBoardColumnByID(ctx context.Context, id uuid.UUID) (TemplateBoardColumn, error) {
+	row := q.db.QueryRowContext(ctx, getTemplateBoardColumnByID, id)
+	var i TemplateBoardColumn
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.SystemType,
+		&i.WipLimit,
+		&i.Order,
+		&i.IsLocked,
+	)
+	return i, err
+}
+
+const getTemplateBoardFieldByID = `-- name: GetTemplateBoardFieldByID :one
+SELECT id, board_id, code, name, field_type, is_system, is_required, is_active, "order", options, config
+FROM template_board_fields
+WHERE id = $1
+`
+
+func (q *Queries) GetTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) (TemplateBoardField, error) {
+	row := q.db.QueryRowContext(ctx, getTemplateBoardFieldByID, id)
+	var i TemplateBoardField
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Code,
+		&i.Name,
+		&i.FieldType,
+		&i.IsSystem,
+		&i.IsRequired,
+		&i.IsActive,
+		&i.Order,
+		&i.Options,
+		&i.Config,
+	)
+	return i, err
+}
+
+const getTemplateBoardSwimlaneByID = `-- name: GetTemplateBoardSwimlaneByID :one
+SELECT id, board_id, name, value, wip_limit, "order"
+FROM template_board_swimlanes
+WHERE id = $1
+`
+
+func (q *Queries) GetTemplateBoardSwimlaneByID(ctx context.Context, id uuid.UUID) (TemplateBoardSwimlane, error) {
+	row := q.db.QueryRowContext(ctx, getTemplateBoardSwimlaneByID, id)
+	var i TemplateBoardSwimlane
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.Value,
+		&i.WipLimit,
+		&i.Order,
+	)
+	return i, err
+}
+
+const isTemplateInUse = `-- name: IsTemplateInUse :one
+SELECT EXISTS(SELECT 1 FROM projects WHERE project_type = (SELECT project_type FROM project_templates pt2 WHERE pt2.id = $1) LIMIT 0) AS in_use
+`
+
+func (q *Queries) IsTemplateInUse(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isTemplateInUse, id)
+	var in_use bool
+	err := row.Scan(&in_use)
+	return in_use, err
+}
+
+const listProjectTemplates = `-- name: ListProjectTemplates :many
+
+SELECT pt.id, pt.name, pt.description, pt.project_type, pt.created_at, pt.updated_at,
+       (SELECT COUNT(*) FROM template_boards tb WHERE tb.template_id = pt.id)::int AS board_count
+FROM project_templates pt
+ORDER BY pt.project_type ASC
+`
+
+type ListProjectTemplatesRow struct {
+	ID          uuid.UUID      `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	ProjectType string         `json:"project_type"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	BoardCount  int32          `json:"board_count"`
+}
+
 // Project templates
-func (q *Queries) ListProjectTemplates(ctx context.Context) ([]ProjectTemplate, error) {
+func (q *Queries) ListProjectTemplates(ctx context.Context) ([]ListProjectTemplatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectTemplates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProjectTemplate{}
+	items := []ListProjectTemplatesRow{}
 	for rows.Next() {
-		var i ProjectTemplate
+		var i ListProjectTemplatesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Description,
 			&i.ProjectType,
 			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.BoardCount,
 		); err != nil {
 			return nil, err
 		}
@@ -70,4 +505,482 @@ func (q *Queries) ListProjectTemplates(ctx context.Context) ([]ProjectTemplate, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTemplateBoardColumns = `-- name: ListTemplateBoardColumns :many
+
+SELECT id, board_id, name, system_type, wip_limit, "order", is_locked
+FROM template_board_columns
+WHERE board_id = $1
+ORDER BY "order" ASC
+`
+
+// Template board columns
+func (q *Queries) ListTemplateBoardColumns(ctx context.Context, boardID uuid.UUID) ([]TemplateBoardColumn, error) {
+	rows, err := q.db.QueryContext(ctx, listTemplateBoardColumns, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TemplateBoardColumn{}
+	for rows.Next() {
+		var i TemplateBoardColumn
+		if err := rows.Scan(
+			&i.ID,
+			&i.BoardID,
+			&i.Name,
+			&i.SystemType,
+			&i.WipLimit,
+			&i.Order,
+			&i.IsLocked,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTemplateBoardCustomFields = `-- name: ListTemplateBoardCustomFields :many
+SELECT id, board_id, code, name, field_type, is_system, is_required, is_active, "order", options, config
+FROM template_board_fields
+WHERE board_id = $1 AND is_system = false
+ORDER BY "order" ASC
+`
+
+func (q *Queries) ListTemplateBoardCustomFields(ctx context.Context, boardID uuid.UUID) ([]TemplateBoardField, error) {
+	rows, err := q.db.QueryContext(ctx, listTemplateBoardCustomFields, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TemplateBoardField{}
+	for rows.Next() {
+		var i TemplateBoardField
+		if err := rows.Scan(
+			&i.ID,
+			&i.BoardID,
+			&i.Code,
+			&i.Name,
+			&i.FieldType,
+			&i.IsSystem,
+			&i.IsRequired,
+			&i.IsActive,
+			&i.Order,
+			&i.Options,
+			&i.Config,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTemplateBoardFields = `-- name: ListTemplateBoardFields :many
+
+SELECT id, board_id, code, name, field_type, is_system, is_required, is_active, "order", options, config
+FROM template_board_fields
+WHERE board_id = $1
+ORDER BY "order" ASC
+`
+
+// Template board custom fields
+func (q *Queries) ListTemplateBoardFields(ctx context.Context, boardID uuid.UUID) ([]TemplateBoardField, error) {
+	rows, err := q.db.QueryContext(ctx, listTemplateBoardFields, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TemplateBoardField{}
+	for rows.Next() {
+		var i TemplateBoardField
+		if err := rows.Scan(
+			&i.ID,
+			&i.BoardID,
+			&i.Code,
+			&i.Name,
+			&i.FieldType,
+			&i.IsSystem,
+			&i.IsRequired,
+			&i.IsActive,
+			&i.Order,
+			&i.Options,
+			&i.Config,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTemplateBoardPriorityValues = `-- name: ListTemplateBoardPriorityValues :many
+
+SELECT id, board_id, value, "order"
+FROM template_board_priority_values
+WHERE board_id = $1
+ORDER BY "order" ASC
+`
+
+// Template board priority values
+func (q *Queries) ListTemplateBoardPriorityValues(ctx context.Context, boardID uuid.UUID) ([]TemplateBoardPriorityValue, error) {
+	rows, err := q.db.QueryContext(ctx, listTemplateBoardPriorityValues, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TemplateBoardPriorityValue{}
+	for rows.Next() {
+		var i TemplateBoardPriorityValue
+		if err := rows.Scan(
+			&i.ID,
+			&i.BoardID,
+			&i.Value,
+			&i.Order,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTemplateBoardSwimlanes = `-- name: ListTemplateBoardSwimlanes :many
+
+SELECT id, board_id, name, value, wip_limit, "order"
+FROM template_board_swimlanes
+WHERE board_id = $1
+ORDER BY "order" ASC
+`
+
+// Template board swimlanes
+func (q *Queries) ListTemplateBoardSwimlanes(ctx context.Context, boardID uuid.UUID) ([]TemplateBoardSwimlane, error) {
+	rows, err := q.db.QueryContext(ctx, listTemplateBoardSwimlanes, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TemplateBoardSwimlane{}
+	for rows.Next() {
+		var i TemplateBoardSwimlane
+		if err := rows.Scan(
+			&i.ID,
+			&i.BoardID,
+			&i.Name,
+			&i.Value,
+			&i.WipLimit,
+			&i.Order,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTemplateBoardsByTemplateID = `-- name: ListTemplateBoardsByTemplateID :many
+
+SELECT id, template_id, name, description, is_default, "order", priority_type, estimation_unit, swimlane_group_by
+FROM template_boards
+WHERE template_id = $1
+ORDER BY "order" ASC
+`
+
+// Template boards
+func (q *Queries) ListTemplateBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) ([]TemplateBoard, error) {
+	rows, err := q.db.QueryContext(ctx, listTemplateBoardsByTemplateID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TemplateBoard{}
+	for rows.Next() {
+		var i TemplateBoard
+		if err := rows.Scan(
+			&i.ID,
+			&i.TemplateID,
+			&i.Name,
+			&i.Description,
+			&i.IsDefault,
+			&i.Order,
+			&i.PriorityType,
+			&i.EstimationUnit,
+			&i.SwimlaneGroupBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unsetDefaultBoardByTemplateID = `-- name: UnsetDefaultBoardByTemplateID :exec
+UPDATE template_boards SET is_default = false WHERE template_id = $1 AND is_default = true
+`
+
+func (q *Queries) UnsetDefaultBoardByTemplateID(ctx context.Context, templateID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, unsetDefaultBoardByTemplateID, templateID)
+	return err
+}
+
+const updateProjectTemplate = `-- name: UpdateProjectTemplate :one
+UPDATE project_templates
+SET name = $2, description = $3, updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, description, project_type, created_at, updated_at
+`
+
+type UpdateProjectTemplateParams struct {
+	ID          uuid.UUID      `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+}
+
+func (q *Queries) UpdateProjectTemplate(ctx context.Context, arg UpdateProjectTemplateParams) (ProjectTemplate, error) {
+	row := q.db.QueryRowContext(ctx, updateProjectTemplate, arg.ID, arg.Name, arg.Description)
+	var i ProjectTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.ProjectType,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateTemplateBoard = `-- name: UpdateTemplateBoard :one
+UPDATE template_boards
+SET name = $2, description = $3, is_default = $4, "order" = $5, priority_type = $6, estimation_unit = $7, swimlane_group_by = $8
+WHERE id = $1
+RETURNING id, template_id, name, description, is_default, "order", priority_type, estimation_unit, swimlane_group_by
+`
+
+type UpdateTemplateBoardParams struct {
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	IsDefault       bool      `json:"is_default"`
+	Order           int32     `json:"order"`
+	PriorityType    string    `json:"priority_type"`
+	EstimationUnit  string    `json:"estimation_unit"`
+	SwimlaneGroupBy string    `json:"swimlane_group_by"`
+}
+
+func (q *Queries) UpdateTemplateBoard(ctx context.Context, arg UpdateTemplateBoardParams) (TemplateBoard, error) {
+	row := q.db.QueryRowContext(ctx, updateTemplateBoard,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.IsDefault,
+		arg.Order,
+		arg.PriorityType,
+		arg.EstimationUnit,
+		arg.SwimlaneGroupBy,
+	)
+	var i TemplateBoard
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateID,
+		&i.Name,
+		&i.Description,
+		&i.IsDefault,
+		&i.Order,
+		&i.PriorityType,
+		&i.EstimationUnit,
+		&i.SwimlaneGroupBy,
+	)
+	return i, err
+}
+
+const updateTemplateBoardColumn = `-- name: UpdateTemplateBoardColumn :one
+UPDATE template_board_columns
+SET name = $2, system_type = $3, wip_limit = $4
+WHERE id = $1
+RETURNING id, board_id, name, system_type, wip_limit, "order", is_locked
+`
+
+type UpdateTemplateBoardColumnParams struct {
+	ID         uuid.UUID     `json:"id"`
+	Name       string        `json:"name"`
+	SystemType string        `json:"system_type"`
+	WipLimit   sql.NullInt32 `json:"wip_limit"`
+}
+
+func (q *Queries) UpdateTemplateBoardColumn(ctx context.Context, arg UpdateTemplateBoardColumnParams) (TemplateBoardColumn, error) {
+	row := q.db.QueryRowContext(ctx, updateTemplateBoardColumn,
+		arg.ID,
+		arg.Name,
+		arg.SystemType,
+		arg.WipLimit,
+	)
+	var i TemplateBoardColumn
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.SystemType,
+		&i.WipLimit,
+		&i.Order,
+		&i.IsLocked,
+	)
+	return i, err
+}
+
+const updateTemplateBoardColumnOrder = `-- name: UpdateTemplateBoardColumnOrder :exec
+UPDATE template_board_columns SET "order" = $2 WHERE id = $1
+`
+
+type UpdateTemplateBoardColumnOrderParams struct {
+	ID    uuid.UUID `json:"id"`
+	Order int32     `json:"order"`
+}
+
+func (q *Queries) UpdateTemplateBoardColumnOrder(ctx context.Context, arg UpdateTemplateBoardColumnOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateTemplateBoardColumnOrder, arg.ID, arg.Order)
+	return err
+}
+
+const updateTemplateBoardField = `-- name: UpdateTemplateBoardField :one
+UPDATE template_board_fields
+SET name = $2, is_required = $3, options = $4
+WHERE id = $1
+RETURNING id, board_id, code, name, field_type, is_system, is_required, is_active, "order", options, config
+`
+
+type UpdateTemplateBoardFieldParams struct {
+	ID         uuid.UUID             `json:"id"`
+	Name       string                `json:"name"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+}
+
+func (q *Queries) UpdateTemplateBoardField(ctx context.Context, arg UpdateTemplateBoardFieldParams) (TemplateBoardField, error) {
+	row := q.db.QueryRowContext(ctx, updateTemplateBoardField,
+		arg.ID,
+		arg.Name,
+		arg.IsRequired,
+		arg.Options,
+	)
+	var i TemplateBoardField
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Code,
+		&i.Name,
+		&i.FieldType,
+		&i.IsSystem,
+		&i.IsRequired,
+		&i.IsActive,
+		&i.Order,
+		&i.Options,
+		&i.Config,
+	)
+	return i, err
+}
+
+const updateTemplateBoardFieldOrder = `-- name: UpdateTemplateBoardFieldOrder :exec
+UPDATE template_board_fields SET "order" = $2 WHERE id = $1
+`
+
+type UpdateTemplateBoardFieldOrderParams struct {
+	ID    uuid.UUID `json:"id"`
+	Order int32     `json:"order"`
+}
+
+func (q *Queries) UpdateTemplateBoardFieldOrder(ctx context.Context, arg UpdateTemplateBoardFieldOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateTemplateBoardFieldOrder, arg.ID, arg.Order)
+	return err
+}
+
+const updateTemplateBoardOrder = `-- name: UpdateTemplateBoardOrder :exec
+UPDATE template_boards SET "order" = $2 WHERE id = $1
+`
+
+type UpdateTemplateBoardOrderParams struct {
+	ID    uuid.UUID `json:"id"`
+	Order int32     `json:"order"`
+}
+
+func (q *Queries) UpdateTemplateBoardOrder(ctx context.Context, arg UpdateTemplateBoardOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateTemplateBoardOrder, arg.ID, arg.Order)
+	return err
+}
+
+const updateTemplateBoardSwimlane = `-- name: UpdateTemplateBoardSwimlane :one
+UPDATE template_board_swimlanes
+SET wip_limit = $2
+WHERE id = $1
+RETURNING id, board_id, name, value, wip_limit, "order"
+`
+
+type UpdateTemplateBoardSwimlaneParams struct {
+	ID       uuid.UUID     `json:"id"`
+	WipLimit sql.NullInt32 `json:"wip_limit"`
+}
+
+func (q *Queries) UpdateTemplateBoardSwimlane(ctx context.Context, arg UpdateTemplateBoardSwimlaneParams) (TemplateBoardSwimlane, error) {
+	row := q.db.QueryRowContext(ctx, updateTemplateBoardSwimlane, arg.ID, arg.WipLimit)
+	var i TemplateBoardSwimlane
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.Value,
+		&i.WipLimit,
+		&i.Order,
+	)
+	return i, err
+}
+
+const updateTemplateBoardSwimlaneOrder = `-- name: UpdateTemplateBoardSwimlaneOrder :exec
+UPDATE template_board_swimlanes SET "order" = $2 WHERE id = $1
+`
+
+type UpdateTemplateBoardSwimlaneOrderParams struct {
+	ID    uuid.UUID `json:"id"`
+	Order int32     `json:"order"`
+}
+
+func (q *Queries) UpdateTemplateBoardSwimlaneOrder(ctx context.Context, arg UpdateTemplateBoardSwimlaneOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateTemplateBoardSwimlaneOrder, arg.ID, arg.Order)
+	return err
 }

@@ -249,6 +249,54 @@ type ProjectTemplate struct {
 	Description sql.NullString `json:"description"`
 	ProjectType string         `json:"project_type"`
 	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type RefColumnSystemType struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SortOrder   int32  `json:"sort_order"`
+}
+
+type RefEstimationUnit struct {
+	Key          string   `json:"key"`
+	Name         string   `json:"name"`
+	AvailableFor []string `json:"available_for"`
+}
+
+type RefFieldType struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+type RefPriorityType struct {
+	Key           string   `json:"key"`
+	Name          string   `json:"name"`
+	AvailableFor  []string `json:"available_for"`
+	DefaultValues []string `json:"default_values"`
+}
+
+type RefSwimlaneGroupOption struct {
+	Key          string   `json:"key"`
+	Name         string   `json:"name"`
+	AvailableFor []string `json:"available_for"`
+}
+
+type RefSystemTaskField struct {
+	Key          string   `json:"key"`
+	Name         string   `json:"name"`
+	FieldType    string   `json:"field_type"`
+	AvailableFor []string `json:"available_for"`
+	Description  string   `json:"description"`
+	SortOrder    int32    `json:"sort_order"`
+}
+
+type RefTaskStatusType struct {
+	Key          string `json:"key"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	IsColumnType bool   `json:"is_column_type"`
 }
 
 type RefreshToken struct {
@@ -362,6 +410,58 @@ type TaskWatcher struct {
 	TaskID          uuid.UUID `json:"task_id"`
 	ProjectMemberID uuid.UUID `json:"project_member_id"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+type TemplateBoard struct {
+	ID              uuid.UUID `json:"id"`
+	TemplateID      uuid.UUID `json:"template_id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	IsDefault       bool      `json:"is_default"`
+	Order           int32     `json:"order"`
+	PriorityType    string    `json:"priority_type"`
+	EstimationUnit  string    `json:"estimation_unit"`
+	SwimlaneGroupBy string    `json:"swimlane_group_by"`
+}
+
+type TemplateBoardColumn struct {
+	ID         uuid.UUID     `json:"id"`
+	BoardID    uuid.UUID     `json:"board_id"`
+	Name       string        `json:"name"`
+	SystemType string        `json:"system_type"`
+	WipLimit   sql.NullInt32 `json:"wip_limit"`
+	Order      int32         `json:"order"`
+	IsLocked   bool          `json:"is_locked"`
+}
+
+type TemplateBoardField struct {
+	ID         uuid.UUID             `json:"id"`
+	BoardID    uuid.UUID             `json:"board_id"`
+	Code       string                `json:"code"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsSystem   bool                  `json:"is_system"`
+	IsRequired bool                  `json:"is_required"`
+	IsActive   bool                  `json:"is_active"`
+	Order      int32                 `json:"order"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Config     pqtype.NullRawMessage `json:"config"`
+}
+
+type TemplateBoardPriorityValue struct {
+	ID      uuid.UUID `json:"id"`
+	BoardID uuid.UUID `json:"board_id"`
+	Value   string    `json:"value"`
+	Order   int32     `json:"order"`
+}
+
+type TemplateBoardSwimlane struct {
+	ID       uuid.UUID     `json:"id"`
+	BoardID  uuid.UUID     `json:"board_id"`
+	Name     string        `json:"name"`
+	Value    string        `json:"value"`
+	WipLimit sql.NullInt32 `json:"wip_limit"`
+	Order    int32         `json:"order"`
 }
 
 type User struct {

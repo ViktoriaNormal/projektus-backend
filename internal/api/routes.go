@@ -230,8 +230,38 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			templates := admin.Group("/project-templates")
 			templates.Use(middleware.RequireSystemPermission(services.SystemPermissionManageTemplates, permissionSvc))
 			{
+				templates.GET("/references", templateHandler.GetReferences)
 				templates.GET("", templateHandler.ListTemplates)
 				templates.POST("", templateHandler.CreateTemplate)
+				templates.GET("/:templateId", templateHandler.GetTemplate)
+				templates.PATCH("/:templateId", templateHandler.UpdateTemplate)
+				templates.DELETE("/:templateId", templateHandler.DeleteTemplate)
+
+				// Boards
+				templates.POST("/:templateId/boards", templateHandler.CreateBoard)
+				templates.PATCH("/:templateId/boards/reorder", templateHandler.ReorderBoards)
+				templates.PATCH("/:templateId/boards/:boardId", templateHandler.UpdateBoard)
+				templates.DELETE("/:templateId/boards/:boardId", templateHandler.DeleteBoard)
+
+				// Columns
+				templates.POST("/:templateId/boards/:boardId/columns", templateHandler.CreateColumn)
+				templates.PATCH("/:templateId/boards/:boardId/columns/reorder", templateHandler.ReorderColumns)
+				templates.PATCH("/:templateId/boards/:boardId/columns/:columnId", templateHandler.UpdateColumn)
+				templates.DELETE("/:templateId/boards/:boardId/columns/:columnId", templateHandler.DeleteColumn)
+
+				// Swimlanes
+				templates.PATCH("/:templateId/boards/:boardId/swimlanes/reorder", templateHandler.ReorderSwimlanes)
+				templates.PATCH("/:templateId/boards/:boardId/swimlanes/:swimlaneId", templateHandler.UpdateSwimlane)
+				templates.DELETE("/:templateId/boards/:boardId/swimlanes/:swimlaneId", templateHandler.DeleteSwimlane)
+
+				// Priority values
+				templates.PUT("/:templateId/boards/:boardId/priority-values", templateHandler.ReplacePriorityValues)
+
+				// Custom fields
+				templates.POST("/:templateId/boards/:boardId/custom-fields", templateHandler.CreateCustomField)
+				templates.PATCH("/:templateId/boards/:boardId/custom-fields/reorder", templateHandler.ReorderCustomFields)
+				templates.PATCH("/:templateId/boards/:boardId/custom-fields/:fieldId", templateHandler.UpdateCustomField)
+				templates.DELETE("/:templateId/boards/:boardId/custom-fields/:fieldId", templateHandler.DeleteCustomField)
 			}
 		}
 	}
