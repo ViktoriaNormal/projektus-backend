@@ -262,6 +262,18 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 				templates.PATCH("/:templateId/boards/:boardId/custom-fields/reorder", templateHandler.ReorderCustomFields)
 				templates.PATCH("/:templateId/boards/:boardId/custom-fields/:fieldId", templateHandler.UpdateCustomField)
 				templates.DELETE("/:templateId/boards/:boardId/custom-fields/:fieldId", templateHandler.DeleteCustomField)
+
+				// Project params
+				templates.POST("/:templateId/project-params", templateHandler.CreateProjectParam)
+				templates.PATCH("/:templateId/project-params/reorder", templateHandler.ReorderProjectParams)
+				templates.PATCH("/:templateId/project-params/:paramId", templateHandler.UpdateProjectParam)
+				templates.DELETE("/:templateId/project-params/:paramId", templateHandler.DeleteProjectParam)
+
+				// Roles
+				templates.POST("/:templateId/roles", templateHandler.CreateRole)
+				templates.PATCH("/:templateId/roles/reorder", templateHandler.ReorderRoles)
+				templates.PATCH("/:templateId/roles/:roleId", templateHandler.UpdateRole)
+				templates.DELETE("/:templateId/roles/:roleId", templateHandler.DeleteRole)
 			}
 		}
 	}

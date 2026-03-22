@@ -24,53 +24,60 @@ func NewTemplateService(repo repositories.TemplateRepository, refRepo repositori
 
 // --- Templates ---
 
-func (s *TemplateService) List(ctx context.Context) ([]domain.ProjectTemplate, [][]domain.TemplateBoard, error) {
+// TemplateFullData holds all nested data for a template response
+type TemplateFullData struct {
+	Boards []domain.TemplateBoard
+	Params []domain.TemplateProjectParam
+	Roles  []domain.TemplateRole
+}
+
+func (s *TemplateService) List(ctx context.Context) ([]domain.ProjectTemplate, []TemplateFullData, error) {
 	templates, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	allBoards := make([][]domain.TemplateBoard, len(templates))
+	allData := make([]TemplateFullData, len(templates))
 	for i, t := range templates {
-		boards, err := s.loadBoards(ctx, t.ID)
+		data, err := s.loadFullData(ctx, t.ID)
 		if err != nil {
 			return nil, nil, err
 		}
-		allBoards[i] = boards
+		allData[i] = data
 	}
-	return templates, allBoards, nil
+	return templates, allData, nil
 }
 
-func (s *TemplateService) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProjectTemplate, []domain.TemplateBoard, error) {
+func (s *TemplateService) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProjectTemplate, TemplateFullData, error) {
 	tmpl, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
-	boards, err := s.loadBoards(ctx, id)
+	data, err := s.loadFullData(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
-	return tmpl, boards, nil
+	return tmpl, data, nil
 }
 
-func (s *TemplateService) Create(ctx context.Context, name string, description *string, projectType string) (*domain.ProjectTemplate, []domain.TemplateBoard, error) {
+func (s *TemplateService) Create(ctx context.Context, name string, description *string, projectType string) (*domain.ProjectTemplate, TemplateFullData, error) {
 	tmpl, err := s.repo.Create(ctx, name, description, projectType)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
 
 	// Create default board
 	board, err := s.createDefaultBoard(ctx, tmpl.ID, projectType)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
 
-	return tmpl, []domain.TemplateBoard{board}, nil
+	return tmpl, TemplateFullData{Boards: []domain.TemplateBoard{board}, Params: []domain.TemplateProjectParam{}, Roles: []domain.TemplateRole{}}, nil
 }
 
-func (s *TemplateService) Update(ctx context.Context, id uuid.UUID, name *string, description *string) (*domain.ProjectTemplate, []domain.TemplateBoard, error) {
+func (s *TemplateService) Update(ctx context.Context, id uuid.UUID, name *string, description *string) (*domain.ProjectTemplate, TemplateFullData, error) {
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
 
 	finalName := existing.Name
@@ -84,15 +91,15 @@ func (s *TemplateService) Update(ctx context.Context, id uuid.UUID, name *string
 
 	tmpl, err := s.repo.Update(ctx, id, finalName, finalDesc)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
 
-	boards, err := s.loadBoards(ctx, id)
+	data, err := s.loadFullData(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, TemplateFullData{}, err
 	}
 
-	return tmpl, boards, nil
+	return tmpl, data, nil
 }
 
 func (s *TemplateService) Delete(ctx context.Context, id uuid.UUID) error {
@@ -620,7 +627,195 @@ func (s *TemplateService) ReorderCustomFields(ctx context.Context, templateID, b
 	return nil
 }
 
+// --- Project Params ---
+
+func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uuid.UUID, name, fieldType string, isRequired bool, order int32, options []string) (domain.TemplateProjectParam, error) {
+	_, err := s.repo.GetByID(ctx, templateID)
+	if err != nil {
+		return domain.TemplateProjectParam{}, err
+	}
+	p, err := s.repo.CreateProjectParam(ctx, db.CreateTemplateProjectParamParams{
+		TemplateID: templateID, Name: name, FieldType: fieldType, IsRequired: isRequired, Order: order, Options: repositories.OptionsToJSON(options),
+	})
+	if err != nil {
+		return domain.TemplateProjectParam{}, err
+	}
+	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.Order, Options: repositories.JSONToOptions(p.Options)}, nil
+}
+
+func (s *TemplateService) UpdateProjectParam(ctx context.Context, templateID, paramID uuid.UUID, name *string, isRequired *bool, options []string) (domain.TemplateProjectParam, error) {
+	existing, err := s.repo.GetProjectParamByID(ctx, paramID)
+	if err != nil || existing.TemplateID != templateID {
+		return domain.TemplateProjectParam{}, domain.ErrNotFound
+	}
+	finalName := existing.Name
+	if name != nil {
+		finalName = *name
+	}
+	finalRequired := existing.IsRequired
+	if isRequired != nil {
+		finalRequired = *isRequired
+	}
+	finalOptions := existing.Options
+	if options != nil {
+		finalOptions = repositories.OptionsToJSON(options)
+	}
+	p, err := s.repo.UpdateProjectParam(ctx, db.UpdateTemplateProjectParamParams{ID: paramID, Name: finalName, IsRequired: finalRequired, Options: finalOptions})
+	if err != nil {
+		return domain.TemplateProjectParam{}, err
+	}
+	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.Order, Options: repositories.JSONToOptions(p.Options)}, nil
+}
+
+func (s *TemplateService) DeleteProjectParam(ctx context.Context, templateID, paramID uuid.UUID) error {
+	existing, err := s.repo.GetProjectParamByID(ctx, paramID)
+	if err != nil || existing.TemplateID != templateID {
+		return domain.ErrNotFound
+	}
+	return s.repo.DeleteProjectParam(ctx, paramID)
+}
+
+func (s *TemplateService) ReorderProjectParams(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
+	for id, order := range orders {
+		if err := s.repo.UpdateProjectParamOrder(ctx, id, order); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// --- Roles ---
+
+func (s *TemplateService) CreateRole(ctx context.Context, templateID uuid.UUID, name, description string, permissions []domain.TemplateRolePermission) (domain.TemplateRole, error) {
+	_, err := s.repo.GetByID(ctx, templateID)
+	if err != nil {
+		return domain.TemplateRole{}, err
+	}
+	count, _ := s.repo.CountRoles(ctx, templateID)
+	role, err := s.repo.CreateRole(ctx, db.CreateTemplateRoleParams{
+		TemplateID: templateID, Name: name, Description: description, IsDefault: false, Order: count + 1,
+	})
+	if err != nil {
+		return domain.TemplateRole{}, err
+	}
+	for _, p := range permissions {
+		_ = s.repo.UpsertRolePermission(ctx, role.ID, p.Area, p.Access)
+	}
+	return s.loadRole(ctx, role)
+}
+
+func (s *TemplateService) UpdateRole(ctx context.Context, templateID, roleID uuid.UUID, name, description *string, permissions []domain.TemplateRolePermission) (domain.TemplateRole, error) {
+	role, err := s.repo.GetRoleByID(ctx, roleID)
+	if err != nil || role.TemplateID != templateID {
+		return domain.TemplateRole{}, domain.ErrNotFound
+	}
+	finalName := role.Name
+	if name != nil {
+		finalName = *name
+	}
+	finalDesc := role.Description
+	if description != nil {
+		finalDesc = *description
+	}
+	updated, err := s.repo.UpdateRole(ctx, db.UpdateTemplateRoleParams{ID: roleID, Name: finalName, Description: finalDesc})
+	if err != nil {
+		return domain.TemplateRole{}, err
+	}
+	if permissions != nil {
+		for _, p := range permissions {
+			_ = s.repo.UpsertRolePermission(ctx, roleID, p.Area, p.Access)
+		}
+	}
+	return s.loadRole(ctx, updated)
+}
+
+func (s *TemplateService) DeleteRole(ctx context.Context, templateID, roleID uuid.UUID) error {
+	role, err := s.repo.GetRoleByID(ctx, roleID)
+	if err != nil || role.TemplateID != templateID {
+		return domain.ErrNotFound
+	}
+	return s.repo.DeleteRole(ctx, roleID)
+}
+
+func (s *TemplateService) ReorderRoles(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
+	for id, order := range orders {
+		if err := s.repo.UpdateRoleOrder(ctx, id, order); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *TemplateService) loadRole(ctx context.Context, r db.TemplateRole) (domain.TemplateRole, error) {
+	perms, err := s.repo.ListRolePermissions(ctx, r.ID)
+	if err != nil {
+		return domain.TemplateRole{}, err
+	}
+	domPerms := make([]domain.TemplateRolePermission, 0, len(perms))
+	for _, p := range perms {
+		domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.Area, Access: p.Access})
+	}
+	return domain.TemplateRole{
+		ID: r.ID, TemplateID: r.TemplateID, Name: r.Name, Description: r.Description,
+		IsDefault: r.IsDefault, Order: r.Order, Permissions: domPerms,
+	}, nil
+}
+
 // --- Private helpers ---
+
+func (s *TemplateService) loadFullData(ctx context.Context, templateID uuid.UUID) (TemplateFullData, error) {
+	boards, err := s.loadBoards(ctx, templateID)
+	if err != nil {
+		return TemplateFullData{}, err
+	}
+	params, err := s.loadProjectParams(ctx, templateID)
+	if err != nil {
+		return TemplateFullData{}, err
+	}
+	roles, err := s.loadRoles(ctx, templateID)
+	if err != nil {
+		return TemplateFullData{}, err
+	}
+	return TemplateFullData{Boards: boards, Params: params, Roles: roles}, nil
+}
+
+func (s *TemplateService) loadProjectParams(ctx context.Context, templateID uuid.UUID) ([]domain.TemplateProjectParam, error) {
+	dbParams, err := s.repo.ListProjectParams(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.TemplateProjectParam, 0, len(dbParams))
+	for _, p := range dbParams {
+		result = append(result, domain.TemplateProjectParam{
+			ID: p.ID, TemplateID: p.TemplateID, Name: p.Name, FieldType: p.FieldType,
+			IsRequired: p.IsRequired, Order: p.Order, Options: repositories.JSONToOptions(p.Options),
+		})
+	}
+	return result, nil
+}
+
+func (s *TemplateService) loadRoles(ctx context.Context, templateID uuid.UUID) ([]domain.TemplateRole, error) {
+	dbRoles, err := s.repo.ListRoles(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.TemplateRole, 0, len(dbRoles))
+	for _, r := range dbRoles {
+		perms, err := s.repo.ListRolePermissions(ctx, r.ID)
+		if err != nil {
+			return nil, err
+		}
+		domPerms := make([]domain.TemplateRolePermission, 0, len(perms))
+		for _, p := range perms {
+			domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.Area, Access: p.Access})
+		}
+		result = append(result, domain.TemplateRole{
+			ID: r.ID, TemplateID: r.TemplateID, Name: r.Name, Description: r.Description,
+			IsDefault: r.IsDefault, Order: r.Order, Permissions: domPerms,
+		})
+	}
+	return result, nil
+}
 
 func (s *TemplateService) loadBoards(ctx context.Context, templateID uuid.UUID) ([]domain.TemplateBoard, error) {
 	dbBoards, err := s.repo.ListBoardsByTemplateID(ctx, templateID)
@@ -993,6 +1188,49 @@ func (s *TemplateService) GetReferences(ctx context.Context) (*domain.References
 		refs.SystemTaskFields = append(refs.SystemTaskFields, domain.RefSystemField{
 			Key: sf.Key, Name: sf.Name, FieldType: sf.FieldType, AvailableFor: sf.AvailableFor, Description: sf.Description,
 		})
+	}
+
+	// System project params
+	sysParams, err := s.refRepo.ListSystemProjectParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, sp := range sysParams {
+		refs.SystemProjectParams = append(refs.SystemProjectParams, domain.RefSystemProjectParam{
+			Key: sp.Key, Name: sp.Name, FieldType: sp.FieldType, IsRequired: sp.IsRequired,
+			Options: repositories.JSONToOptions(sp.Options),
+		})
+	}
+
+	// Permission areas — flat array with availableFor
+	permAreas, err := s.refRepo.ListPermissionAreas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	areaMap := make(map[string]*domain.RefPermissionArea)
+	areaOrder := make([]string, 0)
+	for _, pa := range permAreas {
+		if existing, ok := areaMap[pa.Area]; ok {
+			existing.AvailableFor = append(existing.AvailableFor, pa.ProjectType)
+		} else {
+			areaMap[pa.Area] = &domain.RefPermissionArea{
+				Area: pa.Area, Name: pa.Name, Description: pa.Description,
+				AvailableFor: []string{pa.ProjectType},
+			}
+			areaOrder = append(areaOrder, pa.Area)
+		}
+	}
+	for _, area := range areaOrder {
+		refs.PermissionAreas = append(refs.PermissionAreas, *areaMap[area])
+	}
+
+	// Access levels
+	levels, err := s.refRepo.ListAccessLevels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range levels {
+		refs.AccessLevels = append(refs.AccessLevels, domain.RefKeyName{Key: l.Key, Name: l.Name})
 	}
 
 	return refs, nil

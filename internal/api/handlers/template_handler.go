@@ -72,20 +72,34 @@ func (h *TemplateHandler) GetReferences(c *gin.Context) {
 			Key: sf.Key, Name: sf.Name, FieldType: sf.FieldType, AvailableFor: sf.AvailableFor, Description: sf.Description,
 		})
 	}
+	for _, sp := range refs.SystemProjectParams {
+		resp.SystemProjectParams = append(resp.SystemProjectParams, dto.ReferenceSystemProjectParam{
+			Key: sp.Key, Name: sp.Name, FieldType: sp.FieldType, IsRequired: sp.IsRequired, Options: sp.Options,
+		})
+	}
+	resp.PermissionAreas = make([]dto.ReferencePermissionArea, 0, len(refs.PermissionAreas))
+	for _, a := range refs.PermissionAreas {
+		resp.PermissionAreas = append(resp.PermissionAreas, dto.ReferencePermissionArea{
+			Area: a.Area, Name: a.Name, Description: a.Description, AvailableFor: a.AvailableFor,
+		})
+	}
+	for _, l := range refs.AccessLevels {
+		resp.AccessLevels = append(resp.AccessLevels, dto.ReferenceKeyName{Key: l.Key, Name: l.Name})
+	}
 
 	writeSuccess(c, resp)
 }
 
 // GET /v1/admin/project-templates
 func (h *TemplateHandler) ListTemplates(c *gin.Context) {
-	templates, allBoards, err := h.service.List(c.Request.Context())
+	templates, allData, err := h.service.List(c.Request.Context())
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить шаблоны проектов")
 		return
 	}
 	resp := make([]dto.ProjectTemplateResponse, 0, len(templates))
 	for i, t := range templates {
-		resp = append(resp, mapTemplateToResponse(&t, allBoards[i]))
+		resp = append(resp, mapTemplateToResponse(&t, allData[i]))
 	}
 	writeSuccess(c, resp)
 }
@@ -103,13 +117,13 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		desc = &req.Description
 	}
 
-	tmpl, boards, err := h.service.Create(c.Request.Context(), req.Name, desc, req.ProjectType)
+	tmpl, data, err := h.service.Create(c.Request.Context(), req.Name, desc, req.ProjectType)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать шаблон")
 		return
 	}
 
-	writeSuccess(c, mapTemplateToResponse(tmpl, boards))
+	writeSuccess(c, mapTemplateToResponse(tmpl, data))
 }
 
 // GET /v1/admin/project-templates/:templateId
@@ -120,7 +134,7 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 
-	tmpl, boards, err := h.service.GetByID(c.Request.Context(), templateID)
+	tmpl, data, err := h.service.GetByID(c.Request.Context(), templateID)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Шаблон не найден")
@@ -130,7 +144,7 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 
-	writeSuccess(c, mapTemplateToResponse(tmpl, boards))
+	writeSuccess(c, mapTemplateToResponse(tmpl, data))
 }
 
 // PATCH /v1/admin/project-templates/:templateId
@@ -147,7 +161,7 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
-	tmpl, boards, err := h.service.Update(c.Request.Context(), templateID, req.Name, req.Description)
+	tmpl, data, err := h.service.Update(c.Request.Context(), templateID, req.Name, req.Description)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Шаблон не найден")
@@ -157,7 +171,7 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
-	writeSuccess(c, mapTemplateToResponse(tmpl, boards))
+	writeSuccess(c, mapTemplateToResponse(tmpl, data))
 }
 
 // DELETE /v1/admin/project-templates/:templateId
@@ -760,23 +774,250 @@ func (h *TemplateHandler) ReorderCustomFields(c *gin.Context) {
 
 // --- Response mapping helpers ---
 
-func mapTemplateToResponse(tmpl *domain.ProjectTemplate, boards []domain.TemplateBoard) dto.ProjectTemplateResponse {
+// --- Project Params handlers ---
+
+func (h *TemplateHandler) CreateProjectParam(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	var req dto.CreateTemplateProjectParamRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+	p, err := h.service.CreateProjectParam(c.Request.Context(), templateID, req.Name, req.FieldType, req.IsRequired, req.Order, req.Options)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать параметр")
+		return
+	}
+	writeSuccess(c, mapProjectParamToResponse(p))
+}
+
+func (h *TemplateHandler) UpdateProjectParam(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	paramID, err := uuid.Parse(c.Param("paramId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	var req dto.UpdateTemplateProjectParamRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+	p, err := h.service.UpdateProjectParam(c.Request.Context(), templateID, paramID, req.Name, req.IsRequired, req.Options)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить параметр")
+		return
+	}
+	writeSuccess(c, mapProjectParamToResponse(p))
+}
+
+func (h *TemplateHandler) DeleteProjectParam(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	paramID, err := uuid.Parse(c.Param("paramId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	if err := h.service.DeleteProjectParam(c.Request.Context(), templateID, paramID); err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить параметр")
+		return
+	}
+	writeSuccess(c, nil)
+}
+
+func (h *TemplateHandler) ReorderProjectParams(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	var req dto.ReorderParamsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+	orders := make(map[uuid.UUID]int32)
+	for _, o := range req.Orders {
+		orders[o.ParamID] = o.Order
+	}
+	if err := h.service.ReorderProjectParams(c.Request.Context(), templateID, orders); err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок")
+		return
+	}
+	writeSuccess(c, nil)
+}
+
+// --- Roles handlers ---
+
+func (h *TemplateHandler) CreateRole(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	var req dto.CreateTemplateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+	perms := make([]domain.TemplateRolePermission, 0, len(req.Permissions))
+	for _, p := range req.Permissions {
+		perms = append(perms, domain.TemplateRolePermission{Area: p.Area, Access: p.Access})
+	}
+	role, err := h.service.CreateRole(c.Request.Context(), templateID, req.Name, req.Description, perms)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать роль")
+		return
+	}
+	writeSuccess(c, mapRoleToResponse(role))
+}
+
+func (h *TemplateHandler) UpdateRole(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	roleID, err := uuid.Parse(c.Param("roleId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	var req dto.UpdateTemplateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+	var perms []domain.TemplateRolePermission
+	if req.Permissions != nil {
+		perms = make([]domain.TemplateRolePermission, 0, len(req.Permissions))
+		for _, p := range req.Permissions {
+			perms = append(perms, domain.TemplateRolePermission{Area: p.Area, Access: p.Access})
+		}
+	}
+	role, err := h.service.UpdateRole(c.Request.Context(), templateID, roleID, req.Name, req.Description, perms)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить роль")
+		return
+	}
+	writeSuccess(c, mapRoleToResponse(role))
+}
+
+func (h *TemplateHandler) DeleteRole(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	roleID, err := uuid.Parse(c.Param("roleId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	if err := h.service.DeleteRole(c.Request.Context(), templateID, roleID); err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить роль")
+		return
+	}
+	writeSuccess(c, nil)
+}
+
+func (h *TemplateHandler) ReorderRoles(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+		return
+	}
+	var req dto.ReorderRolesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+	orders := make(map[uuid.UUID]int32)
+	for _, o := range req.Orders {
+		orders[o.RoleID] = o.Order
+	}
+	if err := h.service.ReorderRoles(c.Request.Context(), templateID, orders); err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок")
+		return
+	}
+	writeSuccess(c, nil)
+}
+
+// --- Response mapping helpers ---
+
+func mapTemplateToResponse(tmpl *domain.ProjectTemplate, data services.TemplateFullData) dto.ProjectTemplateResponse {
 	desc := ""
 	if tmpl.Description != nil {
 		desc = *tmpl.Description
 	}
-	boardResp := make([]dto.TemplateBoardResponse, 0, len(boards))
-	for _, b := range boards {
+	boardResp := make([]dto.TemplateBoardResponse, 0, len(data.Boards))
+	for _, b := range data.Boards {
 		boardResp = append(boardResp, mapBoardToResponse(b))
 	}
+	paramResp := make([]dto.TemplateProjectParamResponse, 0, len(data.Params))
+	for _, p := range data.Params {
+		paramResp = append(paramResp, mapProjectParamToResponse(p))
+	}
+	roleResp := make([]dto.TemplateRoleResponse, 0, len(data.Roles))
+	for _, r := range data.Roles {
+		roleResp = append(roleResp, mapRoleToResponse(r))
+	}
 	return dto.ProjectTemplateResponse{
-		ID:          tmpl.ID,
-		Name:        tmpl.Name,
-		Description: desc,
-		ProjectType: string(tmpl.Type),
-		CreatedAt:   tmpl.CreatedAt,
-		UpdatedAt:   tmpl.UpdatedAt,
-		Boards:      boardResp,
+		ID:                  tmpl.ID,
+		Name:                tmpl.Name,
+		Description:         desc,
+		ProjectType:         string(tmpl.Type),
+		CreatedAt:           tmpl.CreatedAt,
+		UpdatedAt:           tmpl.UpdatedAt,
+		Boards:              boardResp,
+		CustomProjectParams: paramResp,
+		Roles:               roleResp,
+	}
+}
+
+func mapProjectParamToResponse(p domain.TemplateProjectParam) dto.TemplateProjectParamResponse {
+	return dto.TemplateProjectParamResponse{
+		ID: p.ID, Name: p.Name, FieldType: p.FieldType, IsSystem: false,
+		IsRequired: p.IsRequired, Order: p.Order, Options: p.Options,
+	}
+}
+
+func mapRoleToResponse(r domain.TemplateRole) dto.TemplateRoleResponse {
+	perms := make([]dto.TemplateRolePermissionResponse, 0, len(r.Permissions))
+	for _, p := range r.Permissions {
+		perms = append(perms, dto.TemplateRolePermissionResponse{Area: p.Area, Access: p.Access})
+	}
+	return dto.TemplateRoleResponse{
+		ID: r.ID, Name: r.Name, Description: r.Description, IsDefault: r.IsDefault,
+		Order: r.Order, Permissions: perms,
 	}
 }
 

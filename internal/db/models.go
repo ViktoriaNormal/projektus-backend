@@ -252,6 +252,12 @@ type ProjectTemplate struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
+type RefAccessLevel struct {
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	SortOrder int32  `json:"sort_order"`
+}
+
 type RefColumnSystemType struct {
 	Key         string `json:"key"`
 	Name        string `json:"name"`
@@ -270,6 +276,14 @@ type RefFieldType struct {
 	Name string `json:"name"`
 }
 
+type RefPermissionArea struct {
+	Area        string `json:"area"`
+	ProjectType string `json:"project_type"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SortOrder   int32  `json:"sort_order"`
+}
+
 type RefPriorityType struct {
 	Key           string   `json:"key"`
 	Name          string   `json:"name"`
@@ -281,6 +295,15 @@ type RefSwimlaneGroupOption struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
 	AvailableFor []string `json:"available_for"`
+}
+
+type RefSystemProjectParam struct {
+	Key        string                `json:"key"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	SortOrder  int32                 `json:"sort_order"`
 }
 
 type RefSystemTaskField struct {
@@ -464,6 +487,32 @@ type TemplateBoardSwimlane struct {
 	WipLimit sql.NullInt32 `json:"wip_limit"`
 	Order    int32         `json:"order"`
 	Note     string        `json:"note"`
+}
+
+type TemplateProjectParam struct {
+	ID         uuid.UUID             `json:"id"`
+	TemplateID uuid.UUID             `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Order      int32                 `json:"order"`
+	Options    pqtype.NullRawMessage `json:"options"`
+}
+
+type TemplateRole struct {
+	ID          uuid.UUID `json:"id"`
+	TemplateID  uuid.UUID `json:"template_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	IsDefault   bool      `json:"is_default"`
+	Order       int32     `json:"order"`
+}
+
+type TemplateRolePermission struct {
+	ID     uuid.UUID `json:"id"`
+	RoleID uuid.UUID `json:"role_id"`
+	Area   string    `json:"area"`
+	Access string    `json:"access"`
 }
 
 type User struct {

@@ -62,6 +62,26 @@ type TemplateRepository interface {
 	UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.TemplateBoardField, error)
 	DeleteField(ctx context.Context, id uuid.UUID) error
 	UpdateFieldOrder(ctx context.Context, id uuid.UUID, order int32) error
+
+	// Project params
+	ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.TemplateProjectParam, error)
+	GetProjectParamByID(ctx context.Context, id uuid.UUID) (db.TemplateProjectParam, error)
+	CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.TemplateProjectParam, error)
+	UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.TemplateProjectParam, error)
+	DeleteProjectParam(ctx context.Context, id uuid.UUID) error
+	UpdateProjectParamOrder(ctx context.Context, id uuid.UUID, order int32) error
+
+	// Roles
+	ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.TemplateRole, error)
+	GetRoleByID(ctx context.Context, id uuid.UUID) (db.TemplateRole, error)
+	CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.TemplateRole, error)
+	UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.TemplateRole, error)
+	DeleteRole(ctx context.Context, id uuid.UUID) error
+	UpdateRoleOrder(ctx context.Context, id uuid.UUID, order int32) error
+	CountRoles(ctx context.Context, templateID uuid.UUID) (int32, error)
+	ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.TemplateRolePermission, error)
+	UpsertRolePermission(ctx context.Context, roleID uuid.UUID, area, access string) error
+	DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error
 }
 
 type templateRepository struct {
@@ -332,4 +352,73 @@ func JSONToOptions(raw pqtype.NullRawMessage) []string {
 		return []string{}
 	}
 	return options
+}
+
+// --- Project Params ---
+
+func (r *templateRepository) ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.TemplateProjectParam, error) {
+	return r.q.ListTemplateProjectParams(ctx, templateID)
+}
+
+func (r *templateRepository) GetProjectParamByID(ctx context.Context, id uuid.UUID) (db.TemplateProjectParam, error) {
+	return r.q.GetTemplateProjectParamByID(ctx, id)
+}
+
+func (r *templateRepository) CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.TemplateProjectParam, error) {
+	return r.q.CreateTemplateProjectParam(ctx, params)
+}
+
+func (r *templateRepository) UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.TemplateProjectParam, error) {
+	return r.q.UpdateTemplateProjectParam(ctx, params)
+}
+
+func (r *templateRepository) DeleteProjectParam(ctx context.Context, id uuid.UUID) error {
+	return r.q.DeleteTemplateProjectParamByID(ctx, id)
+}
+
+func (r *templateRepository) UpdateProjectParamOrder(ctx context.Context, id uuid.UUID, order int32) error {
+	return r.q.UpdateTemplateProjectParamOrder(ctx, db.UpdateTemplateProjectParamOrderParams{ID: id, Order: order})
+}
+
+// --- Roles ---
+
+func (r *templateRepository) ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.TemplateRole, error) {
+	return r.q.ListTemplateRoles(ctx, templateID)
+}
+
+func (r *templateRepository) GetRoleByID(ctx context.Context, id uuid.UUID) (db.TemplateRole, error) {
+	return r.q.GetTemplateRoleByID(ctx, id)
+}
+
+func (r *templateRepository) CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.TemplateRole, error) {
+	return r.q.CreateTemplateRole(ctx, params)
+}
+
+func (r *templateRepository) UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.TemplateRole, error) {
+	return r.q.UpdateTemplateRole(ctx, params)
+}
+
+func (r *templateRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {
+	_ = r.q.DeleteTemplateRolePermissionsByRoleID(ctx, id)
+	return r.q.DeleteTemplateRoleByID(ctx, id)
+}
+
+func (r *templateRepository) UpdateRoleOrder(ctx context.Context, id uuid.UUID, order int32) error {
+	return r.q.UpdateTemplateRoleOrder(ctx, db.UpdateTemplateRoleOrderParams{ID: id, Order: order})
+}
+
+func (r *templateRepository) CountRoles(ctx context.Context, templateID uuid.UUID) (int32, error) {
+	return r.q.CountTemplateRolesByTemplateID(ctx, templateID)
+}
+
+func (r *templateRepository) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.TemplateRolePermission, error) {
+	return r.q.ListTemplateRolePermissions(ctx, roleID)
+}
+
+func (r *templateRepository) UpsertRolePermission(ctx context.Context, roleID uuid.UUID, area, access string) error {
+	return r.q.UpsertTemplateRolePermission(ctx, db.UpsertTemplateRolePermissionParams{RoleID: roleID, Area: area, Access: access})
+}
+
+func (r *templateRepository) DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error {
+	return r.q.DeleteTemplateRolePermissionsByRoleID(ctx, roleID)
 }

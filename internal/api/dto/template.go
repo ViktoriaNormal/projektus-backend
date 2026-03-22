@@ -19,13 +19,39 @@ type ProjectTemplateListResponse struct {
 }
 
 type ProjectTemplateResponse struct {
-	ID          uuid.UUID              `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	ProjectType string                 `json:"projectType"`
-	CreatedAt   time.Time              `json:"createdAt"`
-	UpdatedAt   time.Time              `json:"updatedAt"`
-	Boards      []TemplateBoardResponse `json:"boards"`
+	ID                  uuid.UUID                       `json:"id"`
+	Name                string                          `json:"name"`
+	Description         string                          `json:"description,omitempty"`
+	ProjectType         string                          `json:"projectType"`
+	CreatedAt           time.Time                       `json:"createdAt"`
+	UpdatedAt           time.Time                       `json:"updatedAt"`
+	Boards              []TemplateBoardResponse          `json:"boards"`
+	CustomProjectParams []TemplateProjectParamResponse   `json:"customProjectParams"`
+	Roles               []TemplateRoleResponse           `json:"roles"`
+}
+
+type TemplateProjectParamResponse struct {
+	ID         uuid.UUID `json:"id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"fieldType"`
+	IsSystem   bool      `json:"isSystem"`
+	IsRequired bool      `json:"isRequired"`
+	Order      int32     `json:"order"`
+	Options    []string  `json:"options"`
+}
+
+type TemplateRoleResponse struct {
+	ID          uuid.UUID                       `json:"id"`
+	Name        string                          `json:"name"`
+	Description string                          `json:"description"`
+	IsDefault   bool                            `json:"isDefault"`
+	Order       int32                           `json:"order"`
+	Permissions []TemplateRolePermissionResponse `json:"permissions"`
+}
+
+type TemplateRolePermissionResponse struct {
+	Area   string `json:"area"`
+	Access string `json:"access"`
 }
 
 type TemplateBoardResponse struct {
@@ -184,17 +210,88 @@ type UpdateTemplateBoardCustomFieldRequest struct {
 	Options    []string `json:"options"`
 }
 
+// --- Project Params ---
+
+type CreateTemplateProjectParamRequest struct {
+	Name       string   `json:"name" binding:"required"`
+	FieldType  string   `json:"fieldType" binding:"required,oneof=text number datetime select multiselect checkbox user"`
+	IsRequired bool     `json:"isRequired"`
+	Order      int32    `json:"order"`
+	Options    []string `json:"options"`
+}
+
+type UpdateTemplateProjectParamRequest struct {
+	Name       *string  `json:"name"`
+	IsRequired *bool    `json:"isRequired"`
+	Options    []string `json:"options"`
+}
+
+type ParamOrderItem struct {
+	ParamID uuid.UUID `json:"paramId"`
+	Order   int32     `json:"order"`
+}
+
+type ReorderParamsRequest struct {
+	Orders []ParamOrderItem `json:"orders" binding:"required"`
+}
+
+// --- Roles ---
+
+type RolePermissionInput struct {
+	Area   string `json:"area" binding:"required"`
+	Access string `json:"access" binding:"required,oneof=full view none"`
+}
+
+type CreateTemplateRoleRequest struct {
+	Name        string                `json:"name" binding:"required"`
+	Description string                `json:"description"`
+	Permissions []RolePermissionInput `json:"permissions" binding:"required"`
+}
+
+type UpdateTemplateRoleRequest struct {
+	Name        *string               `json:"name"`
+	Description *string               `json:"description"`
+	Permissions []RolePermissionInput  `json:"permissions"`
+}
+
+type RoleOrderItem struct {
+	RoleID uuid.UUID `json:"roleId"`
+	Order  int32     `json:"order"`
+}
+
+type ReorderRolesRequest struct {
+	Orders []RoleOrderItem `json:"orders" binding:"required"`
+}
+
 // --- References ---
 
 type ReferencesResponse struct {
-	ColumnSystemTypes  []ReferenceColumnType     `json:"columnSystemTypes"`
-	TaskStatusTypes    []ReferenceTaskStatusType  `json:"taskStatusTypes"`
-	FieldTypes         []ReferenceKeyName         `json:"fieldTypes"`
-	EstimationUnits    []ReferenceAvailable       `json:"estimationUnits"`
-	SwimlaneGroupOptions          []ReferenceAvailable     `json:"swimlaneGroupOptions"`
-	SwimlaneGroupableFieldTypes   []string                 `json:"swimlaneGroupableFieldTypes"`
-	PriorityTypeOptions           []ReferencePriorityType  `json:"priorityTypeOptions"`
-	SystemTaskFields              []ReferenceSystemField   `json:"systemTaskFields"`
+	ColumnSystemTypes           []ReferenceColumnType                `json:"columnSystemTypes"`
+	TaskStatusTypes             []ReferenceTaskStatusType            `json:"taskStatusTypes"`
+	FieldTypes                  []ReferenceKeyName                   `json:"fieldTypes"`
+	EstimationUnits             []ReferenceAvailable                 `json:"estimationUnits"`
+	SwimlaneGroupOptions        []ReferenceAvailable                 `json:"swimlaneGroupOptions"`
+	SwimlaneGroupableFieldTypes []string                             `json:"swimlaneGroupableFieldTypes"`
+	PriorityTypeOptions         []ReferencePriorityType              `json:"priorityTypeOptions"`
+	SystemTaskFields            []ReferenceSystemField               `json:"systemTaskFields"`
+	SystemProjectParams         []ReferenceSystemProjectParam        `json:"systemProjectParams"`
+	PermissionAreas             []ReferencePermissionArea             `json:"permissionAreas"`
+	AccessLevels                []ReferenceKeyName                   `json:"accessLevels"`
+}
+
+type ReferenceSystemProjectParam struct {
+	Key        string   `json:"key"`
+	Name       string   `json:"name"`
+	FieldType  string   `json:"fieldType"`
+	IsRequired bool     `json:"isRequired"`
+	Options    []string `json:"options"`
+}
+
+type ReferencePermissionArea struct {
+	Area         string   `json:"area"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	AvailableFor []string `json:"availableFor"`
 }
 
 type ReferenceColumnType struct {

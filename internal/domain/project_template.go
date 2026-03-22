@@ -72,6 +72,31 @@ type TemplateBoardCustomField struct {
 	Options    []string  `json:"options"`
 }
 
+type TemplateProjectParam struct {
+	ID         uuid.UUID `json:"id"`
+	TemplateID uuid.UUID `json:"template_id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsRequired bool      `json:"is_required"`
+	Order      int32     `json:"order"`
+	Options    []string  `json:"options"`
+}
+
+type TemplateRole struct {
+	ID          uuid.UUID              `json:"id"`
+	TemplateID  uuid.UUID              `json:"template_id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	IsDefault   bool                   `json:"is_default"`
+	Order       int32                  `json:"order"`
+	Permissions []TemplateRolePermission `json:"permissions"`
+}
+
+type TemplateRolePermission struct {
+	Area   string `json:"area"`
+	Access string `json:"access"`
+}
+
 // References — all lookup data loaded from DB
 type References struct {
 	ColumnSystemTypes    []RefColumnSystemType
@@ -81,6 +106,17 @@ type References struct {
 	SwimlaneGroupOptions []RefAvailable
 	PriorityTypeOptions  []RefPriorityType
 	SystemTaskFields     []RefSystemField
+	SystemProjectParams  []RefSystemProjectParam
+	PermissionAreas      []RefPermissionArea
+	AccessLevels         []RefKeyName
+}
+
+type RefSystemProjectParam struct {
+	Key        string
+	Name       string
+	FieldType  string
+	IsRequired bool
+	Options    []string
 }
 
 type RefColumnSystemType struct {
@@ -123,6 +159,13 @@ type RefSystemField struct {
 	Description  string
 }
 
+type RefPermissionArea struct {
+	Area         string
+	Name         string
+	Description  string
+	AvailableFor []string
+}
+
 // Domain errors for templates
 var (
 	ErrTemplateNotFound   = ErrNotFound
@@ -130,4 +173,5 @@ var (
 	ErrLastBoard          = ErrInvalidInput
 	ErrColumnLocked       = ErrInvalidInput
 	ErrInvalidColumnOrder = ErrInvalidInput
+	ErrDefaultRole        = ErrInvalidInput
 )

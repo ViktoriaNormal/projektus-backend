@@ -104,6 +104,16 @@ components:
       name: fieldId
       required: true
       schema: { type: string, format: uuid }
+    TemplateParamId:
+      in: path
+      name: paramId
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateRoleId:
+      in: path
+      name: roleId
+      required: true
+      schema: { type: string, format: uuid }
 
   schemas:
     # ── Обёртки ответов ──────────────────────────────────────────────
@@ -930,6 +940,12 @@ components:
         boards:
           type: array
           items: { $ref: '#/components/schemas/TemplateBoardResponse' }
+        customProjectParams:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateProjectParamResponse' }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateRoleResponse' }
 
     TemplateBoardResponse:
       type: object
@@ -1125,6 +1141,119 @@ components:
               fieldId: { type: string, format: uuid }
               order:   { type: integer }
 
+    TemplateProjectParamResponse:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        name:       { type: string }
+        fieldType:  { type: string }
+        isSystem:   { type: boolean }
+        isRequired: { type: boolean }
+        order:      { type: integer }
+        options:    { type: array, items: { type: string }, nullable: true }
+
+    TemplateRoleResponse:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string }
+        isDefault:   { type: boolean }
+        order:       { type: integer }
+        permissions:
+          type: array
+          items:
+            type: object
+            properties:
+              area:   { type: string }
+              access: { type: string, enum: [full, view, none] }
+
+    CreateTemplateProjectParamRequest:
+      type: object
+      required: [name, fieldType]
+      properties:
+        name:       { type: string }
+        fieldType:  { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user] }
+        isRequired: { type: boolean }
+        order:      { type: integer }
+        options:    { type: array, items: { type: string }, nullable: true }
+
+    UpdateTemplateProjectParamRequest:
+      type: object
+      properties:
+        name:       { type: string }
+        isRequired: { type: boolean }
+        options:    { type: array, items: { type: string }, nullable: true }
+
+    ReorderParamsRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              paramId: { type: string, format: uuid }
+              order:   { type: integer }
+
+    CreateTemplateRoleRequest:
+      type: object
+      required: [name, permissions]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [area, access]
+            properties:
+              area:   { type: string }
+              access: { type: string, enum: [full, view, none] }
+
+    UpdateTemplateRoleRequest:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        permissions:
+          type: array
+          items:
+            type: object
+            properties:
+              area:   { type: string }
+              access: { type: string, enum: [full, view, none] }
+
+    ReorderRolesRequest:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              roleId: { type: string, format: uuid }
+              order:  { type: integer }
+
+    ReferenceSystemProjectParam:
+      type: object
+      properties:
+        key:        { type: string }
+        name:       { type: string }
+        fieldType:  { type: string }
+        isRequired: { type: boolean }
+        options:    { type: array, items: { type: string }, nullable: true }
+
+    ReferencePermissionArea:
+      type: object
+      properties:
+        area:         { type: string }
+        name:         { type: string }
+        description:  { type: string }
+        availableFor: { type: array, items: { type: string } }
+
     ReferencesResponse:
       type: object
       properties:
@@ -1194,6 +1323,20 @@ components:
               fieldType:    { type: string }
               availableFor: { type: array, items: { type: string } }
               description:  { type: string }
+        systemProjectParams:
+          type: array
+          items: { $ref: '#/components/schemas/ReferenceSystemProjectParam' }
+        permissionAreas:
+          type: array
+          items: { $ref: '#/components/schemas/ReferencePermissionArea' }
+        accessLevels:
+          type: array
+          items:
+            type: object
+            properties:
+              key:         { type: string }
+              name:        { type: string }
+              description: { type: string }
 
 # ────────────────────────────────────────────────────────────────────
 # PATHS
@@ -3978,3 +4121,165 @@ paths:
       responses:
         '200':
           description: Поле удалено
+
+  # ── Template Project Params ────────────────────────────────────────
+  /v1/admin/project-templates/{templateId}/project-params:
+    post:
+      tags: [Admin]
+      summary: Добавить параметр проекта
+      description: "options передаётся только для select/multiselect"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateProjectParamRequest' }
+      responses:
+        '200':
+          description: Параметр создан
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateProjectParamResponse' }
+
+  /v1/admin/project-templates/{templateId}/project-params/reorder:
+    patch:
+      tags: [Admin]
+      summary: Изменить порядок параметров проекта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderParamsRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/admin/project-templates/{templateId}/project-params/{paramId}:
+    patch:
+      tags: [Admin]
+      summary: Обновить параметр проекта
+      description: "fieldType менять нельзя после создания"
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateParamId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateProjectParamRequest' }
+      responses:
+        '200':
+          description: Параметр обновлён
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateProjectParamResponse' }
+    delete:
+      tags: [Admin]
+      summary: Удалить параметр проекта
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateParamId'
+      responses:
+        '200':
+          description: Параметр удалён
+
+  # ── Template Roles ─────────────────────────────────────────────────
+  /v1/admin/project-templates/{templateId}/roles:
+    post:
+      tags: [Admin]
+      summary: Добавить роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateRoleRequest' }
+      responses:
+        '200':
+          description: Роль создана
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateRoleResponse' }
+
+  /v1/admin/project-templates/{templateId}/roles/reorder:
+    patch:
+      tags: [Admin]
+      summary: Изменить порядок ролей
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderRolesRequest' }
+      responses:
+        '200':
+          description: Порядок обновлён
+
+  /v1/admin/project-templates/{templateId}/roles/{roleId}:
+    patch:
+      tags: [Admin]
+      summary: Обновить роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateRoleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateRoleRequest' }
+      responses:
+        '200':
+          description: Роль обновлена
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TemplateRoleResponse' }
+    delete:
+      tags: [Admin]
+      summary: Удалить роль
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - $ref: '#/components/parameters/TemplateRoleId'
+      responses:
+        '200':
+          description: Роль удалена
