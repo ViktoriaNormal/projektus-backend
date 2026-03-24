@@ -87,13 +87,17 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 	}
 
 	user, err := h.adminUserSvc.CreateUser(c.Request.Context(), services.AdminCreateUserRequest{
-		Username:      req.Username,
-		Email:         req.Email,
-		FullName:      req.FullName,
-		Position:      req.Position,
-		Password:      req.Password,
-		IsActive:      req.IsActive,
-		SystemRoleIDs: req.RoleIDs,
+		Username:                  req.Username,
+		Email:                     req.Email,
+		FullName:                  req.FullName,
+		Position:                  req.Position,
+		Password:                  req.Password,
+		IsActive:                  req.IsActive,
+		SystemRoleIDs:             req.RoleIDs,
+		OnVacation:                req.OnVacation,
+		IsSick:                    req.IsSick,
+		AlternativeContactChannel: req.AlternativeContactChannel,
+		AlternativeContactInfo:    req.AlternativeContactInfo,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrPasswordPolicy) {
@@ -126,12 +130,16 @@ func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	user, err := h.adminUserSvc.UpdateUser(c.Request.Context(), userID, services.AdminUpdateUserRequest{
-		Username: req.Username,
-		Email:    req.Email,
-		FullName: req.FullName,
-		Position: req.Position,
-		IsActive: req.IsActive,
-		RoleIDs:  req.RoleIDs,
+		Username:                  req.Username,
+		Email:                     req.Email,
+		FullName:                  req.FullName,
+		Position:                  req.Position,
+		IsActive:                  req.IsActive,
+		RoleIDs:                   req.RoleIDs,
+		OnVacation:                req.OnVacation,
+		IsSick:                    req.IsSick,
+		AlternativeContactChannel: req.AlternativeContactChannel,
+		AlternativeContactInfo:    req.AlternativeContactInfo,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -189,14 +197,18 @@ func mapAdminUserToResponse(u services.AdminUserWithRoles) dto.AdminUserResponse
 		})
 	}
 	return dto.AdminUserResponse{
-		ID:        u.User.ID,
-		Username:  u.User.Username,
-		Email:     u.User.Email,
-		FullName:  u.User.FullName,
-		AvatarURL: u.User.AvatarURL,
-		Position:  u.User.Position,
-		IsActive:  u.User.IsActive,
-		Roles:     roles,
-		CreatedAt: u.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                        u.User.ID,
+		Username:                  u.User.Username,
+		Email:                     u.User.Email,
+		FullName:                  u.User.FullName,
+		AvatarURL:                 u.User.AvatarURL,
+		Position:                  u.User.Position,
+		OnVacation:                u.User.OnVacation,
+		IsSick:                    u.User.IsSick,
+		AlternativeContactChannel: u.User.AlternativeContactChannel,
+		AlternativeContactInfo:    u.User.AlternativeContactInfo,
+		IsActive:                  u.User.IsActive,
+		Roles:                     roles,
+		CreatedAt:                 u.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }

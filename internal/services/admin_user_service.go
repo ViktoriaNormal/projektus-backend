@@ -15,23 +15,31 @@ import (
 
 // AdminCreateUserRequest — запрос на создание пользователя администратором.
 type AdminCreateUserRequest struct {
-	Username      string
-	Email         string
-	FullName      string
-	Position      *string
-	Password      string
-	IsActive      *bool
-	SystemRoleIDs []uuid.UUID
+	Username                  string
+	Email                     string
+	FullName                  string
+	Position                  *string
+	Password                  string
+	IsActive                  *bool
+	SystemRoleIDs             []uuid.UUID
+	OnVacation                *bool
+	IsSick                    *bool
+	AlternativeContactChannel *string
+	AlternativeContactInfo    *string
 }
 
 // AdminUpdateUserRequest — запрос на обновление пользователя администратором.
 type AdminUpdateUserRequest struct {
-	Username *string
-	Email    *string
-	FullName *string
-	Position *string
-	IsActive *bool
-	RoleIDs  *[]uuid.UUID
+	Username                  *string
+	Email                     *string
+	FullName                  *string
+	Position                  *string
+	IsActive                  *bool
+	RoleIDs                   *[]uuid.UUID
+	OnVacation                *bool
+	IsSick                    *bool
+	AlternativeContactChannel *string
+	AlternativeContactInfo    *string
 }
 
 // AdminUserWithRoles — пользователь с привязанными системными ролями.
@@ -118,14 +126,35 @@ func (s *AdminUserService) CreateUser(ctx context.Context, req AdminCreateUserRe
 		position = sql.NullString{String: *req.Position, Valid: true}
 	}
 
+	onVacation := false
+	if req.OnVacation != nil {
+		onVacation = *req.OnVacation
+	}
+	isSick := false
+	if req.IsSick != nil {
+		isSick = *req.IsSick
+	}
+	altChannel := sql.NullString{}
+	if req.AlternativeContactChannel != nil {
+		altChannel = sql.NullString{String: *req.AlternativeContactChannel, Valid: true}
+	}
+	altInfo := sql.NullString{}
+	if req.AlternativeContactInfo != nil {
+		altInfo = sql.NullString{String: *req.AlternativeContactInfo, Valid: true}
+	}
+
 	user, err := s.adminUserRepo.CreateUser(ctx, db.AdminCreateUserParams{
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: hash,
-		FullName:     req.FullName,
-		AvatarUrl:    sql.NullString{},
-		Position:     position,
-		IsActive:     isActive,
+		Username:                  req.Username,
+		Email:                     req.Email,
+		PasswordHash:              hash,
+		FullName:                  req.FullName,
+		AvatarUrl:                 sql.NullString{},
+		Position:                  position,
+		IsActive:                  isActive,
+		OnVacation:                onVacation,
+		IsSick:                    isSick,
+		AlternativeContactChannel: altChannel,
+		AlternativeContactInfo:    altInfo,
 	})
 	if err != nil {
 		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
@@ -171,15 +200,47 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, userID uuid.UUID, req
 		isActive = *req.IsActive
 	}
 
+	setOnVacation := req.OnVacation != nil
+	onVacation := false
+	if setOnVacation {
+		onVacation = *req.OnVacation
+	}
+
+	setIsSick := req.IsSick != nil
+	isSick := false
+	if setIsSick {
+		isSick = *req.IsSick
+	}
+
+	setAltContactChannel := req.AlternativeContactChannel != nil
+	altContactChannel := sql.NullString{}
+	if setAltContactChannel {
+		altContactChannel = sql.NullString{String: *req.AlternativeContactChannel, Valid: *req.AlternativeContactChannel != ""}
+	}
+
+	setAltContactInfo := req.AlternativeContactInfo != nil
+	altContactInfo := sql.NullString{}
+	if setAltContactInfo {
+		altContactInfo = sql.NullString{String: *req.AlternativeContactInfo, Valid: *req.AlternativeContactInfo != ""}
+	}
+
 	user, err := s.adminUserRepo.UpdateUser(ctx, db.AdminUpdateUserParams{
-		ID:          userID,
-		Username:    username,
-		Email:       email,
-		FullName:    fullName,
-		SetPosition: setPosition,
-		Position:    position,
-		SetIsActive: setIsActive,
-		IsActive:    isActive,
+		ID:                        userID,
+		Username:                  username,
+		Email:                     email,
+		FullName:                  fullName,
+		SetPosition:               setPosition,
+		Position:                  position,
+		SetIsActive:               setIsActive,
+		IsActive:                  isActive,
+		SetOnVacation:             setOnVacation,
+		OnVacation:                onVacation,
+		SetIsSick:                 setIsSick,
+		IsSick:                    isSick,
+		SetAltContactChannel:      setAltContactChannel,
+		AlternativeContactChannel: altContactChannel,
+		SetAltContactInfo:         setAltContactInfo,
+		AlternativeContactInfo:    altContactInfo,
 	})
 	if err != nil {
 		return nil, errctx.Wrap(err, "UpdateUser", "userID", userID)

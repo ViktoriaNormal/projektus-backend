@@ -37,6 +37,10 @@ UPDATE users
 SET full_name = $2,
     email     = $3,
     position  = $4,
+    on_vacation = $5,
+    is_sick     = $6,
+    alternative_contact_channel = $7,
+    alternative_contact_info    = $8,
     updated_at = NOW()
 WHERE id = $1;
 
@@ -49,9 +53,13 @@ WHERE id = $1;
 -- name: SearchUsers :many
 SELECT *
 FROM users
-WHERE (username ILIKE '%' || $1 || '%'
+WHERE deleted_at IS NULL
+  AND ($1::text IS NULL OR $1::text = '' OR (
+   username ILIKE '%' || $1 || '%'
    OR email ILIKE '%' || $1 || '%'
-   OR full_name ILIKE '%' || $1 || '%')
+   OR full_name ILIKE '%' || $1 || '%'
+   OR position ILIKE '%' || $1 || '%'
+   OR alternative_contact_info ILIKE '%' || $1 || '%'))
 ORDER BY full_name
 LIMIT $2 OFFSET $3;
 

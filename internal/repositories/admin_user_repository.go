@@ -91,16 +91,28 @@ func mapDBUserToDomainUser(u db.User) *domain.User {
 	if u.Position.Valid {
 		position = &u.Position.String
 	}
+	var altContactChannel *string
+	if u.AlternativeContactChannel.Valid {
+		altContactChannel = &u.AlternativeContactChannel.String
+	}
+	var altContactInfo *string
+	if u.AlternativeContactInfo.Valid {
+		altContactInfo = &u.AlternativeContactInfo.String
+	}
 	return &domain.User{
-		ID:           u.ID.String(),
-		Username:     u.Username,
-		Email:        u.Email,
-		PasswordHash: u.PasswordHash,
-		FullName:     u.FullName,
-		AvatarURL:    avatarURL,
-		Position:     position,
-		IsActive:     u.IsActive,
-		CreatedAt:    u.CreatedAt,
-		UpdatedAt:    u.UpdatedAt,
+		ID:                        u.ID.String(),
+		Username:                  u.Username,
+		Email:                     u.Email,
+		PasswordHash:              u.PasswordHash,
+		FullName:                  u.FullName,
+		AvatarURL:                 avatarURL,
+		Position:                  position,
+		OnVacation:                u.OnVacation,
+		IsSick:                    u.IsSick,
+		AlternativeContactChannel: altContactChannel,
+		AlternativeContactInfo:    altContactInfo,
+		IsActive:                  u.IsActive,
+		CreatedAt:                 u.CreatedAt,
+		UpdatedAt:                 u.UpdatedAt,
 	}
 }

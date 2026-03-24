@@ -26,12 +26,16 @@ func NewUserHandler(users services.UserService, members repositories.ProjectMemb
 
 func mapUserToResponse(u *domain.User) dto.UserResponse {
 	return dto.UserResponse{
-		ID:        u.ID,
-		Username:  u.Username,
-		Email:     u.Email,
-		FullName:  u.FullName,
-		AvatarURL: u.AvatarURL,
-		Position:  u.Position,
+		ID:                        u.ID,
+		Username:                  u.Username,
+		Email:                     u.Email,
+		FullName:                  u.FullName,
+		AvatarURL:                 u.AvatarURL,
+		Position:                  u.Position,
+		OnVacation:                u.OnVacation,
+		IsSick:                    u.IsSick,
+		AlternativeContactChannel: u.AlternativeContactChannel,
+		AlternativeContactInfo:    u.AlternativeContactInfo,
 	}
 }
 
@@ -99,7 +103,35 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	// Пока нет ролей — считаем, что админа нет
 	isAdmin := false
 
-	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, req.Position, isAdmin)
+	// Для новых полей: если не переданы, сохраняем текущие значения
+	existing, err := h.users.GetProfile(c.Request.Context(), targetUserID)
+	if err != nil {
+		if err == domain.ErrUserNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		return
+	}
+
+	onVacation := existing.OnVacation
+	if req.OnVacation != nil {
+		onVacation = *req.OnVacation
+	}
+	isSick := existing.IsSick
+	if req.IsSick != nil {
+		isSick = *req.IsSick
+	}
+	altContactChannel := existing.AlternativeContactChannel
+	if req.AlternativeContactChannel != nil {
+		altContactChannel = req.AlternativeContactChannel
+	}
+	altContactInfo := existing.AlternativeContactInfo
+	if req.AlternativeContactInfo != nil {
+		altContactInfo = req.AlternativeContactInfo
+	}
+
+	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, req.Position, onVacation, isSick, altContactChannel, altContactInfo, isAdmin)
 	if err != nil {
 		switch err {
 		case domain.ErrAccessDenied:

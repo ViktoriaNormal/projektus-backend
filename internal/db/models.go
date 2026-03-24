@@ -516,15 +516,19 @@ type TemplateRolePermission struct {
 }
 
 type User struct {
-	ID           uuid.UUID      `json:"id"`
-	Username     string         `json:"username"`
-	Email        string         `json:"email"`
-	PasswordHash string         `json:"password_hash"`
-	FullName     string         `json:"full_name"`
-	AvatarUrl    sql.NullString `json:"avatar_url"`
-	IsActive     bool           `json:"is_active"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    sql.NullTime   `json:"deleted_at"`
-	Position     sql.NullString `json:"position"`
+	ID                        uuid.UUID      `json:"id"`
+	Username                  string         `json:"username"`
+	Email                     string         `json:"email"`
+	PasswordHash              string         `json:"password_hash"`
+	FullName                  string         `json:"full_name"`
+	AvatarUrl                 sql.NullString `json:"avatar_url"`
+	IsActive                  bool           `json:"is_active"`
+	CreatedAt                 time.Time      `json:"created_at"`
+	UpdatedAt                 time.Time      `json:"updated_at"`
+	DeletedAt                 sql.NullTime   `json:"deleted_at"`
+	Position                  sql.NullString `json:"position"`
+	OnVacation                bool           `json:"on_vacation"`
+	IsSick                    bool           `json:"is_sick"`
+	AlternativeContactChannel sql.NullString `json:"alternative_contact_channel"`
+	AlternativeContactInfo    sql.NullString `json:"alternative_contact_info"`
 }

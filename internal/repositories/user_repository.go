@@ -20,7 +20,7 @@ type UserRepository interface {
 	UpdatePassword(ctx context.Context, userID, newHash string) error
 	InsertPasswordHistory(ctx context.Context, userID, hash string) error
 	GetLastPasswordHashes(ctx context.Context, userID string, limit int32) ([]string, error)
-	UpdateProfile(ctx context.Context, userID, fullName, email string, position *string) error
+	UpdateProfile(ctx context.Context, userID, fullName, email string, position *string, onVacation bool, isSick bool, altContactChannel *string, altContactInfo *string) error
 	UpdateAvatar(ctx context.Context, userID, avatarURL string) error
 	SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error)
 	ListAllUserIDs(ctx context.Context) ([]string, error)
@@ -125,7 +125,7 @@ func (r *userRepository) GetLastPasswordHashes(ctx context.Context, userID strin
 	return hashes, errctx.Wrap(err, "GetLastPasswordHashes", "userID", userID)
 }
 
-func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, email string, position *string) error {
+func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, email string, position *string, onVacation bool, isSick bool, altContactChannel *string, altContactInfo *string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
 		return errctx.Wrap(err, "UpdateProfile", "userID", userID)
@@ -134,11 +134,23 @@ func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, em
 	if position != nil {
 		pos = sql.NullString{String: *position, Valid: true}
 	}
+	altChannel := sql.NullString{}
+	if altContactChannel != nil {
+		altChannel = sql.NullString{String: *altContactChannel, Valid: true}
+	}
+	altInfo := sql.NullString{}
+	if altContactInfo != nil {
+		altInfo = sql.NullString{String: *altContactInfo, Valid: true}
+	}
 	err = r.q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
-		ID:       uid,
-		FullName: fullName,
-		Email:    email,
-		Position: pos,
+		ID:                        uid,
+		FullName:                  fullName,
+		Email:                     email,
+		Position:                  pos,
+		OnVacation:                onVacation,
+		IsSick:                    isSick,
+		AlternativeContactChannel: altChannel,
+		AlternativeContactInfo:    altInfo,
 	})
 	return errctx.Wrap(err, "UpdateProfile", "userID", userID)
 }
@@ -156,9 +168,8 @@ func (r *userRepository) UpdateAvatar(ctx context.Context, userID, avatarURL str
 }
 
 func (r *userRepository) SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error) {
-	param := sql.NullString{String: query, Valid: query != ""}
 	rows, err := r.q.SearchUsers(ctx, db.SearchUsersParams{
-		Column1: param,
+		Column1: query,
 		Limit:   limit,
 		Offset:  offset,
 	})
@@ -194,16 +205,28 @@ func mapDBUserToDomain(u db.User) *domain.User {
 	if u.Position.Valid {
 		position = &u.Position.String
 	}
+	var altContactChannel *string
+	if u.AlternativeContactChannel.Valid {
+		altContactChannel = &u.AlternativeContactChannel.String
+	}
+	var altContactInfo *string
+	if u.AlternativeContactInfo.Valid {
+		altContactInfo = &u.AlternativeContactInfo.String
+	}
 	return &domain.User{
-		ID:           u.ID.String(),
-		Username:     u.Username,
-		Email:        u.Email,
-		PasswordHash: u.PasswordHash,
-		FullName:     u.FullName,
-		AvatarURL:    avatarURL,
-		Position:     position,
-		IsActive:     u.IsActive,
-		CreatedAt:    u.CreatedAt,
-		UpdatedAt:    u.UpdatedAt,
+		ID:                        u.ID.String(),
+		Username:                  u.Username,
+		Email:                     u.Email,
+		PasswordHash:              u.PasswordHash,
+		FullName:                  u.FullName,
+		AvatarURL:                 avatarURL,
+		Position:                  position,
+		OnVacation:                u.OnVacation,
+		IsSick:                    u.IsSick,
+		AlternativeContactChannel: altContactChannel,
+		AlternativeContactInfo:    altContactInfo,
+		IsActive:                  u.IsActive,
+		CreatedAt:                 u.CreatedAt,
+		UpdatedAt:                 u.UpdatedAt,
 	}
 }

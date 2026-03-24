@@ -13,22 +13,26 @@ import (
 )
 
 const adminCreateUser = `-- name: AdminCreateUser :one
-INSERT INTO users (username, email, password_hash, full_name, avatar_url, position, is_active)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
+INSERT INTO users (username, email, password_hash, full_name, avatar_url, position, is_active, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info
 `
 
 type AdminCreateUserParams struct {
-	Username     string         `json:"username"`
-	Email        string         `json:"email"`
-	PasswordHash string         `json:"password_hash"`
-	FullName     string         `json:"full_name"`
-	AvatarUrl    sql.NullString `json:"avatar_url"`
-	Position     sql.NullString `json:"position"`
-	IsActive     bool           `json:"is_active"`
+	Username                  string         `json:"username"`
+	Email                     string         `json:"email"`
+	PasswordHash              string         `json:"password_hash"`
+	FullName                  string         `json:"full_name"`
+	AvatarUrl                 sql.NullString `json:"avatar_url"`
+	Position                  sql.NullString `json:"position"`
+	IsActive                  bool           `json:"is_active"`
+	OnVacation                bool           `json:"on_vacation"`
+	IsSick                    bool           `json:"is_sick"`
+	AlternativeContactChannel sql.NullString `json:"alternative_contact_channel"`
+	AlternativeContactInfo    sql.NullString `json:"alternative_contact_info"`
 }
 
-// Admin: create user with position
+// Admin: create user with position and status fields
 func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, adminCreateUser,
 		arg.Username,
@@ -38,6 +42,10 @@ func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams
 		arg.AvatarUrl,
 		arg.Position,
 		arg.IsActive,
+		arg.OnVacation,
+		arg.IsSick,
+		arg.AlternativeContactChannel,
+		arg.AlternativeContactInfo,
 	)
 	var i User
 	err := row.Scan(
@@ -52,12 +60,16 @@ func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Position,
+		&i.OnVacation,
+		&i.IsSick,
+		&i.AlternativeContactChannel,
+		&i.AlternativeContactInfo,
 	)
 	return i, err
 }
 
 const adminGetUserByID = `-- name: AdminGetUserByID :one
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info FROM users
 WHERE id = $1
 `
 
@@ -77,6 +89,10 @@ func (q *Queries) AdminGetUserByID(ctx context.Context, id uuid.UUID) (User, err
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Position,
+		&i.OnVacation,
+		&i.IsSick,
+		&i.AlternativeContactChannel,
+		&i.AlternativeContactInfo,
 	)
 	return i, err
 }
@@ -88,20 +104,32 @@ SET username   = COALESCE(NULLIF($1::text, ''), username),
     full_name  = COALESCE(NULLIF($3::text, ''), full_name),
     position   = CASE WHEN $4::boolean THEN $5 ELSE position END,
     is_active  = CASE WHEN $6::boolean THEN $7::boolean ELSE is_active END,
+    on_vacation = CASE WHEN $8::boolean THEN $9::boolean ELSE on_vacation END,
+    is_sick     = CASE WHEN $10::boolean THEN $11::boolean ELSE is_sick END,
+    alternative_contact_channel = CASE WHEN $12::boolean THEN $13 ELSE alternative_contact_channel END,
+    alternative_contact_info    = CASE WHEN $14::boolean THEN $15 ELSE alternative_contact_info END,
     updated_at = NOW()
-WHERE id = $8
-RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
+WHERE id = $16
+RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info
 `
 
 type AdminUpdateUserParams struct {
-	Username    string         `json:"username"`
-	Email       string         `json:"email"`
-	FullName    string         `json:"full_name"`
-	SetPosition bool           `json:"set_position"`
-	Position    sql.NullString `json:"position"`
-	SetIsActive bool           `json:"set_is_active"`
-	IsActive    bool           `json:"is_active"`
-	ID          uuid.UUID      `json:"id"`
+	Username                  string         `json:"username"`
+	Email                     string         `json:"email"`
+	FullName                  string         `json:"full_name"`
+	SetPosition               bool           `json:"set_position"`
+	Position                  sql.NullString `json:"position"`
+	SetIsActive               bool           `json:"set_is_active"`
+	IsActive                  bool           `json:"is_active"`
+	SetOnVacation             bool           `json:"set_on_vacation"`
+	OnVacation                bool           `json:"on_vacation"`
+	SetIsSick                 bool           `json:"set_is_sick"`
+	IsSick                    bool           `json:"is_sick"`
+	SetAltContactChannel      bool           `json:"set_alt_contact_channel"`
+	AlternativeContactChannel sql.NullString `json:"alternative_contact_channel"`
+	SetAltContactInfo         bool           `json:"set_alt_contact_info"`
+	AlternativeContactInfo    sql.NullString `json:"alternative_contact_info"`
+	ID                        uuid.UUID      `json:"id"`
 }
 
 // Admin: update user fields
@@ -114,6 +142,14 @@ func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams
 		arg.Position,
 		arg.SetIsActive,
 		arg.IsActive,
+		arg.SetOnVacation,
+		arg.OnVacation,
+		arg.SetIsSick,
+		arg.IsSick,
+		arg.SetAltContactChannel,
+		arg.AlternativeContactChannel,
+		arg.SetAltContactInfo,
+		arg.AlternativeContactInfo,
 		arg.ID,
 	)
 	var i User
@@ -129,12 +165,16 @@ func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Position,
+		&i.OnVacation,
+		&i.IsSick,
+		&i.AlternativeContactChannel,
+		&i.AlternativeContactInfo,
 	)
 	return i, err
 }
 
 const listAllUsers = `-- name: ListAllUsers :many
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position
+SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info
 FROM users
 WHERE ($3::boolean IS TRUE OR deleted_at IS NULL)
 ORDER BY created_at DESC
@@ -169,6 +209,10 @@ func (q *Queries) ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]U
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.Position,
+			&i.OnVacation,
+			&i.IsSick,
+			&i.AlternativeContactChannel,
+			&i.AlternativeContactInfo,
 		); err != nil {
 			return nil, err
 		}
