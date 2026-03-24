@@ -44,23 +44,41 @@ func (q *Queries) AddMeetingParticipant(ctx context.Context, arg AddMeetingParti
 	return i, err
 }
 
-const cancelMeeting = `-- name: CancelMeeting :exec
+const cancelMeeting = `-- name: CancelMeeting :one
 UPDATE meetings
-SET canceled_at = NOW(),
+SET status     = 'cancelled',
+    canceled_at = NOW(),
     updated_at  = NOW()
 WHERE id = $1
+RETURNING id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at, location, status
 `
 
-func (q *Queries) CancelMeeting(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, cancelMeeting, id)
-	return err
+func (q *Queries) CancelMeeting(ctx context.Context, id uuid.UUID) (Meeting, error) {
+	row := q.db.QueryRowContext(ctx, cancelMeeting, id)
+	var i Meeting
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Name,
+		&i.Description,
+		&i.MeetingType,
+		&i.StartTime,
+		&i.EndTime,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CanceledAt,
+		&i.Location,
+		&i.Status,
+	)
+	return i, err
 }
 
 const createMeeting = `-- name: CreateMeeting :one
 
-INSERT INTO meetings (project_id, name, description, meeting_type, start_time, end_time, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at
+INSERT INTO meetings (project_id, name, description, meeting_type, location, start_time, end_time, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at, location, status
 `
 
 type CreateMeetingParams struct {
@@ -68,6 +86,7 @@ type CreateMeetingParams struct {
 	Name        string         `json:"name"`
 	Description sql.NullString `json:"description"`
 	MeetingType string         `json:"meeting_type"`
+	Location    sql.NullString `json:"location"`
 	StartTime   time.Time      `json:"start_time"`
 	EndTime     time.Time      `json:"end_time"`
 	CreatedBy   uuid.UUID      `json:"created_by"`
@@ -80,6 +99,7 @@ func (q *Queries) CreateMeeting(ctx context.Context, arg CreateMeetingParams) (M
 		arg.Name,
 		arg.Description,
 		arg.MeetingType,
+		arg.Location,
 		arg.StartTime,
 		arg.EndTime,
 		arg.CreatedBy,
@@ -97,6 +117,8 @@ func (q *Queries) CreateMeeting(ctx context.Context, arg CreateMeetingParams) (M
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CanceledAt,
+		&i.Location,
+		&i.Status,
 	)
 	return i, err
 }
@@ -139,7 +161,7 @@ func (q *Queries) DeleteMeeting(ctx context.Context, id uuid.UUID) error {
 }
 
 const getMeetingByID = `-- name: GetMeetingByID :one
-SELECT id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at
+SELECT id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at, location, status
 FROM meetings
 WHERE id = $1
 `
@@ -159,6 +181,8 @@ func (q *Queries) GetMeetingByID(ctx context.Context, id uuid.UUID) (Meeting, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CanceledAt,
+		&i.Location,
+		&i.Status,
 	)
 	return i, err
 }
@@ -200,7 +224,7 @@ func (q *Queries) GetMeetingParticipants(ctx context.Context, meetingID uuid.UUI
 }
 
 const getUpcomingMeetingsForUser = `-- name: GetUpcomingMeetingsForUser :many
-SELECT m.id, m.project_id, m.name, m.description, m.meeting_type, m.start_time, m.end_time, m.created_by, m.created_at, m.updated_at, m.canceled_at, mr.channel, mr.reminder_time, mr.sent_at
+SELECT m.id, m.project_id, m.name, m.description, m.meeting_type, m.start_time, m.end_time, m.created_by, m.created_at, m.updated_at, m.canceled_at, m.location, m.status, mr.channel, mr.reminder_time, mr.sent_at
 FROM meetings m
 JOIN meeting_participants mp ON mp.meeting_id = m.id
 LEFT JOIN meeting_reminders mr
@@ -230,6 +254,8 @@ type GetUpcomingMeetingsForUserRow struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	CanceledAt   sql.NullTime   `json:"canceled_at"`
+	Location     sql.NullString `json:"location"`
+	Status       string         `json:"status"`
 	Channel      sql.NullString `json:"channel"`
 	ReminderTime sql.NullTime   `json:"reminder_time"`
 	SentAt       sql.NullTime   `json:"sent_at"`
@@ -256,6 +282,8 @@ func (q *Queries) GetUpcomingMeetingsForUser(ctx context.Context, arg GetUpcomin
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CanceledAt,
+			&i.Location,
+			&i.Status,
 			&i.Channel,
 			&i.ReminderTime,
 			&i.SentAt,
@@ -274,7 +302,7 @@ func (q *Queries) GetUpcomingMeetingsForUser(ctx context.Context, arg GetUpcomin
 }
 
 const listProjectMeetings = `-- name: ListProjectMeetings :many
-SELECT id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at
+SELECT id, project_id, name, description, meeting_type, start_time, end_time, created_by, created_at, updated_at, canceled_at, location, status
 FROM meetings
 WHERE project_id = $1
 ORDER BY start_time
@@ -301,6 +329,8 @@ func (q *Queries) ListProjectMeetings(ctx context.Context, projectID uuid.NullUU
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CanceledAt,
+			&i.Location,
+			&i.Status,
 		); err != nil {
 			return nil, err
 		}
@@ -316,23 +346,23 @@ func (q *Queries) ListProjectMeetings(ctx context.Context, projectID uuid.NullUU
 }
 
 const listUserMeetings = `-- name: ListUserMeetings :many
-SELECT m.id, m.project_id, m.name, m.description, m.meeting_type, m.start_time, m.end_time, m.created_by, m.created_at, m.updated_at, m.canceled_at
+SELECT m.id, m.project_id, m.name, m.description, m.meeting_type, m.start_time, m.end_time, m.created_by, m.created_at, m.updated_at, m.canceled_at, m.location, m.status
 FROM meetings m
 JOIN meeting_participants mp ON mp.meeting_id = m.id
 WHERE mp.user_id = $1
-  AND m.start_time >= $2
-  AND m.end_time <= $3
+  AND ($2::timestamptz IS NULL OR m.start_time >= $2)
+  AND ($3::timestamptz IS NULL OR m.start_time <= $3)
 ORDER BY m.start_time
 `
 
 type ListUserMeetingsParams struct {
-	UserID    uuid.UUID `json:"user_id"`
-	StartTime time.Time `json:"start_time"`
-	EndTime   time.Time `json:"end_time"`
+	UserID   uuid.UUID    `json:"user_id"`
+	FromTime sql.NullTime `json:"from_time"`
+	ToTime   sql.NullTime `json:"to_time"`
 }
 
 func (q *Queries) ListUserMeetings(ctx context.Context, arg ListUserMeetingsParams) ([]Meeting, error) {
-	rows, err := q.db.QueryContext(ctx, listUserMeetings, arg.UserID, arg.StartTime, arg.EndTime)
+	rows, err := q.db.QueryContext(ctx, listUserMeetings, arg.UserID, arg.FromTime, arg.ToTime)
 	if err != nil {
 		return nil, err
 	}
@@ -352,6 +382,8 @@ func (q *Queries) ListUserMeetings(ctx context.Context, arg ListUserMeetingsPara
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CanceledAt,
+			&i.Location,
+			&i.Status,
 		); err != nil {
 			return nil, err
 		}
@@ -371,8 +403,9 @@ UPDATE meetings
 SET name = $2,
     description = $3,
     meeting_type = $4,
-    start_time = $5,
-    end_time = $6,
+    location = $5,
+    start_time = $6,
+    end_time = $7,
     updated_at = NOW()
 WHERE id = $1
 `
@@ -382,6 +415,7 @@ type UpdateMeetingParams struct {
 	Name        string         `json:"name"`
 	Description sql.NullString `json:"description"`
 	MeetingType string         `json:"meeting_type"`
+	Location    sql.NullString `json:"location"`
 	StartTime   time.Time      `json:"start_time"`
 	EndTime     time.Time      `json:"end_time"`
 }
@@ -392,6 +426,7 @@ func (q *Queries) UpdateMeeting(ctx context.Context, arg UpdateMeetingParams) er
 		arg.Name,
 		arg.Description,
 		arg.MeetingType,
+		arg.Location,
 		arg.StartTime,
 		arg.EndTime,
 	)

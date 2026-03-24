@@ -129,6 +129,8 @@ type Meeting struct {
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	CanceledAt  sql.NullTime   `json:"canceled_at"`
+	Location    sql.NullString `json:"location"`
+	Status      string         `json:"status"`
 }
 
 type MeetingParticipant struct {

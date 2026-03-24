@@ -15,7 +15,7 @@ import (
 type MeetingRepository interface {
 	CreateMeeting(ctx context.Context, m domain.Meeting) (*domain.Meeting, error)
 	UpdateMeeting(ctx context.Context, m domain.Meeting) error
-	CancelMeeting(ctx context.Context, id string) error
+	CancelMeeting(ctx context.Context, id string) (*domain.Meeting, error)
 	DeleteMeeting(ctx context.Context, id string) error
 	GetMeetingByID(ctx context.Context, id string) (*domain.Meeting, error)
 	ListUserMeetings(ctx context.Context, userID string, from, to sql.NullTime) ([]domain.Meeting, error)
@@ -47,6 +47,10 @@ func (r *meetingRepository) CreateMeeting(ctx context.Context, m domain.Meeting)
 	if m.Description != nil {
 		desc = sql.NullString{String: *m.Description, Valid: true}
 	}
+	loc := sql.NullString{}
+	if m.Location != nil {
+		loc = sql.NullString{String: *m.Location, Valid: true}
+	}
 	creator, err := uuid.Parse(m.CreatedBy)
 	if err != nil {
 		return nil, err
@@ -56,6 +60,7 @@ func (r *meetingRepository) CreateMeeting(ctx context.Context, m domain.Meeting)
 		Name:        m.Name,
 		Description: desc,
 		MeetingType: string(m.Type),
+		Location:    loc,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
 		CreatedBy:   creator,
@@ -76,22 +81,32 @@ func (r *meetingRepository) UpdateMeeting(ctx context.Context, m domain.Meeting)
 	if m.Description != nil {
 		desc = sql.NullString{String: *m.Description, Valid: true}
 	}
+	loc := sql.NullString{}
+	if m.Location != nil {
+		loc = sql.NullString{String: *m.Location, Valid: true}
+	}
 	return r.q.UpdateMeeting(ctx, db.UpdateMeetingParams{
 		ID:          id,
 		Name:        m.Name,
 		Description: desc,
 		MeetingType: string(m.Type),
+		Location:    loc,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
 	})
 }
 
-func (r *meetingRepository) CancelMeeting(ctx context.Context, id string) error {
+func (r *meetingRepository) CancelMeeting(ctx context.Context, id string) (*domain.Meeting, error) {
 	uid, err := uuid.Parse(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.q.CancelMeeting(ctx, uid)
+	row, err := r.q.CancelMeeting(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	d := mapDBMeetingToDomain(row)
+	return &d, nil
 }
 
 func (r *meetingRepository) DeleteMeeting(ctx context.Context, id string) error {
@@ -124,13 +139,9 @@ func (r *meetingRepository) ListUserMeetings(ctx context.Context, userID string,
 		return nil, err
 	}
 	params := db.ListUserMeetingsParams{
-		UserID: uid,
-	}
-	if from.Valid {
-		params.StartTime = from.Time
-	}
-	if to.Valid {
-		params.EndTime = to.Time
+		UserID:   uid,
+		FromTime: from,
+		ToTime:   to,
 	}
 	rows, err := r.q.ListUserMeetings(ctx, params)
 	if err != nil {
@@ -247,17 +258,18 @@ func (r *meetingRepository) GetUpcomingMeetingsForUser(ctx context.Context, user
 	for _, row := range rows {
 		// маппим только данные встречи
 		m := db.Meeting{
-			ID:         row.ID,
-			ProjectID:  row.ProjectID,
-			Name:       row.Name,
+			ID:          row.ID,
+			ProjectID:   row.ProjectID,
+			Name:        row.Name,
 			Description: row.Description,
 			MeetingType: row.MeetingType,
-			StartTime:  row.StartTime,
-			EndTime:    row.EndTime,
-			CreatedBy:  row.CreatedBy,
-			CreatedAt:  row.CreatedAt,
-			UpdatedAt:  row.UpdatedAt,
-			CanceledAt: row.CanceledAt,
+			Location:    row.Location,
+			StartTime:   row.StartTime,
+			EndTime:     row.EndTime,
+			CreatedBy:   row.CreatedBy,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+			CanceledAt:  row.CanceledAt,
 		}
 		result = append(result, mapDBMeetingToDomain(m))
 	}
@@ -274,6 +286,10 @@ func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
 	if m.Description.Valid {
 		desc = &m.Description.String
 	}
+	var loc *string
+	if m.Location.Valid {
+		loc = &m.Location.String
+	}
 	var canceledAt *time.Time
 	if m.CanceledAt.Valid {
 		canceledAt = &m.CanceledAt.Time
@@ -284,6 +300,8 @@ func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
 		Name:        m.Name,
 		Description: desc,
 		Type:        domain.MeetingType(m.MeetingType),
+		Location:    loc,
+		Status:      domain.MeetingStatus(m.Status),
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
 		CreatedBy:   m.CreatedBy.String(),

@@ -69,7 +69,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			meetings.POST("", meetingHandler.CreateMeeting)
 			meetings.GET("/:meetingId", meetingHandler.GetMeeting)
 			meetings.PATCH("/:meetingId", meetingHandler.UpdateMeeting)
-			meetings.DELETE("/:meetingId", meetingHandler.CancelMeeting)
+			meetings.POST("/:meetingId/cancel", meetingHandler.CancelMeeting)
 
 			meetings.GET("/:meetingId/participants", meetingHandler.ListParticipants)
 			meetings.POST("/:meetingId/participants", meetingHandler.AddParticipants)

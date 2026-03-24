@@ -14,7 +14,7 @@ type MeetingService interface {
 	CreateMeeting(ctx context.Context, creatorID string, m domain.Meeting, participantIDs []string) (*domain.Meeting, []domain.MeetingParticipant, error)
 	GetMeetingWithParticipants(ctx context.Context, requesterID, meetingID string) (*domain.Meeting, []domain.MeetingParticipant, error)
 	UpdateMeeting(ctx context.Context, userID string, m domain.Meeting) (*domain.Meeting, error)
-	CancelMeeting(ctx context.Context, userID, meetingID string) error
+	CancelMeeting(ctx context.Context, userID, meetingID string) (*domain.Meeting, error)
 	AddParticipants(ctx context.Context, userID, meetingID string, participantIDs []string) ([]domain.MeetingParticipant, error)
 	RespondToInvitation(ctx context.Context, userID, meetingID string, status domain.ParticipantStatus) error
 	CheckAndSendMeetingRemindersForUser(ctx context.Context, userID string, now time.Time, tick time.Duration) error
@@ -44,9 +44,12 @@ func (s *meetingService) ListUserMeetings(ctx context.Context, userID string, fr
 }
 
 func (s *meetingService) CreateMeeting(ctx context.Context, creatorID string, m domain.Meeting, participantIDs []string) (*domain.Meeting, []domain.MeetingParticipant, error) {
-	// базовая валидация
+	// валидация времени
+	if !m.StartTime.After(time.Now()) {
+		return nil, nil, domain.ErrMeetingInPast
+	}
 	if !m.StartTime.Before(m.EndTime) {
-		return nil, nil, domain.ErrInvalidMeeting
+		return nil, nil, domain.ErrInvalidTimeRange
 	}
 	m.CreatedBy = creatorID
 	created, err := s.meetings.CreateMeeting(ctx, m)
@@ -123,10 +126,6 @@ func (s *meetingService) UpdateMeeting(ctx context.Context, userID string, m dom
 	if existing.CreatedBy != userID {
 		return nil, domain.ErrAccessDenied
 	}
-	// базовая валидация времени
-	if !m.StartTime.IsZero() && !m.EndTime.IsZero() && !m.StartTime.Before(m.EndTime) {
-		return nil, domain.ErrInvalidMeeting
-	}
 	// переносим отсутствующие поля из существующей встречи
 	if m.Name == "" {
 		m.Name = existing.Name
@@ -142,6 +141,16 @@ func (s *meetingService) UpdateMeeting(ctx context.Context, userID string, m dom
 	}
 	if m.EndTime.IsZero() {
 		m.EndTime = existing.EndTime
+	}
+	if m.Location == nil {
+		m.Location = existing.Location
+	}
+	// валидация времени после мержа с существующими значениями
+	if !m.StartTime.After(time.Now()) {
+		return nil, domain.ErrMeetingInPast
+	}
+	if !m.StartTime.Before(m.EndTime) {
+		return nil, domain.ErrInvalidTimeRange
 	}
 	if err := s.meetings.UpdateMeeting(ctx, m); err != nil {
 		return nil, err
@@ -170,16 +179,20 @@ func (s *meetingService) UpdateMeeting(ctx context.Context, userID string, m dom
 	return updated, nil
 }
 
-func (s *meetingService) CancelMeeting(ctx context.Context, userID, meetingID string) error {
+func (s *meetingService) CancelMeeting(ctx context.Context, userID, meetingID string) (*domain.Meeting, error) {
 	m, err := s.meetings.GetMeetingByID(ctx, meetingID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if m.CreatedBy != userID {
-		return domain.ErrAccessDenied
+		return nil, domain.ErrAccessDenied
 	}
-	if err := s.meetings.CancelMeeting(ctx, meetingID); err != nil {
-		return err
+	if m.Status == domain.MeetingStatusCancelled {
+		return nil, domain.ErrAlreadyCancelled
+	}
+	cancelled, err := s.meetings.CancelMeeting(ctx, meetingID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Уведомления участникам об отмене встречи
@@ -198,7 +211,7 @@ func (s *meetingService) CancelMeeting(ctx context.Context, userID, meetingID st
 		}
 	}
 
-	return nil
+	return cancelled, nil
 }
 
 func (s *meetingService) AddParticipants(ctx context.Context, userID, meetingID string, participantIDs []string) ([]domain.MeetingParticipant, error) {

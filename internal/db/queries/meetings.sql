@@ -1,8 +1,8 @@
 -- Meetings
 
 -- name: CreateMeeting :one
-INSERT INTO meetings (project_id, name, description, meeting_type, start_time, end_time, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO meetings (project_id, name, description, meeting_type, location, start_time, end_time, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetMeetingByID :one
@@ -15,16 +15,19 @@ UPDATE meetings
 SET name = $2,
     description = $3,
     meeting_type = $4,
-    start_time = $5,
-    end_time = $6,
+    location = $5,
+    start_time = $6,
+    end_time = $7,
     updated_at = NOW()
 WHERE id = $1;
 
--- name: CancelMeeting :exec
+-- name: CancelMeeting :one
 UPDATE meetings
-SET canceled_at = NOW(),
+SET status     = 'cancelled',
+    canceled_at = NOW(),
     updated_at  = NOW()
-WHERE id = $1;
+WHERE id = $1
+RETURNING *;
 
 -- name: DeleteMeeting :exec
 DELETE FROM meetings
@@ -35,8 +38,8 @@ SELECT m.*
 FROM meetings m
 JOIN meeting_participants mp ON mp.meeting_id = m.id
 WHERE mp.user_id = $1
-  AND m.start_time >= $2
-  AND m.end_time <= $3
+  AND (sqlc.narg(from_time)::timestamptz IS NULL OR m.start_time >= sqlc.narg(from_time))
+  AND (sqlc.narg(to_time)::timestamptz IS NULL OR m.start_time <= sqlc.narg(to_time))
 ORDER BY m.start_time;
 
 -- name: ListProjectMeetings :many

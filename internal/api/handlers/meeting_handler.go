@@ -22,8 +22,11 @@ func NewMeetingHandler(svc services.MeetingService) *MeetingHandler {
 func mapMeetingToResponse(m *domain.Meeting) dto.MeetingResponse {
 	resp := dto.MeetingResponse{
 		ID:          m.ID,
+		OrganizerID: m.CreatedBy,
 		Name:        m.Name,
 		MeetingType: string(m.Type),
+		Location:    m.Location,
+		Status:      string(m.Status),
 		StartTime:   m.StartTime.Format(time.RFC3339),
 		EndTime:     m.EndTime.Format(time.RFC3339),
 	}
@@ -126,14 +129,20 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 	if req.MeetingType != nil {
 		m.Type = domain.MeetingType(*req.MeetingType)
 	}
+	m.Location = &req.Location
 
 	created, participants, err := h.svc.CreateMeeting(c.Request.Context(), userID, m, req.ParticipantIDs)
 	if err != nil {
-		if err == domain.ErrInvalidMeeting {
+		switch err {
+		case domain.ErrMeetingInPast:
+			writeError(c, http.StatusBadRequest, "MEETING_IN_PAST", "Нельзя создать встречу на прошедшее время")
+		case domain.ErrInvalidTimeRange:
+			writeError(c, http.StatusBadRequest, "INVALID_TIME_RANGE", "Время окончания должно быть позже времени начала")
+		case domain.ErrInvalidMeeting:
 			writeError(c, http.StatusBadRequest, "INVALID_MEETING", "Некорректные параметры встречи")
-			return
+		default:
+			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -206,6 +215,9 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 	if req.MeetingType != nil {
 		m.Type = domain.MeetingType(*req.MeetingType)
 	}
+	if req.Location != nil {
+		m.Location = req.Location
+	}
 	if req.StartTime != nil {
 		t, err := time.Parse(time.RFC3339, *req.StartTime)
 		if err != nil {
@@ -230,6 +242,10 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
 		case domain.ErrAccessDenied:
 			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет прав на изменение встречи")
+		case domain.ErrMeetingInPast:
+			writeError(c, http.StatusBadRequest, "MEETING_IN_PAST", "Нельзя назначить встречу на прошедшее время")
+		case domain.ErrInvalidTimeRange:
+			writeError(c, http.StatusBadRequest, "INVALID_TIME_RANGE", "Время окончания должно быть позже времени начала")
 		case domain.ErrInvalidMeeting:
 			writeError(c, http.StatusBadRequest, "INVALID_MEETING", "Некорректные параметры встречи")
 		default:
@@ -241,7 +257,7 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 	writeSuccess(c, mapMeetingToResponse(updated))
 }
 
-// DELETE /api/v1/meetings/:meetingId
+// POST /api/v1/meetings/:meetingId/cancel
 func (h *MeetingHandler) CancelMeeting(c *gin.Context) {
 	userID := c.GetString("userID")
 	if userID == "" {
@@ -250,19 +266,22 @@ func (h *MeetingHandler) CancelMeeting(c *gin.Context) {
 	}
 	meetingID := c.Param("meetingId")
 
-	if err := h.svc.CancelMeeting(c.Request.Context(), userID, meetingID); err != nil {
+	cancelled, err := h.svc.CancelMeeting(c.Request.Context(), userID, meetingID)
+	if err != nil {
 		switch err {
 		case domain.ErrNotFound:
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
 		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет прав на отмену встречи")
+			writeError(c, http.StatusForbidden, "FORBIDDEN", "Пользователь не является организатором")
+		case domain.ErrAlreadyCancelled:
+			writeError(c, http.StatusBadRequest, "ALREADY_CANCELLED", "Встреча уже отменена")
 		default:
 			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
 		}
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	writeSuccess(c, mapMeetingToResponse(cancelled))
 }
 
 // GET /api/v1/meetings/:meetingId/participants

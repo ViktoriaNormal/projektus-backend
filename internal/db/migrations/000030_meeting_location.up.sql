@@ -1,0 +1,1 @@
+ALTER TABLE meetings ADD COLUMN location TEXT DEFAULT NULL;

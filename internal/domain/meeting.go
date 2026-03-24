@@ -24,6 +24,13 @@ const (
 	MeetingTypeCustom MeetingType = "Пользовательское событие"
 )
 
+type MeetingStatus string
+
+const (
+	MeetingStatusActive    MeetingStatus = "active"
+	MeetingStatusCancelled MeetingStatus = "cancelled"
+)
+
 type ParticipantStatus string
 
 const (
@@ -33,17 +40,19 @@ const (
 )
 
 type Meeting struct {
-	ID          string      `json:"id"`
-	ProjectID   *string     `json:"project_id,omitempty"`
-	Name        string      `json:"name"`
-	Description *string     `json:"description,omitempty"`
-	Type        MeetingType `json:"meeting_type"`
-	StartTime   time.Time   `json:"start_time"`
-	EndTime     time.Time   `json:"end_time"`
-	CreatedBy   string      `json:"created_by"`
-	CreatedAt   time.Time   `json:"-"`
-	UpdatedAt   time.Time   `json:"-"`
-	CanceledAt  *time.Time  `json:"-"`
+	ID          string        `json:"id"`
+	ProjectID   *string       `json:"project_id,omitempty"`
+	Name        string        `json:"name"`
+	Description *string       `json:"description,omitempty"`
+	Type        MeetingType   `json:"meeting_type"`
+	Location    *string       `json:"location,omitempty"`
+	Status      MeetingStatus `json:"status"`
+	StartTime   time.Time     `json:"start_time"`
+	EndTime     time.Time     `json:"end_time"`
+	CreatedBy   string        `json:"created_by"`
+	CreatedAt   time.Time     `json:"-"`
+	UpdatedAt   time.Time     `json:"-"`
+	CanceledAt  *time.Time    `json:"-"`
 }
 
 type MeetingParticipant struct {
