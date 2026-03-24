@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/google/uuid"
 
@@ -71,8 +70,8 @@ func (s *ProjectService) GetProject(ctx context.Context, id uuid.UUID) (*domain.
 	return s.repo.GetByID(ctx, id)
 }
 
-func (s *ProjectService) ListProjects(ctx context.Context, ownerID uuid.UUID, status, projectType *string) ([]domain.Project, error) {
-	return s.repo.ListByOwner(ctx, ownerID, status, projectType)
+func (s *ProjectService) ListProjects(ctx context.Context, userID uuid.UUID, query *string, status, projectType *string) ([]domain.Project, error) {
+	return s.repo.ListUserProjects(ctx, userID, query, status, projectType)
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, p *domain.Project) (*domain.Project, error) {
@@ -100,18 +99,46 @@ func (s *ProjectService) generateUniqueProjectKey(ctx context.Context, prefix st
 	return "", domain.ErrConflict
 }
 
+// cyrToLat — таблица транслитерации кириллицы в латиницу.
+var cyrToLat = map[rune]string{
+	'А': "A", 'Б': "B", 'В': "V", 'Г': "G", 'Д': "D", 'Е': "E", 'Ё': "E",
+	'Ж': "ZH", 'З': "Z", 'И': "I", 'Й': "Y", 'К': "K", 'Л': "L", 'М': "M",
+	'Н': "N", 'О': "O", 'П': "P", 'Р': "R", 'С': "S", 'Т': "T", 'У': "U",
+	'Ф': "F", 'Х': "KH", 'Ц': "TS", 'Ч': "CH", 'Ш': "SH", 'Щ': "SHCH",
+	'Ъ': "", 'Ы': "Y", 'Ь': "", 'Э': "E", 'Ю': "YU", 'Я': "YA",
+}
+
+// transliterate переводит строку из кириллицы в латиницу. Латинские символы остаются как есть.
+func transliterate(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(s) {
+		if lat, ok := cyrToLat[r]; ok {
+			b.WriteString(lat)
+		} else if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func generateProjectKeyPrefix(name string) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return "PRJ"
 	}
 
+	transliterated := transliterate(trimmed)
+	if transliterated == "" {
+		return "PRJ"
+	}
+
+	// Берём первые 3-5 латинских символов (только буквы)
 	var letters []rune
-	for _, r := range trimmed {
-		if unicode.IsLetter(r) {
-			letters = append(letters, unicode.ToUpper(r))
+	for _, r := range transliterated {
+		if r >= 'A' && r <= 'Z' {
+			letters = append(letters, r)
 		}
-		if len(letters) >= 3 {
+		if len(letters) >= 4 {
 			break
 		}
 	}

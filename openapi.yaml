@@ -190,6 +190,10 @@ components:
         full_name:  { type: string }
         avatar_url: { type: string, nullable: true }
         position:   { type: string, nullable: true }
+        on_vacation: { type: boolean, default: false }
+        is_sick:     { type: boolean, default: false }
+        alternative_contact_channel: { type: string, nullable: true }
+        alternative_contact_info:    { type: string, nullable: true }
 
     UpdateUserProfileRequest:
       type: object
@@ -198,6 +202,10 @@ components:
         full_name: { type: string }
         email:     { type: string, format: email }
         position:  { type: string, nullable: true }
+        on_vacation: { type: boolean }
+        is_sick:     { type: boolean }
+        alternative_contact_channel: { type: string, nullable: true }
+        alternative_contact_info:    { type: string, nullable: true }
 
     # ── Projects ─────────────────────────────────────────────────────
     CreateProjectRequest:
@@ -689,12 +697,13 @@ components:
     # ── Meetings ─────────────────────────────────────────────────────
     CreateMeetingRequest:
       type: object
-      required: [name, startTime, endTime]
+      required: [name, startTime, endTime, location]
       properties:
         projectId:      { type: string, format: uuid, nullable: true }
         name:           { type: string }
         description:    { type: string, nullable: true }
         meetingType:    { type: string, nullable: true }
+        location:       { type: string }
         startTime:      { type: string, format: date-time }
         endTime:        { type: string, format: date-time }
         participantIds:
@@ -707,6 +716,7 @@ components:
         name:        { type: string }
         description: { type: string, nullable: true }
         meetingType: { type: string, nullable: true }
+        location:    { type: string, nullable: true }
         startTime:   { type: string, format: date-time }
         endTime:     { type: string, format: date-time }
 
@@ -723,9 +733,12 @@ components:
       properties:
         id:          { type: string, format: uuid }
         projectId:   { type: string, format: uuid, nullable: true }
+        organizerId: { type: string, format: uuid }
         name:        { type: string }
         description: { type: string, nullable: true }
         meetingType: { type: string }
+        location:    { type: string, nullable: true }
+        status:      { type: string, enum: [active, cancelled] }
         startTime:   { type: string, format: date-time }
         endTime:     { type: string, format: date-time }
 
@@ -860,6 +873,10 @@ components:
         role_ids:
           type: array
           items: { type: string, format: uuid }
+        on_vacation: { type: boolean, default: false }
+        is_sick:     { type: boolean, default: false }
+        alternative_contact_channel: { type: string, nullable: true }
+        alternative_contact_info:    { type: string, nullable: true }
 
     AdminUpdateUserRequest:
       type: object
@@ -872,6 +889,10 @@ components:
         role_ids:
           type: array
           items: { type: string, format: uuid }
+        on_vacation: { type: boolean }
+        is_sick:     { type: boolean }
+        alternative_contact_channel: { type: string, nullable: true }
+        alternative_contact_info:    { type: string, nullable: true }
 
     AdminRoleResponse:
       type: object
@@ -888,6 +909,10 @@ components:
         full_name:  { type: string }
         avatar_url: { type: string, nullable: true }
         position:   { type: string, nullable: true }
+        on_vacation: { type: boolean }
+        is_sick:     { type: boolean }
+        alternative_contact_channel: { type: string, nullable: true }
+        alternative_contact_info:    { type: string, nullable: true }
         is_active:  { type: boolean }
         roles:
           type: array
@@ -3275,6 +3300,17 @@ paths:
       summary: Встречи текущего пользователя
       security:
         - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: false
+          schema: { type: string, format: date-time }
+          description: Начало диапазона (включительно)
+        - in: query
+          name: to
+          required: false
+          schema: { type: string, format: date-time }
+          description: Конец диапазона (включительно)
       responses:
         '200':
           description: Встречи
@@ -3344,7 +3380,9 @@ paths:
       responses:
         '200':
           description: Встреча обновлена
-    delete:
+
+  /v1/meetings/{meetingId}/cancel:
+    post:
       tags: [Meetings]
       summary: Отменить встречу
       security:
@@ -3354,6 +3392,20 @@ paths:
       responses:
         '200':
           description: Встреча отменена
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MeetingResponse' }
+        '400':
+          description: Встреча уже отменена (ALREADY_CANCELLED)
+        '403':
+          description: Пользователь не является организатором (FORBIDDEN)
+        '404':
+          description: Встреча не найдена (NOT_FOUND)
 
   /v1/meetings/{meetingId}/participants:
     get:

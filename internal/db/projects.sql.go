@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -110,29 +111,58 @@ func (q *Queries) GetProjectByKey(ctx context.Context, key string) (Project, err
 }
 
 const listUserProjects = `-- name: ListUserProjects :many
-SELECT id, key, name, description, project_type, owner_id, status, created_at, updated_at
-FROM projects
-WHERE owner_id = $1
-  AND ($2::text IS NULL OR status = $2)
-  AND ($3::text IS NULL OR project_type = $3)
-ORDER BY created_at DESC
+SELECT DISTINCT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status, p.created_at, p.updated_at,
+       u.full_name AS owner_full_name, u.avatar_url AS owner_avatar_url, u.email AS owner_email
+FROM projects p
+JOIN users u ON u.id = p.owner_id
+LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+WHERE (p.owner_id = $1 OR pm.user_id IS NOT NULL)
+  AND ($2::text IS NULL OR p.status = $2)
+  AND ($3::text IS NULL OR p.project_type = $3)
+  AND ($4::text IS NULL OR $4::text = '' OR (
+       p.name ILIKE '%' || $4 || '%'
+       OR p.key ILIKE '%' || $4 || '%'
+       OR COALESCE(p.description, '') ILIKE '%' || $4 || '%'
+       OR u.full_name ILIKE '%' || $4 || '%'))
+ORDER BY p.created_at DESC
 `
 
 type ListUserProjectsParams struct {
-	OwnerID uuid.UUID `json:"owner_id"`
-	Column2 string    `json:"column_2"`
-	Column3 string    `json:"column_3"`
+	UserID       uuid.UUID      `json:"user_id"`
+	StatusFilter sql.NullString `json:"status_filter"`
+	TypeFilter   sql.NullString `json:"type_filter"`
+	SearchQuery  sql.NullString `json:"search_query"`
 }
 
-func (q *Queries) ListUserProjects(ctx context.Context, arg ListUserProjectsParams) ([]Project, error) {
-	rows, err := q.db.QueryContext(ctx, listUserProjects, arg.OwnerID, arg.Column2, arg.Column3)
+type ListUserProjectsRow struct {
+	ID             uuid.UUID      `json:"id"`
+	Key            string         `json:"key"`
+	Name           string         `json:"name"`
+	Description    sql.NullString `json:"description"`
+	ProjectType    string         `json:"project_type"`
+	OwnerID        uuid.UUID      `json:"owner_id"`
+	Status         string         `json:"status"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	OwnerFullName  string         `json:"owner_full_name"`
+	OwnerAvatarUrl sql.NullString `json:"owner_avatar_url"`
+	OwnerEmail     string         `json:"owner_email"`
+}
+
+func (q *Queries) ListUserProjects(ctx context.Context, arg ListUserProjectsParams) ([]ListUserProjectsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserProjects,
+		arg.UserID,
+		arg.StatusFilter,
+		arg.TypeFilter,
+		arg.SearchQuery,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Project{}
+	items := []ListUserProjectsRow{}
 	for rows.Next() {
-		var i Project
+		var i ListUserProjectsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Key,
@@ -143,6 +173,9 @@ func (q *Queries) ListUserProjects(ctx context.Context, arg ListUserProjectsPara
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OwnerFullName,
+			&i.OwnerAvatarUrl,
+			&i.OwnerEmail,
 		); err != nil {
 			return nil, err
 		}

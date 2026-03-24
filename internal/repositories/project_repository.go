@@ -15,7 +15,7 @@ type ProjectRepository interface {
 	Create(ctx context.Context, p *domain.Project) (*domain.Project, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Project, error)
 	GetByKey(ctx context.Context, key string) (*domain.Project, error)
-	ListByOwner(ctx context.Context, ownerID uuid.UUID, status *string, projectType *string) ([]domain.Project, error)
+	ListUserProjects(ctx context.Context, userID uuid.UUID, query *string, status *string, projectType *string) ([]domain.Project, error)
 	Update(ctx context.Context, p *domain.Project) (*domain.Project, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -65,19 +65,23 @@ func (r *projectRepository) GetByKey(ctx context.Context, key string) (*domain.P
 	return mapDBProject(row), nil
 }
 
-func (r *projectRepository) ListByOwner(ctx context.Context, ownerID uuid.UUID, status *string, projectType *string) ([]domain.Project, error) {
-	var statusArg, typeArg sql.NullString
-	if status != nil {
-		statusArg = stringToNullString(*status)
+func (r *projectRepository) ListUserProjects(ctx context.Context, userID uuid.UUID, query *string, status *string, projectType *string) ([]domain.Project, error) {
+	var statusArg, typeArg, queryArg sql.NullString
+	if status != nil && *status != "" {
+		statusArg = sql.NullString{String: *status, Valid: true}
 	}
-	if projectType != nil {
-		typeArg = stringToNullString(*projectType)
+	if projectType != nil && *projectType != "" {
+		typeArg = sql.NullString{String: *projectType, Valid: true}
+	}
+	if query != nil && *query != "" {
+		queryArg = sql.NullString{String: *query, Valid: true}
 	}
 
 	rows, err := r.q.ListUserProjects(ctx, db.ListUserProjectsParams{
-		OwnerID: ownerID,
-		Column2: statusArg.String,
-		Column3: typeArg.String,
+		UserID:       userID,
+		StatusFilter: statusArg,
+		TypeFilter:   typeArg,
+		SearchQuery:  queryArg,
 	})
 	if err != nil {
 		return nil, err
@@ -85,7 +89,27 @@ func (r *projectRepository) ListByOwner(ctx context.Context, ownerID uuid.UUID, 
 
 	projects := make([]domain.Project, 0, len(rows))
 	for _, row := range rows {
-		projects = append(projects, *mapDBProject(row))
+		p := &domain.Project{
+			ID:          row.ID,
+			Key:         row.Key,
+			Name:        row.Name,
+			Description: nullStringToStringPtr(row.Description),
+			Type:        domain.ProjectType(row.ProjectType),
+			OwnerID:     row.OwnerID,
+			Status:      domain.ProjectStatus(row.Status),
+			CreatedAt:   row.CreatedAt,
+		}
+		var avatarURL *string
+		if row.OwnerAvatarUrl.Valid {
+			avatarURL = &row.OwnerAvatarUrl.String
+		}
+		p.Owner = &domain.ProjectOwner{
+			ID:        row.OwnerID.String(),
+			FullName:  row.OwnerFullName,
+			AvatarURL: avatarURL,
+			Email:     row.OwnerEmail,
+		}
+		projects = append(projects, *p)
 	}
 	return projects, nil
 }
@@ -119,6 +143,7 @@ func mapDBProject(row db.Project) *domain.Project {
 		Type:        domain.ProjectType(row.ProjectType),
 		OwnerID:     row.OwnerID,
 		Status:      domain.ProjectStatus(row.Status),
+		CreatedAt:   row.CreatedAt,
 	}
 }
 

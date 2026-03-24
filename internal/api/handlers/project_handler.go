@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,18 +28,23 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 		return
 	}
 
+	q := c.Query("q")
+	var queryPtr *string
+	if q != "" {
+		queryPtr = &q
+	}
 	status := c.Query("status")
 	var statusPtr *string
 	if status != "" {
 		statusPtr = &status
 	}
-	projectType := c.Query("type")
+	projectType := c.Query("project_type")
 	var typePtr *string
 	if projectType != "" {
 		typePtr = &projectType
 	}
 
-	projects, err := h.service.ListProjects(c.Request.Context(), ownerID, statusPtr, typePtr)
+	projects, err := h.service.ListProjects(c.Request.Context(), ownerID, queryPtr, statusPtr, typePtr)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список проектов")
 		return
@@ -53,7 +59,7 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	userIDStr := c.GetString("userID")
-	ownerID, err := uuid.Parse(userIDStr)
+	currentUserID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
 		return
@@ -63,6 +69,16 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
+	}
+
+	ownerID := currentUserID
+	if req.OwnerID != nil && *req.OwnerID != "" {
+		parsed, err := uuid.Parse(*req.OwnerID)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный owner_id")
+			return
+		}
+		ownerID = parsed
 	}
 
 	p, err := h.service.CreateProject(c.Request.Context(), ownerID, req.Name, req.Description, req.ProjectType)
@@ -173,7 +189,7 @@ func mapProjectToDTO(p *domain.Project) dto.ProjectResponse {
 	if p.Description != nil {
 		desc = *p.Description
 	}
-	return dto.ProjectResponse{
+	resp := dto.ProjectResponse{
 		ID:          p.ID,
 		Key:         p.Key,
 		Name:        p.Name,
@@ -181,6 +197,16 @@ func mapProjectToDTO(p *domain.Project) dto.ProjectResponse {
 		ProjectType: string(p.Type),
 		OwnerID:     p.OwnerID,
 		Status:      string(p.Status),
+		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
 	}
+	if p.Owner != nil {
+		resp.Owner = &dto.ProjectOwnerResponse{
+			ID:        p.Owner.ID,
+			FullName:  p.Owner.FullName,
+			AvatarURL: p.Owner.AvatarURL,
+			Email:     p.Owner.Email,
+		}
+	}
+	return resp
 }
 

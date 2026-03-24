@@ -1,6 +1,10 @@
 package domain
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type ProjectType string
 
@@ -17,6 +21,13 @@ const (
 	ProjectStatusPaused   ProjectStatus = "paused"
 )
 
+type ProjectOwner struct {
+	ID        string
+	FullName  string
+	AvatarURL *string
+	Email     string
+}
+
 type Project struct {
 	ID          uuid.UUID     `json:"id"`
 	Key         string        `json:"key"`
@@ -25,4 +36,6 @@ type Project struct {
 	Type        ProjectType   `json:"project_type"`
 	OwnerID     uuid.UUID     `json:"owner_id"`
 	Status      ProjectStatus `json:"status"`
+	CreatedAt   time.Time     `json:"-"`
+	Owner       *ProjectOwner `json:"-"`
 }

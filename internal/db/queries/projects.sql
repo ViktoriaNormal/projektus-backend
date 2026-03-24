@@ -16,12 +16,20 @@ FROM projects
 WHERE key = $1;
 
 -- name: ListUserProjects :many
-SELECT id, key, name, description, project_type, owner_id, status, created_at, updated_at
-FROM projects
-WHERE owner_id = $1
-  AND ($2::text IS NULL OR status = $2)
-  AND ($3::text IS NULL OR project_type = $3)
-ORDER BY created_at DESC;
+SELECT DISTINCT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status, p.created_at, p.updated_at,
+       u.full_name AS owner_full_name, u.avatar_url AS owner_avatar_url, u.email AS owner_email
+FROM projects p
+JOIN users u ON u.id = p.owner_id
+LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+WHERE (p.owner_id = $1 OR pm.user_id IS NOT NULL)
+  AND (sqlc.narg(status_filter)::text IS NULL OR p.status = sqlc.narg(status_filter))
+  AND (sqlc.narg(type_filter)::text IS NULL OR p.project_type = sqlc.narg(type_filter))
+  AND (sqlc.narg(search_query)::text IS NULL OR sqlc.narg(search_query)::text = '' OR (
+       p.name ILIKE '%' || sqlc.narg(search_query) || '%'
+       OR p.key ILIKE '%' || sqlc.narg(search_query) || '%'
+       OR COALESCE(p.description, '') ILIKE '%' || sqlc.narg(search_query) || '%'
+       OR u.full_name ILIKE '%' || sqlc.narg(search_query) || '%'))
+ORDER BY p.created_at DESC;
 
 -- name: UpdateProject :one
 UPDATE projects
