@@ -56,9 +56,9 @@ func (q *Queries) CountFailedAttemptsByUsernameSince(ctx context.Context, arg Co
 
 const createRefreshToken = `-- name: CreateRefreshToken :one
 
-INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+INSERT INTO tokens (user_id, token_hash, expires_at)
 VALUES ($1, $2, $3)
-RETURNING id, user_id, token_hash, expires_at, revoked_at, created_at
+RETURNING id, user_id, token_hash, expires_at, revoked_at
 `
 
 type CreateRefreshTokenParams struct {
@@ -68,16 +68,15 @@ type CreateRefreshTokenParams struct {
 }
 
 // Refresh tokens
-func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error) {
+func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (Token, error) {
 	row := q.db.QueryRowContext(ctx, createRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
-	var i RefreshToken
+	var i Token
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.RevokedAt,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -89,16 +88,6 @@ WHERE blocked_until <= NOW()
 
 func (q *Queries) DeleteExpiredBlockedIPs(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, deleteExpiredBlockedIPs)
-	return err
-}
-
-const deleteExpiredBlockedUsers = `-- name: DeleteExpiredBlockedUsers :exec
-DELETE FROM blocked_users
-WHERE blocked_until <= NOW()
-`
-
-func (q *Queries) DeleteExpiredBlockedUsers(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteExpiredBlockedUsers)
 	return err
 }
 
@@ -117,36 +106,21 @@ func (q *Queries) GetBlockedIP(ctx context.Context, ipAddress pqtype.Inet) (Bloc
 	return i, err
 }
 
-const getBlockedUser = `-- name: GetBlockedUser :one
-
-SELECT user_id, blocked_until
-FROM blocked_users
-WHERE user_id = $1
-`
-
-// Blocked users
-func (q *Queries) GetBlockedUser(ctx context.Context, userID uuid.UUID) (BlockedUser, error) {
-	row := q.db.QueryRowContext(ctx, getBlockedUser, userID)
-	var i BlockedUser
-	err := row.Scan(&i.UserID, &i.BlockedUntil)
-	return i, err
-}
-
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
-SELECT id, user_id, token_hash, expires_at, revoked_at, created_at FROM refresh_tokens
+SELECT id, user_id, token_hash, expires_at, revoked_at
+FROM tokens
 WHERE token_hash = $1
 `
 
-func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
+func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (Token, error) {
 	row := q.db.QueryRowContext(ctx, getRefreshTokenByHash, tokenHash)
-	var i RefreshToken
+	var i Token
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.RevokedAt,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -170,7 +144,7 @@ func (q *Queries) InsertLoginAttempt(ctx context.Context, arg InsertLoginAttempt
 }
 
 const revokeAllUserRefreshTokens = `-- name: RevokeAllUserRefreshTokens :exec
-UPDATE refresh_tokens
+UPDATE tokens
 SET revoked_at = NOW()
 WHERE user_id = $1
   AND revoked_at IS NULL
@@ -182,7 +156,7 @@ func (q *Queries) RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UU
 }
 
 const revokeRefreshToken = `-- name: RevokeRefreshToken :exec
-UPDATE refresh_tokens
+UPDATE tokens
 SET revoked_at = NOW()
 WHERE id = $1
 `
@@ -206,22 +180,5 @@ type UpsertBlockedIPParams struct {
 
 func (q *Queries) UpsertBlockedIP(ctx context.Context, arg UpsertBlockedIPParams) error {
 	_, err := q.db.ExecContext(ctx, upsertBlockedIP, arg.IpAddress, arg.BlockedUntil)
-	return err
-}
-
-const upsertBlockedUser = `-- name: UpsertBlockedUser :exec
-INSERT INTO blocked_users (user_id, blocked_until)
-VALUES ($1, $2)
-ON CONFLICT (user_id) DO UPDATE
-SET blocked_until = EXCLUDED.blocked_until
-`
-
-type UpsertBlockedUserParams struct {
-	UserID       uuid.UUID `json:"user_id"`
-	BlockedUntil time.Time `json:"blocked_until"`
-}
-
-func (q *Queries) UpsertBlockedUser(ctx context.Context, arg UpsertBlockedUserParams) error {
-	_, err := q.db.ExecContext(ctx, upsertBlockedUser, arg.UserID, arg.BlockedUntil)
 	return err
 }

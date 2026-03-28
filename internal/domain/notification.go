@@ -34,8 +34,6 @@ type NotificationSetting struct {
 	InSystem              bool      `json:"in_system"`
 	InEmail               bool      `json:"in_email"`
 	ReminderOffsetMinutes *int      `json:"reminder_offset_minutes,omitempty"`
-	CreatedAt             time.Time `json:"-"`
-	UpdatedAt             time.Time `json:"-"`
 }
 
 type Notification struct {
@@ -48,7 +46,4 @@ type Notification struct {
 	PayloadJSON []byte      `json:"-"`
 	IsRead      bool        `json:"is_read"`
 	CreatedAt   time.Time   `json:"created_at"`
-	ReadAt      *time.Time  `json:"read_at,omitempty"`
-	EmailStatus *string     `json:"-"`
-	EmailSentAt *time.Time  `json:"-"`
 }

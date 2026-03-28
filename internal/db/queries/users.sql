@@ -1,24 +1,30 @@
 -- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, full_name, avatar_url)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING *;
+RETURNING id, username, email, password_hash, full_name, avatar_url, position,
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at;
 
 -- name: GetUserByEmail :one
-SELECT * FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+FROM users
 WHERE email = $1;
 
 -- name: GetUserByUsername :one
-SELECT * FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+FROM users
 WHERE username = $1;
 
 -- name: GetUserByID :one
-SELECT * FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+FROM users
 WHERE id = $1;
 
 -- name: UpdateUserPassword :exec
 UPDATE users
-SET password_hash = $2,
-    updated_at    = NOW()
+SET password_hash = $2
 WHERE id = $1;
 
 -- name: InsertPasswordHistory :exec
@@ -39,19 +45,18 @@ SET full_name = $2,
     position  = $4,
     on_vacation = $5,
     is_sick     = $6,
-    alternative_contact_channel = $7,
-    alternative_contact_info    = $8,
-    updated_at = NOW()
+    alt_contact_channel = $7,
+    alt_contact_info    = $8
 WHERE id = $1;
 
 -- name: UpdateUserAvatar :exec
 UPDATE users
-SET avatar_url = $2,
-    updated_at = NOW()
+SET avatar_url = $2
 WHERE id = $1;
 
 -- name: SearchUsers :many
-SELECT *
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
 FROM users
 WHERE deleted_at IS NULL
   AND ($1::text IS NULL OR $1::text = '' OR (
@@ -59,12 +64,10 @@ WHERE deleted_at IS NULL
    OR email ILIKE '%' || $1 || '%'
    OR full_name ILIKE '%' || $1 || '%'
    OR position ILIKE '%' || $1 || '%'
-   OR alternative_contact_info ILIKE '%' || $1 || '%'))
+   OR alt_contact_info ILIKE '%' || $1 || '%'))
 ORDER BY full_name
 LIMIT $2 OFFSET $3;
 
 -- name: ListAllUserIDs :many
 SELECT id
 FROM users;
-
-

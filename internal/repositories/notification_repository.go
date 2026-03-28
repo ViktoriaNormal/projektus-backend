@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
@@ -100,18 +99,12 @@ func (r *notificationRepository) CreateNotification(ctx context.Context, n domai
 	if len(n.PayloadJSON) > 0 {
 		payload = pqtype.NullRawMessage{RawMessage: n.PayloadJSON, Valid: true}
 	}
-	emailStatus := sql.NullString{}
-	if n.EmailStatus != nil {
-		emailStatus = sql.NullString{String: *n.EmailStatus, Valid: true}
-	}
 	row, err := r.q.CreateNotification(ctx, db.CreateNotificationParams{
-		UserID:      uid,
-		EventType:   string(n.EventType),
-		Channel:     string(n.Channel),
-		Title:       n.Title,
-		Body:        body,
-		Payload:     payload,
-		EmailStatus: emailStatus,
+		UserID:    uid,
+		EventType: string(n.EventType),
+		Title:     n.Title,
+		Body:      body,
+		Payload:   payload,
 	})
 	if err != nil {
 		return nil, err
@@ -173,16 +166,9 @@ func (r *notificationRepository) GetUnreadCount(ctx context.Context, userID stri
 	return int(n), err
 }
 
-func (r *notificationRepository) GetPendingEmailNotifications(ctx context.Context) ([]domain.Notification, error) {
-	rows, err := r.q.GetNotificationsForEmail(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]domain.Notification, len(rows))
-	for i, n := range rows {
-		result[i] = mapDBNotificationToDomain(n)
-	}
-	return result, nil
+func (r *notificationRepository) GetPendingEmailNotifications(_ context.Context) ([]domain.Notification, error) {
+	// email notification queries removed in schema redesign
+	return nil, nil
 }
 
 func mapDBNotificationSettingToDomain(s db.NotificationSetting) domain.NotificationSetting {
@@ -198,8 +184,6 @@ func mapDBNotificationSettingToDomain(s db.NotificationSetting) domain.Notificat
 		InSystem:              s.InSystem,
 		InEmail:               s.InEmail,
 		ReminderOffsetMinutes: offset,
-		CreatedAt:             s.CreatedAt,
-		UpdatedAt:             s.UpdatedAt,
 	}
 }
 
@@ -212,30 +196,14 @@ func mapDBNotificationToDomain(n db.Notification) domain.Notification {
 	if n.Payload.Valid {
 		payload = n.Payload.RawMessage
 	}
-	var emailStatus *string
-	if n.EmailStatus.Valid {
-		emailStatus = &n.EmailStatus.String
-	}
-	var readAt *time.Time
-	if n.ReadAt.Valid {
-		readAt = &n.ReadAt.Time
-	}
-	var emailSentAt *time.Time
-	if n.EmailSentAt.Valid {
-		emailSentAt = &n.EmailSentAt.Time
-	}
 	return domain.Notification{
 		ID:          n.ID.String(),
 		UserID:      n.UserID.String(),
 		EventType:   domain.EventType(n.EventType),
-		Channel:     domain.ChannelType(n.Channel),
 		Title:       n.Title,
 		Body:        body,
 		PayloadJSON: payload,
 		IsRead:      n.IsRead,
 		CreatedAt:   n.CreatedAt,
-		ReadAt:      readAt,
-		EmailStatus: emailStatus,
-		EmailSentAt: emailSentAt,
 	}
 }

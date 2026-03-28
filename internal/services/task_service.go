@@ -13,13 +13,12 @@ import (
 )
 
 type TaskService struct {
-	taskRepo          repositories.TaskRepository
-	projectRepo       repositories.ProjectRepository
-	taskHistorySvc    *TaskHistoryService
+	taskRepo    repositories.TaskRepository
+	projectRepo repositories.ProjectRepository
 }
 
-func NewTaskService(taskRepo repositories.TaskRepository, projectRepo repositories.ProjectRepository, taskHistorySvc *TaskHistoryService) *TaskService {
-	return &TaskService{taskRepo: taskRepo, projectRepo: projectRepo, taskHistorySvc: taskHistorySvc}
+func NewTaskService(taskRepo repositories.TaskRepository, projectRepo repositories.ProjectRepository) *TaskService {
+	return &TaskService{taskRepo: taskRepo, projectRepo: projectRepo}
 }
 
 func (s *TaskService) generateTaskKey(ctx context.Context, projectID uuid.UUID) (string, error) {
@@ -115,8 +114,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task) (*domain.T
 		return nil, domain.ErrInvalidInput
 	}
 
-	// Получаем текущую задачу, чтобы понять, изменилась ли колонка.
-	current, err := s.taskRepo.GetByID(ctx, uuid.MustParse(t.ID))
+	// Получаем текущую задачу
+	_, err := s.taskRepo.GetByID(ctx, uuid.MustParse(t.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -124,20 +123,6 @@ func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task) (*domain.T
 	updated, err := s.taskRepo.Update(ctx, t)
 	if err != nil {
 		return nil, err
-	}
-
-	// Если колонка изменилась и сервис истории подключён — записываем изменение статуса.
-	if s.taskHistorySvc != nil && current.ColumnID != updated.ColumnID {
-		taskID := uuid.MustParse(updated.ID)
-		newColID := uuid.MustParse(updated.ColumnID)
-		var oldColID *uuid.UUID
-		if current.ColumnID != "" {
-			id := uuid.MustParse(current.ColumnID)
-			oldColID = &id
-		}
-		if err := s.taskHistorySvc.RecordStatusChange(ctx, taskID, newColID, oldColID); err != nil {
-			return nil, err
-		}
 	}
 
 	return updated, nil

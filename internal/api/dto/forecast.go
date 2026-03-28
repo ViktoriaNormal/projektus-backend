@@ -1,9 +1,9 @@
 package dto
 
 type MonteCarloForecastRequest struct {
-	WorkItemCount    int       `json:"workItemCount" binding:"required,min=1"`
+	WorkItemCount    int       `json:"work_item_count" binding:"required,min=1"`
 	Simulations      int       `json:"simulations" binding:"required,min=100,max=10000"`
-	ConfidenceLevels []float64 `json:"confidenceLevels,omitempty"`
+	ConfidenceLevels []float64 `json:"confidence_levels,omitempty"`
 }
 
 type ForecastPointDTO struct {
@@ -12,9 +12,8 @@ type ForecastPointDTO struct {
 }
 
 type MonteCarloForecastResultDTO struct {
-	ProjectID     string            `json:"projectId"`
-	WorkItemCount int              `json:"workItemCount"`
+	ProjectID     string            `json:"project_id"`
+	WorkItemCount int              `json:"work_item_count"`
 	Points        []ForecastPointDTO `json:"points"`
-	GeneratedAt   string            `json:"generatedAt"`
+	GeneratedAt   string            `json:"generated_at"`
 }
-

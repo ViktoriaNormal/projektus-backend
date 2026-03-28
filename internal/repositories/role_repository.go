@@ -19,14 +19,9 @@ type RoleRepository interface {
 	UpdateSystemRole(ctx context.Context, id uuid.UUID, name, description string) (*domain.Role, error)
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 
-	ListPermissions(ctx context.Context) ([]domain.Permission, error)
-	GetPermissionByCode(ctx context.Context, code string) (*domain.Permission, error)
-	CreatePermission(ctx context.Context, code, description string) (*domain.Permission, error)
-	DeletePermission(ctx context.Context, id uuid.UUID) error
-
 	ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]domain.Permission, error)
-	AddPermissionToRole(ctx context.Context, roleID, permissionID uuid.UUID) error
-	RemovePermissionFromRole(ctx context.Context, roleID, permissionID uuid.UUID) error
+	AddPermissionToRole(ctx context.Context, roleID uuid.UUID, permissionCode, access string) error
+	RemovePermissionFromRole(ctx context.Context, roleID uuid.UUID, permissionCode string) error
 	RemoveAllPermissionsFromRole(ctx context.Context, roleID uuid.UUID) error
 
 	ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error)
@@ -57,14 +52,13 @@ func (r *roleRepository) ListSystemRoles(ctx context.Context) ([]domain.Role, er
 
 	roles := make([]domain.Role, 0, len(rows))
 	for _, row := range rows {
-		role := domain.Role{
+		roles = append(roles, domain.Role{
 			ID:          row.ID,
 			Name:        row.Name,
-			Description: sqlNullStringToStringPtr(row.Description),
+			Description: row.Description,
 			Scope:       domain.RoleScope(row.Scope),
-			ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
-		}
-		roles = append(roles, role)
+			IsAdmin:     row.IsAdmin,
+		})
 	}
 	return roles, nil
 }
@@ -78,40 +72,38 @@ func (r *roleRepository) GetRoleByID(ctx context.Context, id uuid.UUID) (*domain
 		return nil, errctx.Wrap(err, "GetRoleByID", "id", id)
 	}
 
-	role := &domain.Role{
+	return &domain.Role{
 		ID:          row.ID,
 		Name:        row.Name,
-		Description: sqlNullStringToStringPtr(row.Description),
+		Description: row.Description,
 		Scope:       domain.RoleScope(row.Scope),
-		ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
-	}
-	return role, nil
+		IsAdmin:     row.IsAdmin,
+	}, nil
 }
 
 func (r *roleRepository) CreateSystemRole(ctx context.Context, name, description string) (*domain.Role, error) {
 	row, err := r.q.CreateSystemRole(ctx, db.CreateSystemRoleParams{
 		Name:        name,
-		Description: stringToNullString(description),
+		Description: description,
 	})
 	if err != nil {
 		return nil, errctx.Wrap(err, "CreateSystemRole", "name", name)
 	}
 
-	role := &domain.Role{
+	return &domain.Role{
 		ID:          row.ID,
 		Name:        row.Name,
-		Description: sqlNullStringToStringPtr(row.Description),
+		Description: row.Description,
 		Scope:       domain.RoleScope(row.Scope),
-		ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
-	}
-	return role, nil
+		IsAdmin:     row.IsAdmin,
+	}, nil
 }
 
 func (r *roleRepository) UpdateSystemRole(ctx context.Context, id uuid.UUID, name, description string) (*domain.Role, error) {
 	row, err := r.q.UpdateSystemRole(ctx, db.UpdateSystemRoleParams{
 		ID:          id,
 		Name:        name,
-		Description: stringToNullString(description),
+		Description: description,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -120,72 +112,18 @@ func (r *roleRepository) UpdateSystemRole(ctx context.Context, id uuid.UUID, nam
 		return nil, errctx.Wrap(err, "UpdateSystemRole", "id", id)
 	}
 
-	role := &domain.Role{
+	return &domain.Role{
 		ID:          row.ID,
 		Name:        row.Name,
-		Description: sqlNullStringToStringPtr(row.Description),
+		Description: row.Description,
 		Scope:       domain.RoleScope(row.Scope),
-		ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
-	}
-	return role, nil
+		IsAdmin:     row.IsAdmin,
+	}, nil
 }
 
 func (r *roleRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {
 	err := r.q.DeleteRole(ctx, id)
 	return errctx.Wrap(err, "DeleteRole", "id", id)
-}
-
-func (r *roleRepository) ListPermissions(ctx context.Context) ([]domain.Permission, error) {
-	rows, err := r.q.ListPermissions(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	perms := make([]domain.Permission, 0, len(rows))
-	for _, row := range rows {
-		perms = append(perms, domain.Permission{
-			ID:          row.ID,
-			Code:        row.Code,
-			Description: sqlNullStringToStringPtr(row.Description),
-		})
-	}
-	return perms, nil
-}
-
-func (r *roleRepository) GetPermissionByCode(ctx context.Context, code string) (*domain.Permission, error) {
-	row, err := r.q.GetPermissionByCode(ctx, code)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
-	}
-	return &domain.Permission{
-		ID:          row.ID,
-		Code:        row.Code,
-		Description: sqlNullStringToStringPtr(row.Description),
-	}, nil
-}
-
-func (r *roleRepository) CreatePermission(ctx context.Context, code, description string) (*domain.Permission, error) {
-	row, err := r.q.CreatePermission(ctx, db.CreatePermissionParams{
-		Code:        code,
-		Description: stringToNullString(description),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	p := &domain.Permission{
-		ID:          row.ID,
-		Code:        row.Code,
-		Description: sqlNullStringToStringPtr(row.Description),
-	}
-	return p, nil
-}
-
-func (r *roleRepository) DeletePermission(ctx context.Context, id uuid.UUID) error {
-	return r.q.DeletePermission(ctx, id)
 }
 
 func (r *roleRepository) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]domain.Permission, error) {
@@ -196,26 +134,30 @@ func (r *roleRepository) ListRolePermissions(ctx context.Context, roleID uuid.UU
 
 	perms := make([]domain.Permission, 0, len(rows))
 	for _, row := range rows {
+		access := ""
+		if row.Access.Valid {
+			access = row.Access.String
+		}
 		perms = append(perms, domain.Permission{
-			ID:          row.ID,
-			Code:        row.Code,
-			Description: sqlNullStringToStringPtr(row.Description),
+			Code:   row.PermissionCode,
+			Access: access,
 		})
 	}
 	return perms, nil
 }
 
-func (r *roleRepository) AddPermissionToRole(ctx context.Context, roleID, permissionID uuid.UUID) error {
+func (r *roleRepository) AddPermissionToRole(ctx context.Context, roleID uuid.UUID, permissionCode, access string) error {
 	return r.q.AddPermissionToRole(ctx, db.AddPermissionToRoleParams{
-		RoleID:       roleID,
-		PermissionID: permissionID,
+		RoleID:         roleID,
+		PermissionCode: permissionCode,
+		Access:         sql.NullString{String: access, Valid: access != ""},
 	})
 }
 
-func (r *roleRepository) RemovePermissionFromRole(ctx context.Context, roleID, permissionID uuid.UUID) error {
+func (r *roleRepository) RemovePermissionFromRole(ctx context.Context, roleID uuid.UUID, permissionCode string) error {
 	return r.q.RemovePermissionFromRole(ctx, db.RemovePermissionFromRoleParams{
-		RoleID:       roleID,
-		PermissionID: permissionID,
+		RoleID:         roleID,
+		PermissionCode: permissionCode,
 	})
 }
 
@@ -234,9 +176,9 @@ func (r *roleRepository) ListUserSystemRoles(ctx context.Context, userID uuid.UU
 		roles = append(roles, domain.Role{
 			ID:          row.ID,
 			Name:        row.Name,
-			Description: sqlNullStringToStringPtr(row.Description),
+			Description: row.Description,
 			Scope:       domain.RoleScope(row.Scope),
-			ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
+			IsAdmin:     row.IsAdmin,
 		})
 	}
 	return roles, nil
@@ -266,8 +208,8 @@ func (r *roleRepository) DeleteUserSystemRoles(ctx context.Context, userID uuid.
 
 func (r *roleRepository) UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
 	has, err := r.q.UserHasSystemPermission(ctx, db.UserHasSystemPermissionParams{
-		UserID: userID,
-		Code:   code,
+		UserID:         userID,
+		PermissionCode: code,
 	})
 	if err != nil {
 		return false, err
@@ -287,7 +229,7 @@ func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UU
 		roles = append(roles, domain.Role{
 			ID:          row.ID,
 			Name:        row.Name,
-			Description: sqlNullStringToStringPtr(row.Description),
+			Description: row.Description,
 			Scope:       domain.RoleScope(row.Scope),
 			ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
 		})
@@ -298,7 +240,7 @@ func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UU
 func (r *roleRepository) CreateProjectRole(ctx context.Context, projectID uuid.UUID, name, description string) (*domain.Role, error) {
 	row, err := r.q.CreateProjectRole(ctx, db.CreateProjectRoleParams{
 		Name:        name,
-		Description: stringToNullString(description),
+		Description: description,
 		ProjectID:   uuid.NullUUID{UUID: projectID, Valid: true},
 	})
 	if err != nil {
@@ -307,7 +249,7 @@ func (r *roleRepository) CreateProjectRole(ctx context.Context, projectID uuid.U
 	return &domain.Role{
 		ID:          row.ID,
 		Name:        row.Name,
-		Description: sqlNullStringToStringPtr(row.Description),
+		Description: row.Description,
 		Scope:       domain.RoleScope(row.Scope),
 		ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
 	}, nil

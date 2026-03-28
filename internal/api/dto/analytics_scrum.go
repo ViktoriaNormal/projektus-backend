@@ -1,10 +1,10 @@
 package dto
 
 type VelocitySprintDTO struct {
-	SprintID        string `json:"sprintId"`
+	SprintID        string `json:"sprint_id"`
 	Name            string `json:"name"`
-	CommittedPoints int    `json:"committedPoints"`
-	CompletedPoints int    `json:"completedPoints"`
+	CommittedPoints int    `json:"committed_points"`
+	CompletedPoints int    `json:"completed_points"`
 }
 
 type ScrumVelocityReport struct {
@@ -13,12 +13,11 @@ type ScrumVelocityReport struct {
 
 type BurndownPointDTO struct {
 	Date            string `json:"date"`
-	RemainingPoints int    `json:"remainingPoints"`
-	IdealPoints     int    `json:"idealPoints"`
+	RemainingPoints int    `json:"remaining_points"`
+	IdealPoints     int    `json:"ideal_points"`
 }
 
 type BurndownReportDTO struct {
-	SprintID string             `json:"sprintId"`
+	SprintID string             `json:"sprint_id"`
 	Points   []BurndownPointDTO `json:"points"`
 }
-

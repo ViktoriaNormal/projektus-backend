@@ -159,33 +159,18 @@ func (r *authRepository) CleanupExpiredBlockedIPs(ctx context.Context) error {
 	return r.q.DeleteExpiredBlockedIPs(ctx)
 }
 
-func (r *authRepository) GetBlockedUserUntil(ctx context.Context, userID string) (*time.Time, error) {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
-	row, err := r.q.GetBlockedUser(ctx, uid)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &row.BlockedUntil, nil
+func (r *authRepository) GetBlockedUserUntil(_ context.Context, _ string) (*time.Time, error) {
+	// blocked_users table removed in schema redesign
+	return nil, nil
 }
 
-func (r *authRepository) BlockUserUntil(ctx context.Context, userID string, until time.Time) error {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	return r.q.UpsertBlockedUser(ctx, db.UpsertBlockedUserParams{
-		UserID:       uid,
-		BlockedUntil: until,
-	})
+func (r *authRepository) BlockUserUntil(_ context.Context, _ string, _ time.Time) error {
+	// blocked_users table removed in schema redesign
+	return nil
 }
 
-func (r *authRepository) CleanupExpiredBlockedUsers(ctx context.Context) error {
-	return r.q.DeleteExpiredBlockedUsers(ctx)
+func (r *authRepository) CleanupExpiredBlockedUsers(_ context.Context) error {
+	// blocked_users table removed in schema redesign
+	return nil
 }
 

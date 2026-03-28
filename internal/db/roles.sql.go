@@ -12,62 +12,90 @@ import (
 	"github.com/google/uuid"
 )
 
+const addPermissionToRole = `-- name: AddPermissionToRole :exec
+INSERT INTO role_permissions (role_id, permission_code, access)
+VALUES ($1, $2, $3)
+ON CONFLICT (role_id, permission_code) DO UPDATE SET access = EXCLUDED.access
+`
+
+type AddPermissionToRoleParams struct {
+	RoleID         uuid.UUID      `json:"role_id"`
+	PermissionCode string         `json:"permission_code"`
+	Access         sql.NullString `json:"access"`
+}
+
+func (q *Queries) AddPermissionToRole(ctx context.Context, arg AddPermissionToRoleParams) error {
+	_, err := q.db.ExecContext(ctx, addPermissionToRole, arg.RoleID, arg.PermissionCode, arg.Access)
+	return err
+}
+
 const createProjectRole = `-- name: CreateProjectRole :one
 INSERT INTO roles (name, description, scope, project_id)
 VALUES ($1, $2, 'project', $3)
-RETURNING id, name, description, scope, project_id, created_at, updated_at
+RETURNING id, name, description, scope, project_id
 `
 
 type CreateProjectRoleParams struct {
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
-	ProjectID   uuid.NullUUID  `json:"project_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	ProjectID   uuid.NullUUID `json:"project_id"`
 }
 
-func (q *Queries) CreateProjectRole(ctx context.Context, arg CreateProjectRoleParams) (Role, error) {
+type CreateProjectRoleRow struct {
+	ID          uuid.UUID     `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Scope       string        `json:"scope"`
+	ProjectID   uuid.NullUUID `json:"project_id"`
+}
+
+func (q *Queries) CreateProjectRole(ctx context.Context, arg CreateProjectRoleParams) (CreateProjectRoleRow, error) {
 	row := q.db.QueryRowContext(ctx, createProjectRole, arg.Name, arg.Description, arg.ProjectID)
-	var i Role
+	var i CreateProjectRoleRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.Scope,
 		&i.ProjectID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const createSystemRole = `-- name: CreateSystemRole :one
-INSERT INTO roles (name, description, scope, project_id)
-VALUES ($1, $2, 'system', NULL)
-RETURNING id, name, description, scope, project_id, created_at, updated_at
+INSERT INTO roles (name, description, scope)
+VALUES ($1, $2, 'system')
+RETURNING id, name, description, scope, is_admin
 `
 
 type CreateSystemRoleParams struct {
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
-func (q *Queries) CreateSystemRole(ctx context.Context, arg CreateSystemRoleParams) (Role, error) {
+type CreateSystemRoleRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+func (q *Queries) CreateSystemRole(ctx context.Context, arg CreateSystemRoleParams) (CreateSystemRoleRow, error) {
 	row := q.db.QueryRowContext(ctx, createSystemRole, arg.Name, arg.Description)
-	var i Role
+	var i CreateSystemRoleRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.Scope,
-		&i.ProjectID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const deleteRole = `-- name: DeleteRole :exec
-DELETE FROM roles
-WHERE id = $1
+DELETE FROM roles WHERE id = $1
 `
 
 func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
@@ -76,51 +104,95 @@ func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
 }
 
 const getRoleByID = `-- name: GetRoleByID :one
-SELECT id, name, description, scope, project_id, created_at, updated_at
+SELECT id, name, description, scope, is_admin
 FROM roles
 WHERE id = $1
 `
 
-func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error) {
+type GetRoleByIDRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (GetRoleByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getRoleByID, id)
-	var i Role
+	var i GetRoleByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.Scope,
-		&i.ProjectID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const listProjectRoles = `-- name: ListProjectRoles :many
-SELECT id, name, description, scope, project_id, created_at, updated_at
+SELECT id, name, description, scope, project_id
 FROM roles
 WHERE scope = 'project' AND project_id = $1
 ORDER BY name
 `
 
-func (q *Queries) ListProjectRoles(ctx context.Context, projectID uuid.NullUUID) ([]Role, error) {
+type ListProjectRolesRow struct {
+	ID          uuid.UUID     `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Scope       string        `json:"scope"`
+	ProjectID   uuid.NullUUID `json:"project_id"`
+}
+
+func (q *Queries) ListProjectRoles(ctx context.Context, projectID uuid.NullUUID) ([]ListProjectRolesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectRoles, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Role{}
+	items := []ListProjectRolesRow{}
 	for rows.Next() {
-		var i Role
+		var i ListProjectRolesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Description,
 			&i.Scope,
 			&i.ProjectID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRolePermissions = `-- name: ListRolePermissions :many
+
+SELECT rp.role_id, rp.permission_code, rp.access
+FROM role_permissions rp
+WHERE rp.role_id = $1
+ORDER BY rp.permission_code
+`
+
+// Permissions for roles (permission_code directly in role_permissions)
+func (q *Queries) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]RolePermission, error) {
+	rows, err := q.db.QueryContext(ctx, listRolePermissions, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RolePermission{}
+	for rows.Next() {
+		var i RolePermission
+		if err := rows.Scan(&i.RoleID, &i.PermissionCode, &i.Access); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -136,30 +208,36 @@ func (q *Queries) ListProjectRoles(ctx context.Context, projectID uuid.NullUUID)
 
 const listSystemRoles = `-- name: ListSystemRoles :many
 
-SELECT id, name, description, scope, project_id, created_at, updated_at
+SELECT id, name, description, scope, is_admin
 FROM roles
 WHERE scope = 'system'
 ORDER BY name
 `
 
-// System roles and permissions
-func (q *Queries) ListSystemRoles(ctx context.Context) ([]Role, error) {
+type ListSystemRolesRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+// System roles (scope='system' in unified roles table)
+func (q *Queries) ListSystemRoles(ctx context.Context) ([]ListSystemRolesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSystemRoles)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Role{}
+	items := []ListSystemRolesRow{}
 	for rows.Next() {
-		var i Role
+		var i ListSystemRolesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Description,
 			&i.Scope,
-			&i.ProjectID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.IsAdmin,
 		); err != nil {
 			return nil, err
 		}
@@ -174,32 +252,61 @@ func (q *Queries) ListSystemRoles(ctx context.Context) ([]Role, error) {
 	return items, nil
 }
 
+const removeAllPermissionsFromRole = `-- name: RemoveAllPermissionsFromRole :exec
+DELETE FROM role_permissions
+WHERE role_id = $1
+`
+
+func (q *Queries) RemoveAllPermissionsFromRole(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, removeAllPermissionsFromRole, roleID)
+	return err
+}
+
+const removePermissionFromRole = `-- name: RemovePermissionFromRole :exec
+DELETE FROM role_permissions
+WHERE role_id = $1 AND permission_code = $2
+`
+
+type RemovePermissionFromRoleParams struct {
+	RoleID         uuid.UUID `json:"role_id"`
+	PermissionCode string    `json:"permission_code"`
+}
+
+func (q *Queries) RemovePermissionFromRole(ctx context.Context, arg RemovePermissionFromRoleParams) error {
+	_, err := q.db.ExecContext(ctx, removePermissionFromRole, arg.RoleID, arg.PermissionCode)
+	return err
+}
+
 const updateSystemRole = `-- name: UpdateSystemRole :one
 UPDATE roles
-SET name = $2,
-    description = $3,
-    updated_at = NOW()
+SET name = $2, description = $3
 WHERE id = $1 AND scope = 'system'
-RETURNING id, name, description, scope, project_id, created_at, updated_at
+RETURNING id, name, description, scope, is_admin
 `
 
 type UpdateSystemRoleParams struct {
-	ID          uuid.UUID      `json:"id"`
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
 }
 
-func (q *Queries) UpdateSystemRole(ctx context.Context, arg UpdateSystemRoleParams) (Role, error) {
+type UpdateSystemRoleRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+func (q *Queries) UpdateSystemRole(ctx context.Context, arg UpdateSystemRoleParams) (UpdateSystemRoleRow, error) {
 	row := q.db.QueryRowContext(ctx, updateSystemRole, arg.ID, arg.Name, arg.Description)
-	var i Role
+	var i UpdateSystemRoleRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.Scope,
-		&i.ProjectID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.IsAdmin,
 	)
 	return i, err
 }

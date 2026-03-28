@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -45,6 +46,18 @@ func (s *TemplateService) List(ctx context.Context) ([]domain.ProjectTemplate, [
 		allData[i] = data
 	}
 	return templates, allData, nil
+}
+
+func (s *TemplateService) GetByType(ctx context.Context, projectType string) (*domain.ProjectTemplate, TemplateFullData, error) {
+	tmpl, err := s.repo.GetByType(ctx, projectType)
+	if err != nil {
+		return nil, TemplateFullData{}, err
+	}
+	data, err := s.loadFullData(ctx, tmpl.ID)
+	if err != nil {
+		return nil, TemplateFullData{}, err
+	}
+	return tmpl, data, nil
 }
 
 func (s *TemplateService) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProjectTemplate, TemplateFullData, error) {
@@ -138,11 +151,11 @@ func (s *TemplateService) CreateBoard(ctx context.Context, templateID uuid.UUID,
 	}
 
 	board, err := s.repo.CreateBoard(ctx, db.CreateTemplateBoardParams{
-		TemplateID:      templateID,
+		TemplateID:      uuid.NullUUID{UUID: templateID, Valid: true},
 		Name:            name,
-		Description:     description,
+		Description:     sql.NullString{String: description, Valid: description != ""},
 		IsDefault:       isDefault,
-		Order:           count + 1,
+		SortOrder:       int16(count + 1),
 		PriorityType:    priorityType,
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: sgb,
@@ -157,22 +170,22 @@ func (s *TemplateService) CreateBoard(ctx context.Context, templateID uuid.UUID,
 		return domain.TemplateBoard{}, err
 	}
 
-	// Create default priority values
-	pvs, err := s.createDefaultPriorityValues(ctx, board.ID, priorityType)
-	if err != nil {
-		return domain.TemplateBoard{}, err
-	}
-
 	// Create swimlanes if grouped
 	var swimlanes []domain.TemplateBoardSwimlane
 	if sgb != "" {
-		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, sgb, pvs)
+		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, sgb)
 		if err != nil {
 			return domain.TemplateBoard{}, err
 		}
 	}
 
-	return s.buildBoardDomain(board, columns, swimlanes, pvs, nil), nil
+	// Create system fields
+	fields, err := s.createSystemFields(ctx, board.ID, string(tmpl.Type), priorityType, estimationUnit)
+	if err != nil {
+		return domain.TemplateBoard{}, err
+	}
+
+	return s.buildBoardDomain(board, columns, swimlanes, fields), nil
 }
 
 func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID uuid.UUID, name, description *string, isDefault *bool, order *int32, priorityType, estimationUnit *string, swimlaneGroupBy *string, clearSwimlaneGroup bool) (domain.TemplateBoard, error) {
@@ -180,7 +193,7 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 	if err != nil {
 		return domain.TemplateBoard{}, domain.ErrNotFound
 	}
-	if board.TemplateID != templateID {
+	if !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoard{}, domain.ErrNotFound
 	}
 
@@ -194,21 +207,19 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 	}
 	finalDesc := board.Description
 	if description != nil {
-		finalDesc = *description
+		finalDesc = sql.NullString{String: *description, Valid: *description != ""}
 	}
 	finalIsDefault := board.IsDefault
 	if isDefault != nil {
 		finalIsDefault = *isDefault
 	}
-	finalOrder := board.Order
+	finalOrder := board.SortOrder
 	if order != nil {
-		finalOrder = *order
+		finalOrder = int16(*order)
 	}
 	finalPriorityType := board.PriorityType
-	priorityChanged := false
 	if priorityType != nil && *priorityType != board.PriorityType {
 		finalPriorityType = *priorityType
-		priorityChanged = true
 	}
 	finalEstimationUnit := board.EstimationUnit
 	if estimationUnit != nil {
@@ -231,7 +242,7 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 		Name:            finalName,
 		Description:     finalDesc,
 		IsDefault:       finalIsDefault,
-		Order:           finalOrder,
+		SortOrder:       finalOrder,
 		PriorityType:    finalPriorityType,
 		EstimationUnit:  finalEstimationUnit,
 		SwimlaneGroupBy: finalSwimlaneGroupBy,
@@ -240,24 +251,11 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 		return domain.TemplateBoard{}, err
 	}
 
-	// Replace priority values on type change
-	if priorityChanged {
-		_ = s.repo.DeletePriorityValuesByBoardID(ctx, boardID)
-		_, _ = s.createDefaultPriorityValues(ctx, boardID, finalPriorityType)
-	}
-
 	// Recreate swimlanes on group change
 	if swimlaneGroupChanged {
 		_ = s.repo.DeleteSwimlanesByBoardID(ctx, boardID)
 		if finalSwimlaneGroupBy != "" {
-			pvs, _ := s.repo.ListPriorityValues(ctx, boardID)
-			var domPVs []domain.TemplateBoardPriorityValue
-			for _, pv := range pvs {
-				domPVs = append(domPVs, domain.TemplateBoardPriorityValue{
-					ID: pv.ID, BoardID: pv.BoardID, Value: pv.Value, Order: pv.Order,
-				})
-			}
-			_, _ = s.createSwimlanesForGroup(ctx, boardID, finalSwimlaneGroupBy, domPVs)
+			_, _ = s.createSwimlanesForGroup(ctx, boardID, finalSwimlaneGroupBy)
 		}
 	}
 
@@ -269,13 +267,17 @@ func (s *TemplateService) DeleteBoard(ctx context.Context, templateID, boardID u
 	if err != nil {
 		return domain.ErrNotFound
 	}
-	if board.TemplateID != templateID {
+	if !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
+	}
+
+	if board.IsDefault {
+		return fmt.Errorf("DEFAULT_BOARD_DELETE: %w", domain.ErrDefaultBoard)
 	}
 
 	count, _ := s.repo.CountBoardsByTemplateID(ctx, templateID)
 	if count <= 1 {
-		return fmt.Errorf("LAST_BOARD: %w", domain.ErrLastBoard)
+		return fmt.Errorf("LAST_BOARD_DELETE: %w", domain.ErrLastBoard)
 	}
 
 	return s.repo.DeleteBoard(ctx, boardID)
@@ -283,7 +285,7 @@ func (s *TemplateService) DeleteBoard(ctx context.Context, templateID, boardID u
 
 func (s *TemplateService) ReorderBoards(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
 	for id, order := range orders {
-		if err := s.repo.UpdateBoardOrder(ctx, id, order); err != nil {
+		if err := s.repo.UpdateBoardOrder(ctx, id, int16(order)); err != nil {
 			return err
 		}
 	}
@@ -294,21 +296,34 @@ func (s *TemplateService) ReorderBoards(ctx context.Context, templateID uuid.UUI
 
 func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID uuid.UUID, name, systemType string, wipLimit *int32, order int32, note string) (domain.TemplateBoardColumn, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardColumn{}, domain.ErrNotFound
 	}
 
-	wl := sql.NullInt32{}
+	wl := sql.NullInt16{}
 	if wipLimit != nil {
-		wl = sql.NullInt32{Int32: *wipLimit, Valid: true}
+		wl = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
+	}
+
+	// Сдвигаем существующие колонки с order >= переданного на +1 (splice-вставка)
+	columns, err := s.repo.ListColumns(ctx, boardID)
+	if err != nil {
+		return domain.TemplateBoardColumn{}, err
+	}
+	for _, c := range columns {
+		if c.SortOrder >= int16(order) {
+			if err := s.repo.UpdateColumnOrder(ctx, c.ID, c.SortOrder+1); err != nil {
+				return domain.TemplateBoardColumn{}, err
+			}
+		}
 	}
 
 	col, err := s.repo.CreateColumn(ctx, db.CreateTemplateBoardColumnParams{
 		BoardID:    boardID,
 		Name:       name,
-		SystemType: systemType,
+		SystemType: sql.NullString{String: systemType, Valid: systemType != ""},
 		WipLimit:   wl,
-		Order:      order,
+		SortOrder:  int16(order),
 		IsLocked:   false,
 		Note:       note,
 	})
@@ -316,19 +331,12 @@ func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID 
 		return domain.TemplateBoardColumn{}, err
 	}
 
-	// Validate column order
-	columns, _ := s.repo.ListColumns(ctx, boardID)
-	if err := validateColumnOrder(columns); err != nil {
-		_ = s.repo.DeleteColumn(ctx, col.ID)
-		return domain.TemplateBoardColumn{}, err
-	}
-
 	return mapDBColumnToDomain(col), nil
 }
 
-func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID, columnID uuid.UUID, name, systemType *string, wipLimit *int32, note *string) (domain.TemplateBoardColumn, error) {
+func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID, columnID uuid.UUID, name, systemType *string, wipLimit *int32, clearWipLimit bool, note *string, clearNote bool) (domain.TemplateBoardColumn, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardColumn{}, domain.ErrNotFound
 	}
 
@@ -347,14 +355,18 @@ func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID,
 	}
 	finalSystemType := col.SystemType
 	if systemType != nil {
-		finalSystemType = *systemType
+		finalSystemType = sql.NullString{String: *systemType, Valid: *systemType != ""}
 	}
 	finalWipLimit := col.WipLimit
-	if wipLimit != nil {
-		finalWipLimit = sql.NullInt32{Int32: *wipLimit, Valid: true}
+	if clearWipLimit {
+		finalWipLimit = sql.NullInt16{Valid: false}
+	} else if wipLimit != nil {
+		finalWipLimit = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
 	}
 	finalNote := col.Note
-	if note != nil {
+	if clearNote {
+		finalNote = ""
+	} else if note != nil {
 		finalNote = *note
 	}
 
@@ -384,7 +396,7 @@ func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID,
 
 func (s *TemplateService) DeleteColumn(ctx context.Context, templateID, boardID, columnID uuid.UUID) error {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 
@@ -406,7 +418,7 @@ func (s *TemplateService) DeleteColumn(ctx context.Context, templateID, boardID,
 	if err := validateColumnOrder(columns); err != nil {
 		// Re-create the column
 		_, _ = s.repo.CreateColumn(ctx, db.CreateTemplateBoardColumnParams{
-			BoardID: boardID, Name: col.Name, SystemType: col.SystemType, WipLimit: col.WipLimit, Order: col.Order, IsLocked: col.IsLocked, Note: col.Note,
+			BoardID: boardID, Name: col.Name, SystemType: col.SystemType, WipLimit: col.WipLimit, SortOrder: col.SortOrder, IsLocked: col.IsLocked, Note: col.Note,
 		})
 		return err
 	}
@@ -416,7 +428,7 @@ func (s *TemplateService) DeleteColumn(ctx context.Context, templateID, boardID,
 
 func (s *TemplateService) ReorderColumns(ctx context.Context, templateID, boardID uuid.UUID, orders map[uuid.UUID]int32) error {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 
@@ -425,7 +437,7 @@ func (s *TemplateService) ReorderColumns(ctx context.Context, templateID, boardI
 	lockedColumns := make(map[uuid.UUID]int32)
 	for _, col := range columns {
 		if col.IsLocked {
-			lockedColumns[col.ID] = col.Order
+			lockedColumns[col.ID] = int32(col.SortOrder)
 		}
 	}
 	for id, newOrder := range orders {
@@ -435,7 +447,7 @@ func (s *TemplateService) ReorderColumns(ctx context.Context, templateID, boardI
 	}
 
 	for id, order := range orders {
-		if err := s.repo.UpdateColumnOrder(ctx, id, order); err != nil {
+		if err := s.repo.UpdateColumnOrder(ctx, id, int16(order)); err != nil {
 			return err
 		}
 	}
@@ -445,7 +457,7 @@ func (s *TemplateService) ReorderColumns(ctx context.Context, templateID, boardI
 	if err := validateColumnOrder(updatedColumns); err != nil {
 		// Rollback
 		for _, col := range columns {
-			_ = s.repo.UpdateColumnOrder(ctx, col.ID, col.Order)
+			_ = s.repo.UpdateColumnOrder(ctx, col.ID, col.SortOrder)
 		}
 		return err
 	}
@@ -455,9 +467,34 @@ func (s *TemplateService) ReorderColumns(ctx context.Context, templateID, boardI
 
 // --- Swimlanes ---
 
-func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardID, swimlaneID uuid.UUID, wipLimit *int32, note *string) (domain.TemplateBoardSwimlane, error) {
+func (s *TemplateService) CreateSwimlane(ctx context.Context, templateID, boardID uuid.UUID, name string, wipLimit *int32, order int32) (domain.TemplateBoardSwimlane, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
+		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
+	}
+
+	wl := sql.NullInt16{}
+	if wipLimit != nil {
+		wl = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
+	}
+
+	sw, err := s.repo.CreateSwimlane(ctx, db.CreateTemplateBoardSwimlaneParams{
+		BoardID:   boardID,
+		Name:      name,
+		WipLimit:  wl,
+		SortOrder: int16(order),
+		Note:      "",
+	})
+	if err != nil {
+		return domain.TemplateBoardSwimlane{}, err
+	}
+
+	return mapDBSwimlaneToDomain(sw), nil
+}
+
+func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardID, swimlaneID uuid.UUID, wipLimit *int32, clearWipLimit bool, note *string, clearNote bool) (domain.TemplateBoardSwimlane, error) {
+	board, err := s.repo.GetBoardByID(ctx, boardID)
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
 	}
 
@@ -466,14 +503,16 @@ func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardI
 		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
 	}
 
-	wl := sql.NullInt32{}
-	if wipLimit != nil {
-		wl = sql.NullInt32{Int32: *wipLimit, Valid: true}
-	} else if existing.WipLimit.Valid {
-		wl = existing.WipLimit
+	wl := existing.WipLimit
+	if clearWipLimit {
+		wl = sql.NullInt16{Valid: false}
+	} else if wipLimit != nil {
+		wl = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
 	}
 	finalNote := existing.Note
-	if note != nil {
+	if clearNote {
+		finalNote = ""
+	} else if note != nil {
 		finalNote = *note
 	}
 
@@ -487,7 +526,7 @@ func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardI
 
 func (s *TemplateService) DeleteSwimlane(ctx context.Context, templateID, boardID, swimlaneID uuid.UUID) error {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 	return s.repo.DeleteSwimlane(ctx, swimlaneID)
@@ -495,65 +534,51 @@ func (s *TemplateService) DeleteSwimlane(ctx context.Context, templateID, boardI
 
 func (s *TemplateService) ReorderSwimlanes(ctx context.Context, templateID, boardID uuid.UUID, orders map[uuid.UUID]int32) error {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 	for id, order := range orders {
-		if err := s.repo.UpdateSwimlaneOrder(ctx, id, order); err != nil {
+		if err := s.repo.UpdateSwimlaneOrder(ctx, id, int16(order)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// --- Priority Values ---
-
-func (s *TemplateService) ReplacePriorityValues(ctx context.Context, templateID, boardID uuid.UUID, values []struct {
-	Value string
-	Order int32
-}) ([]domain.TemplateBoardPriorityValue, error) {
-	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
-		return nil, domain.ErrNotFound
-	}
-
-	_ = s.repo.DeletePriorityValuesByBoardID(ctx, boardID)
-
-	result := make([]domain.TemplateBoardPriorityValue, 0, len(values))
-	for _, v := range values {
-		pv, err := s.repo.CreatePriorityValue(ctx, db.CreateTemplateBoardPriorityValueParams{
-			BoardID: boardID,
-			Value:   v.Value,
-			Order:   v.Order,
-		})
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, domain.TemplateBoardPriorityValue{
-			ID: pv.ID, BoardID: pv.BoardID, Value: pv.Value, Order: pv.Order,
-		})
-	}
-
-	return result, nil
-}
-
 // --- Custom Fields ---
 
 func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boardID uuid.UUID, name, fieldType string, isRequired bool, order int32, options []string) (domain.TemplateBoardCustomField, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardCustomField{}, domain.ErrNotFound
 	}
 
+	// sprint/sprint_list доступны только для задач Scrum-досок
+	if fieldType == "sprint" || fieldType == "sprint_list" {
+		tmpl, err := s.repo.GetByID(ctx, templateID)
+		if err != nil {
+			return domain.TemplateBoardCustomField{}, err
+		}
+		if string(tmpl.Type) != "scrum" {
+			return domain.TemplateBoardCustomField{}, domain.ErrInvalidFieldType
+		}
+	}
+
+	// Проверка уникальности имени среди полей доски
+	existingFields, _ := s.repo.ListCustomFields(ctx, boardID)
+	for _, f := range existingFields {
+		if f.Name == name {
+			return domain.TemplateBoardCustomField{}, domain.ErrConflict
+		}
+	}
+
 	field, err := s.repo.CreateField(ctx, db.CreateTemplateBoardFieldParams{
-		BoardID:    boardID,
-		Code:       "",
+		BoardID:    uuid.NullUUID{UUID: boardID, Valid: true},
 		Name:       name,
 		FieldType:  fieldType,
 		IsSystem:   false,
 		IsRequired: isRequired,
-		IsActive:   true,
-		Order:      order,
+		SortOrder:  order,
 		Options:    repositories.OptionsToJSON(options),
 	})
 	if err != nil {
@@ -564,14 +589,29 @@ func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boa
 }
 
 func (s *TemplateService) UpdateCustomField(ctx context.Context, templateID, boardID, fieldID uuid.UUID, name *string, isRequired *bool, options []string) (domain.TemplateBoardCustomField, error) {
+	if name != nil && strings.TrimSpace(*name) == "" {
+		return domain.TemplateBoardCustomField{}, domain.ErrInvalidInput
+	}
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardCustomField{}, domain.ErrNotFound
 	}
 
 	existing, err := s.repo.GetFieldByID(ctx, fieldID)
-	if err != nil || existing.BoardID != boardID || existing.IsSystem {
+	if err != nil || !existing.BoardID.Valid || existing.BoardID.UUID != boardID {
 		return domain.TemplateBoardCustomField{}, domain.ErrNotFound
+	}
+
+	// Системные поля: запрещено менять name, isRequired.
+	// Исключение: «Приоритизация» и «Оценка трудозатрат» — можно менять options.
+	if existing.IsSystem {
+		configurable := existing.Name == "Приоритизация" || existing.Name == "Оценка трудозатрат"
+		if name != nil || isRequired != nil {
+			return domain.TemplateBoardCustomField{}, domain.ErrSystemField
+		}
+		if !configurable && options != nil {
+			return domain.TemplateBoardCustomField{}, domain.ErrSystemField
+		}
 	}
 
 	finalName := existing.Name
@@ -602,12 +642,12 @@ func (s *TemplateService) UpdateCustomField(ctx context.Context, templateID, boa
 
 func (s *TemplateService) DeleteCustomField(ctx context.Context, templateID, boardID, fieldID uuid.UUID) error {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 
 	existing, err := s.repo.GetFieldByID(ctx, fieldID)
-	if err != nil || existing.BoardID != boardID || existing.IsSystem {
+	if err != nil || !existing.BoardID.Valid || existing.BoardID.UUID != boardID || existing.IsSystem {
 		return domain.ErrNotFound
 	}
 
@@ -616,7 +656,7 @@ func (s *TemplateService) DeleteCustomField(ctx context.Context, templateID, boa
 
 func (s *TemplateService) ReorderCustomFields(ctx context.Context, templateID, boardID uuid.UUID, orders map[uuid.UUID]int32) error {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || board.TemplateID != templateID {
+	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 	for id, order := range orders {
@@ -634,18 +674,35 @@ func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uui
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
 	}
+
+	// sprint/sprint_list недопустимы для параметров проекта
+	if fieldType == "sprint" || fieldType == "sprint_list" {
+		return domain.TemplateProjectParam{}, domain.ErrInvalidFieldType
+	}
+
+	// Проверка уникальности имени среди параметров проекта
+	existingParams, _ := s.repo.ListProjectParams(ctx, templateID)
+	for _, p := range existingParams {
+		if p.Name == name {
+			return domain.TemplateProjectParam{}, domain.ErrConflict
+		}
+	}
+
 	p, err := s.repo.CreateProjectParam(ctx, db.CreateTemplateProjectParamParams{
-		TemplateID: templateID, Name: name, FieldType: fieldType, IsRequired: isRequired, Order: order, Options: repositories.OptionsToJSON(options),
+		TemplateID: uuid.NullUUID{UUID: templateID, Valid: true}, Name: name, FieldType: fieldType, IsRequired: isRequired, SortOrder: order, Options: repositories.OptionsToJSON(options),
 	})
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
 	}
-	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.Order, Options: repositories.JSONToOptions(p.Options)}, nil
+	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.SortOrder, Options: repositories.JSONToOptions(p.Options)}, nil
 }
 
 func (s *TemplateService) UpdateProjectParam(ctx context.Context, templateID, paramID uuid.UUID, name *string, isRequired *bool, options []string) (domain.TemplateProjectParam, error) {
+	if name != nil && strings.TrimSpace(*name) == "" {
+		return domain.TemplateProjectParam{}, domain.ErrInvalidInput
+	}
 	existing, err := s.repo.GetProjectParamByID(ctx, paramID)
-	if err != nil || existing.TemplateID != templateID {
+	if err != nil || !existing.TemplateID.Valid || existing.TemplateID.UUID != templateID {
 		return domain.TemplateProjectParam{}, domain.ErrNotFound
 	}
 	finalName := existing.Name
@@ -664,12 +721,12 @@ func (s *TemplateService) UpdateProjectParam(ctx context.Context, templateID, pa
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
 	}
-	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.Order, Options: repositories.JSONToOptions(p.Options)}, nil
+	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.SortOrder, Options: repositories.JSONToOptions(p.Options)}, nil
 }
 
 func (s *TemplateService) DeleteProjectParam(ctx context.Context, templateID, paramID uuid.UUID) error {
 	existing, err := s.repo.GetProjectParamByID(ctx, paramID)
-	if err != nil || existing.TemplateID != templateID {
+	if err != nil || !existing.TemplateID.Valid || existing.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
 	}
 	return s.repo.DeleteProjectParam(ctx, paramID)
@@ -687,13 +744,15 @@ func (s *TemplateService) ReorderProjectParams(ctx context.Context, templateID u
 // --- Roles ---
 
 func (s *TemplateService) CreateRole(ctx context.Context, templateID uuid.UUID, name, description string, permissions []domain.TemplateRolePermission) (domain.TemplateRole, error) {
+	if strings.TrimSpace(name) == "" {
+		return domain.TemplateRole{}, domain.ErrInvalidInput
+	}
 	_, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
 		return domain.TemplateRole{}, err
 	}
-	count, _ := s.repo.CountRoles(ctx, templateID)
 	role, err := s.repo.CreateRole(ctx, db.CreateTemplateRoleParams{
-		TemplateID: templateID, Name: name, Description: description, IsDefault: false, Order: count + 1,
+		TemplateID: uuid.NullUUID{UUID: templateID, Valid: true}, Name: name, Description: description,
 	})
 	if err != nil {
 		return domain.TemplateRole{}, err
@@ -706,8 +765,15 @@ func (s *TemplateService) CreateRole(ctx context.Context, templateID uuid.UUID, 
 
 func (s *TemplateService) UpdateRole(ctx context.Context, templateID, roleID uuid.UUID, name, description *string, permissions []domain.TemplateRolePermission) (domain.TemplateRole, error) {
 	role, err := s.repo.GetRoleByID(ctx, roleID)
-	if err != nil || role.TemplateID != templateID {
+	if err != nil || !role.TemplateID.Valid || role.TemplateID.UUID != templateID {
 		return domain.TemplateRole{}, domain.ErrNotFound
+	}
+	if name != nil && strings.TrimSpace(*name) == "" {
+		return domain.TemplateRole{}, domain.ErrInvalidInput
+	}
+	// Роль is_admin в шаблоне: можно менять только name и description, права менять нельзя
+	if role.IsAdmin && permissions != nil {
+		return domain.TemplateRole{}, domain.ErrTemplateAdminRole
 	}
 	finalName := role.Name
 	if name != nil {
@@ -731,33 +797,27 @@ func (s *TemplateService) UpdateRole(ctx context.Context, templateID, roleID uui
 
 func (s *TemplateService) DeleteRole(ctx context.Context, templateID, roleID uuid.UUID) error {
 	role, err := s.repo.GetRoleByID(ctx, roleID)
-	if err != nil || role.TemplateID != templateID {
+	if err != nil || !role.TemplateID.Valid || role.TemplateID.UUID != templateID {
 		return domain.ErrNotFound
+	}
+	if role.IsAdmin {
+		return domain.ErrTemplateAdminRole
 	}
 	return s.repo.DeleteRole(ctx, roleID)
 }
 
-func (s *TemplateService) ReorderRoles(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
-	for id, order := range orders {
-		if err := s.repo.UpdateRoleOrder(ctx, id, order); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *TemplateService) loadRole(ctx context.Context, r db.TemplateRole) (domain.TemplateRole, error) {
+func (s *TemplateService) loadRole(ctx context.Context, r db.ListTemplateRolesRow) (domain.TemplateRole, error) {
 	perms, err := s.repo.ListRolePermissions(ctx, r.ID)
 	if err != nil {
 		return domain.TemplateRole{}, err
 	}
 	domPerms := make([]domain.TemplateRolePermission, 0, len(perms))
 	for _, p := range perms {
-		domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.Area, Access: p.Access})
+		domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.PermissionCode, Access: p.Access.String})
 	}
 	return domain.TemplateRole{
-		ID: r.ID, TemplateID: r.TemplateID, Name: r.Name, Description: r.Description,
-		IsDefault: r.IsDefault, Order: r.Order, Permissions: domPerms,
+		ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name, Description: r.Description,
+		IsAdmin: r.IsAdmin, Permissions: domPerms,
 	}, nil
 }
 
@@ -787,8 +847,9 @@ func (s *TemplateService) loadProjectParams(ctx context.Context, templateID uuid
 	result := make([]domain.TemplateProjectParam, 0, len(dbParams))
 	for _, p := range dbParams {
 		result = append(result, domain.TemplateProjectParam{
-			ID: p.ID, TemplateID: p.TemplateID, Name: p.Name, FieldType: p.FieldType,
-			IsRequired: p.IsRequired, Order: p.Order, Options: repositories.JSONToOptions(p.Options),
+			ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, Description: p.Description,
+			FieldType: p.FieldType, IsSystem: p.IsSystem, IsRequired: p.IsRequired,
+			Order: p.SortOrder, Options: repositories.JSONToOptions(p.Options),
 		})
 	}
 	return result, nil
@@ -807,11 +868,11 @@ func (s *TemplateService) loadRoles(ctx context.Context, templateID uuid.UUID) (
 		}
 		domPerms := make([]domain.TemplateRolePermission, 0, len(perms))
 		for _, p := range perms {
-			domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.Area, Access: p.Access})
+			domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.PermissionCode, Access: p.Access.String})
 		}
 		result = append(result, domain.TemplateRole{
-			ID: r.ID, TemplateID: r.TemplateID, Name: r.Name, Description: r.Description,
-			IsDefault: r.IsDefault, Order: r.Order, Permissions: domPerms,
+			ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name, Description: r.Description,
+			IsAdmin: r.IsAdmin, Permissions: domPerms,
 		})
 	}
 	return result, nil
@@ -834,16 +895,12 @@ func (s *TemplateService) loadBoards(ctx context.Context, templateID uuid.UUID) 
 	return boards, nil
 }
 
-func (s *TemplateService) loadFullBoard(ctx context.Context, b db.TemplateBoard) (domain.TemplateBoard, error) {
+func (s *TemplateService) loadFullBoard(ctx context.Context, b db.ListTemplateBoardsByTemplateIDRow) (domain.TemplateBoard, error) {
 	columns, err := s.repo.ListColumns(ctx, b.ID)
 	if err != nil {
 		return domain.TemplateBoard{}, err
 	}
 	swimlanes, err := s.repo.ListSwimlanes(ctx, b.ID)
-	if err != nil {
-		return domain.TemplateBoard{}, err
-	}
-	pvs, err := s.repo.ListPriorityValues(ctx, b.ID)
 	if err != nil {
 		return domain.TemplateBoard{}, err
 	}
@@ -860,46 +917,36 @@ func (s *TemplateService) loadFullBoard(ctx context.Context, b db.TemplateBoard)
 	for _, sw := range swimlanes {
 		domSws = append(domSws, mapDBSwimlaneToDomain(sw))
 	}
-	domPVs := make([]domain.TemplateBoardPriorityValue, 0, len(pvs))
-	for _, pv := range pvs {
-		domPVs = append(domPVs, domain.TemplateBoardPriorityValue{
-			ID: pv.ID, BoardID: pv.BoardID, Value: pv.Value, Order: pv.Order,
-		})
-	}
 	domFields := make([]domain.TemplateBoardCustomField, 0, len(fields))
 	for _, f := range fields {
 		domFields = append(domFields, mapDBFieldToDomain(f))
 	}
 
-	return s.buildBoardDomain(b, domCols, domSws, domPVs, domFields), nil
+	return s.buildBoardDomain(b, domCols, domSws, domFields), nil
 }
 
-func (s *TemplateService) buildBoardDomain(b db.TemplateBoard, columns []domain.TemplateBoardColumn, swimlanes []domain.TemplateBoardSwimlane, pvs []domain.TemplateBoardPriorityValue, fields []domain.TemplateBoardCustomField) domain.TemplateBoard {
+func (s *TemplateService) buildBoardDomain(b db.ListTemplateBoardsByTemplateIDRow, columns []domain.TemplateBoardColumn, swimlanes []domain.TemplateBoardSwimlane, fields []domain.TemplateBoardCustomField) domain.TemplateBoard {
 	if columns == nil {
 		columns = []domain.TemplateBoardColumn{}
 	}
 	if swimlanes == nil {
 		swimlanes = []domain.TemplateBoardSwimlane{}
 	}
-	if pvs == nil {
-		pvs = []domain.TemplateBoardPriorityValue{}
-	}
 	if fields == nil {
 		fields = []domain.TemplateBoardCustomField{}
 	}
 	return domain.TemplateBoard{
 		ID:              b.ID,
-		TemplateID:      b.TemplateID,
+		TemplateID:      b.TemplateID.UUID,
 		Name:            b.Name,
-		Description:     b.Description,
+		Description:     b.Description.String,
 		IsDefault:       b.IsDefault,
-		Order:           b.Order,
+		Order:           int32(b.SortOrder),
 		PriorityType:    b.PriorityType,
 		EstimationUnit:  b.EstimationUnit,
 		SwimlaneGroupBy: b.SwimlaneGroupBy,
 		Columns:         columns,
 		Swimlanes:       swimlanes,
-		PriorityValues:  pvs,
 		CustomFields:    fields,
 	}
 }
@@ -917,11 +964,11 @@ func (s *TemplateService) createDefaultBoard(ctx context.Context, templateID uui
 	}
 
 	board, err := s.repo.CreateBoard(ctx, db.CreateTemplateBoardParams{
-		TemplateID:      templateID,
+		TemplateID:      uuid.NullUUID{UUID: templateID, Valid: true},
 		Name:            "Основная доска",
-		Description:     description,
+		Description:     sql.NullString{String: description, Valid: description != ""},
 		IsDefault:       true,
-		Order:           1,
+		SortOrder:       1,
 		PriorityType:    priorityType,
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: swimlaneGroupBy,
@@ -935,58 +982,30 @@ func (s *TemplateService) createDefaultBoard(ctx context.Context, templateID uui
 		return domain.TemplateBoard{}, err
 	}
 
-	pvs, err := s.createDefaultPriorityValues(ctx, board.ID, priorityType)
-	if err != nil {
-		return domain.TemplateBoard{}, err
-	}
-
 	// Create swimlanes for Kanban
 	var swimlanes []domain.TemplateBoardSwimlane
 	if swimlaneGroupBy != "" {
-		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, swimlaneGroupBy, pvs)
+		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, swimlaneGroupBy)
 		if err != nil {
 			return domain.TemplateBoard{}, err
 		}
 	}
 
-	return s.buildBoardDomain(board, columns, swimlanes, pvs, nil), nil
+	return s.buildBoardDomain(board, columns, swimlanes, nil), nil
 }
 
 func (s *TemplateService) createDefaultColumns(ctx context.Context, boardID uuid.UUID, projectType string) ([]domain.TemplateBoardColumn, error) {
-	type colDef struct {
-		name       string
-		systemType string
-		order      int32
-		isLocked   bool
-	}
-
-	var defaults []colDef
-	if projectType == "kanban" {
-		defaults = []colDef{
-			{"Надо сделать", "initial", 1, false},
-			{"Готово к работе", "initial", 2, false},
-			{"В работе", "in_progress", 3, false},
-			{"На проверке", "in_progress", 4, false},
-			{"Выполнено", "completed", 5, false},
-		}
-	} else {
-		defaults = []colDef{
-			{"Бэклог спринта", "initial", 1, true},
-			{"В работе", "in_progress", 2, false},
-			{"На проверке", "in_progress", 3, false},
-			{"Выполнено", "completed", 4, false},
-		}
-	}
+	defaults := repositories.DefaultColumns[projectType]
 
 	columns := make([]domain.TemplateBoardColumn, 0, len(defaults))
-	for _, d := range defaults {
+	for i, d := range defaults {
 		col, err := s.repo.CreateColumn(ctx, db.CreateTemplateBoardColumnParams{
 			BoardID:    boardID,
-			Name:       d.name,
-			SystemType: d.systemType,
-			WipLimit:   sql.NullInt32{},
-			Order:      d.order,
-			IsLocked:   d.isLocked,
+			Name:       d.Name,
+			SystemType: sql.NullString{String: d.SystemType, Valid: d.SystemType != ""},
+			WipLimit:   sql.NullInt16{},
+			SortOrder:  int16(i + 1),
+			IsLocked:   d.IsLocked,
 			Note:       "",
 		})
 		if err != nil {
@@ -997,43 +1016,74 @@ func (s *TemplateService) createDefaultColumns(ctx context.Context, boardID uuid
 	return columns, nil
 }
 
-func (s *TemplateService) createDefaultPriorityValues(ctx context.Context, boardID uuid.UUID, priorityType string) ([]domain.TemplateBoardPriorityValue, error) {
-	var defaults []string
-	if priorityType == "service_class" {
-		defaults = []string{"Ускоренный", "С фиксированной датой", "Стандартный", "Нематериальный"}
-	} else {
-		defaults = []string{"Низкий", "Средний", "Высокий", "Критичный"}
+func (s *TemplateService) createSystemFields(ctx context.Context, boardID uuid.UUID, projectType, priorityType, estimationUnit string) ([]domain.TemplateBoardCustomField, error) {
+	// Дефолтные options для Приоритизации по типу приоритизации
+	var priorityOptions []string
+	for _, pt := range repositories.PriorityTypes {
+		if pt.Key == priorityType {
+			priorityOptions = pt.DefaultValues
+			break
+		}
 	}
 
-	result := make([]domain.TemplateBoardPriorityValue, 0, len(defaults))
-	for i, val := range defaults {
-		pv, err := s.repo.CreatePriorityValue(ctx, db.CreateTemplateBoardPriorityValueParams{
-			BoardID: boardID,
-			Value:   val,
-			Order:   int32(i + 1),
+	fields := make([]domain.TemplateBoardCustomField, 0, len(repositories.DefaultBoardFields))
+	order := int32(0)
+	for _, def := range repositories.DefaultBoardFields {
+		// Фильтруем по типу проекта
+		available := false
+		for _, af := range def.AvailableFor {
+			if af == projectType {
+				available = true
+				break
+			}
+		}
+		if !available {
+			continue
+		}
+
+		options := def.Options
+		description := def.Description
+
+		switch def.Key {
+		case "priority":
+			options = priorityOptions
+			if desc, ok := repositories.PriorityDescriptions[priorityType]; ok {
+				description = desc
+			}
+		case "estimation":
+			if desc, ok := repositories.EstimationDescriptions[estimationUnit]; ok {
+				description = desc
+			}
+		}
+
+		order++
+		row, err := s.repo.CreateField(ctx, db.CreateTemplateBoardFieldParams{
+			BoardID:     uuid.NullUUID{UUID: boardID, Valid: true},
+			Name:        def.Name,
+			Description: description,
+			FieldType:   def.FieldType,
+			IsSystem:    true,
+			IsRequired:  def.IsRequired,
+			SortOrder:   order,
+			Options:     repositories.OptionsToJSON(options),
 		})
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, domain.TemplateBoardPriorityValue{
-			ID: pv.ID, BoardID: pv.BoardID, Value: pv.Value, Order: pv.Order,
-		})
+		fields = append(fields, mapDBFieldToDomain(row))
 	}
-	return result, nil
+	return fields, nil
 }
 
-func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID uuid.UUID, groupBy string, pvs []domain.TemplateBoardPriorityValue) ([]domain.TemplateBoardSwimlane, error) {
+func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID uuid.UUID, groupBy string) ([]domain.TemplateBoardSwimlane, error) {
 	var names []string
-	switch groupBy {
-	case "priority":
-		for _, pv := range pvs {
-			names = append(names, pv.Value)
+	for _, pt := range repositories.PriorityTypes {
+		if pt.Key == groupBy {
+			names = pt.DefaultValues
+			break
 		}
-	case "service_class":
-		for _, pv := range pvs {
-			names = append(names, pv.Value)
-		}
-	default:
+	}
+	if len(names) == 0 {
 		return nil, nil
 	}
 
@@ -1042,10 +1092,9 @@ func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID u
 		sw, err := s.repo.CreateSwimlane(ctx, db.CreateTemplateBoardSwimlaneParams{
 			BoardID:  boardID,
 			Name:     name,
-			Value:    name,
-			WipLimit: sql.NullInt32{},
-			Order:    int32(i + 1),
-			Note:     "",
+			WipLimit: sql.NullInt16{},
+			SortOrder: int16(i + 1),
+			Note:      "",
 		})
 		if err != nil {
 			return nil, err
@@ -1057,54 +1106,56 @@ func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID u
 
 // --- Mapping helpers ---
 
-func mapDBColumnToDomain(c db.TemplateBoardColumn) domain.TemplateBoardColumn {
+func mapDBColumnToDomain(c db.Column) domain.TemplateBoardColumn {
 	var wl *int32
 	if c.WipLimit.Valid {
-		wl = &c.WipLimit.Int32
+		v := int32(c.WipLimit.Int16)
+		wl = &v
 	}
 	var note *string
 	if c.Note != "" {
 		note = &c.Note
 	}
 	return domain.TemplateBoardColumn{
-		ID: c.ID, BoardID: c.BoardID, Name: c.Name, SystemType: c.SystemType,
-		WipLimit: wl, Order: c.Order, IsLocked: c.IsLocked, Note: note,
+		ID: c.ID, BoardID: c.BoardID, Name: c.Name, SystemType: c.SystemType.String,
+		WipLimit: wl, Order: int32(c.SortOrder), IsLocked: c.IsLocked, Note: note,
 	}
 }
 
-func mapDBSwimlaneToDomain(sw db.TemplateBoardSwimlane) domain.TemplateBoardSwimlane {
+func mapDBSwimlaneToDomain(sw db.Swimlane) domain.TemplateBoardSwimlane {
 	var wl *int32
 	if sw.WipLimit.Valid {
-		wl = &sw.WipLimit.Int32
+		v := int32(sw.WipLimit.Int16)
+		wl = &v
 	}
 	var note *string
 	if sw.Note != "" {
 		note = &sw.Note
 	}
 	return domain.TemplateBoardSwimlane{
-		ID: sw.ID, BoardID: sw.BoardID, Name: sw.Name, Value: sw.Value,
-		WipLimit: wl, Order: sw.Order, Note: note,
+		ID: sw.ID, BoardID: sw.BoardID, Name: sw.Name,
+		WipLimit: wl, Order: int32(sw.SortOrder), Note: note,
 	}
 }
 
-func mapDBFieldToDomain(f db.TemplateBoardField) domain.TemplateBoardCustomField {
+func mapDBFieldToDomain(f db.ListTemplateBoardFieldsRow) domain.TemplateBoardCustomField {
 	return domain.TemplateBoardCustomField{
-		ID: f.ID, BoardID: f.BoardID, Name: f.Name, FieldType: f.FieldType,
-		IsSystem: f.IsSystem, IsRequired: f.IsRequired, Order: f.Order,
-		Options: repositories.JSONToOptions(f.Options),
+		ID: f.ID, BoardID: f.BoardID.UUID, Name: f.Name, Description: f.Description,
+		FieldType: f.FieldType, IsSystem: f.IsSystem, IsRequired: f.IsRequired,
+		Order: f.SortOrder, Options: repositories.JSONToOptions(f.Options),
 	}
 }
 
 // validateColumnOrder ensures all initial < all in_progress < all completed
-func validateColumnOrder(columns []db.TemplateBoardColumn) error {
-	sorted := make([]db.TemplateBoardColumn, len(columns))
+func validateColumnOrder(columns []db.Column) error {
+	sorted := make([]db.Column, len(columns))
 	copy(sorted, columns)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Order < sorted[j].Order })
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].SortOrder < sorted[j].SortOrder })
 
 	typeOrder := map[string]int{"initial": 0, "in_progress": 1, "completed": 2}
 	maxSeen := -1
 	for _, col := range sorted {
-		to, ok := typeOrder[col.SystemType]
+		to, ok := typeOrder[col.SystemType.String]
 		if !ok {
 			continue
 		}
@@ -1118,13 +1169,9 @@ func validateColumnOrder(columns []db.TemplateBoardColumn) error {
 	return nil
 }
 
-// GetReferences loads all reference data from the database
+// GetReferences loads all reference/lookup data
 func (s *TemplateService) GetReferences(ctx context.Context) (*domain.References, error) {
 	columnTypes, err := s.refRepo.ListColumnSystemTypes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	statusTypes, err := s.refRepo.ListTaskStatusTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1144,91 +1191,34 @@ func (s *TemplateService) GetReferences(ctx context.Context) (*domain.References
 	if err != nil {
 		return nil, err
 	}
-
-	refs := &domain.References{}
-
-	for _, ct := range columnTypes {
-		refs.ColumnSystemTypes = append(refs.ColumnSystemTypes, domain.RefColumnSystemType{
-			Key: ct.Key, Name: ct.Name, Description: ct.Description, Order: int(ct.SortOrder),
-		})
-	}
-	for _, st := range statusTypes {
-		refs.TaskStatusTypes = append(refs.TaskStatusTypes, domain.RefTaskStatusType{
-			Key: st.Key, Name: st.Name, Description: st.Description, IsColumnType: st.IsColumnType,
-		})
-	}
-	for _, ft := range fieldTypes {
-		refs.FieldTypes = append(refs.FieldTypes, domain.RefKeyName{Key: ft.Key, Name: ft.Name})
-	}
-	for _, eu := range estimationUnits {
-		refs.EstimationUnits = append(refs.EstimationUnits, domain.RefAvailable{
-			Key: eu.Key, Name: eu.Name, AvailableFor: eu.AvailableFor,
-		})
-	}
-	// swimlaneGroupOptions формируются динамически.
-	// Допустимые типы параметров для группировки по дорожкам:
-	//   select, multiselect (уникальные комбинации), checkbox (2 дорожки),
-	//   user, sprint, tags.
-	// Системные опции — из системных полей подходящих типов.
-	// Кастомные поля (select/multiselect/checkbox) добавляются фронтендом на уровне доски.
-	refs.SwimlaneGroupOptions = []domain.RefAvailable{
-		{Key: "priority", Name: "по приоритету", AvailableFor: []string{"scrum", "kanban"}},
-		{Key: "service_class", Name: "по классу обслуживания", AvailableFor: []string{"kanban"}},
-		{Key: "executor", Name: "по исполнителю", AvailableFor: []string{"scrum", "kanban"}},
-		{Key: "owner", Name: "по автору", AvailableFor: []string{"scrum", "kanban"}},
-		{Key: "sprint", Name: "по спринту", AvailableFor: []string{"scrum"}},
-		{Key: "tags", Name: "по тегам", AvailableFor: []string{"scrum", "kanban"}},
-	}
-	for _, pt := range priorityTypes {
-		refs.PriorityTypeOptions = append(refs.PriorityTypeOptions, domain.RefPriorityType{
-			Key: pt.Key, Name: pt.Name, AvailableFor: pt.AvailableFor, DefaultValues: pt.DefaultValues,
-		})
-	}
-	for _, sf := range systemFields {
-		refs.SystemTaskFields = append(refs.SystemTaskFields, domain.RefSystemField{
-			Key: sf.Key, Name: sf.Name, FieldType: sf.FieldType, AvailableFor: sf.AvailableFor, Description: sf.Description,
-		})
-	}
-
-	// System project params
 	sysParams, err := s.refRepo.ListSystemProjectParams(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, sp := range sysParams {
-		refs.SystemProjectParams = append(refs.SystemProjectParams, domain.RefSystemProjectParam{
-			Key: sp.Key, Name: sp.Name, FieldType: sp.FieldType, IsRequired: sp.IsRequired,
-			Options: repositories.JSONToOptions(sp.Options),
-		})
-	}
-
-	// Permission areas — flat array with availableFor
 	permAreas, err := s.refRepo.ListPermissionAreas(ctx)
 	if err != nil {
 		return nil, err
 	}
-	areaMap := make(map[string]*domain.RefPermissionArea)
-	areaOrder := make([]string, 0)
-	for _, pa := range permAreas {
-		if existing, ok := areaMap[pa.Area]; ok {
-			existing.AvailableFor = append(existing.AvailableFor, pa.ProjectType)
-		} else {
-			areaMap[pa.Area] = &domain.RefPermissionArea{
-				Area: pa.Area, Name: pa.Name, Description: pa.Description,
-				AvailableFor: []string{pa.ProjectType},
-			}
-			areaOrder = append(areaOrder, pa.Area)
-		}
-	}
-	for _, area := range areaOrder {
-		refs.PermissionAreas = append(refs.PermissionAreas, *areaMap[area])
-	}
-
-	// Access levels
 	levels, err := s.refRepo.ListAccessLevels(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	refs := &domain.References{
+		ColumnSystemTypes:   columnTypes,
+		FieldTypes:          fieldTypes,
+		EstimationUnits:     estimationUnits,
+		PriorityTypeOptions: priorityTypes,
+		ProjectStatuses:     repositories.ProjectStatuses,
+		SystemTaskFields:    systemFields,
+		SystemProjectParams: sysParams,
+		PermissionAreas:     permAreas,
+	}
+
+	// SwimlaneGroupOptions не заполняем — фронтенд формирует список
+	// доступных параметров для группировки дорожек динамически
+	// из всех параметров доски (системных + кастомных).
+
 	for _, l := range levels {
 		refs.AccessLevels = append(refs.AccessLevels, domain.RefKeyName{Key: l.Key, Name: l.Name})
 	}

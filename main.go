@@ -41,19 +41,9 @@ func main() {
 	templateRepo := repositories.NewTemplateRepository(queries)
 	boardRepo := repositories.NewBoardRepository(queries)
 	taskRepo := repositories.NewTaskRepository(queries)
-	commentRepo := repositories.NewCommentRepository(queries)
-	attachmentRepo := repositories.NewAttachmentRepository(queries)
 	sprintRepo := repositories.NewSprintRepository(queries)
 	productBacklogRepo := repositories.NewProductBacklogRepository(queries)
 	sprintTaskRepo := repositories.NewSprintTaskRepository(queries)
-	classOfServiceRepo := repositories.NewClassOfServiceRepository(queries)
-	swimlaneConfigRepo := repositories.NewSwimlaneConfigRepository(queries)
-	kanbanRepo := repositories.NewKanbanRepository(queries)
-	taskHistoryRepo := repositories.NewTaskHistoryRepository(queries)
-	forecastRepo := repositories.NewForecastRepository(queries)
-	analyticsCacheRepo := repositories.NewAnalyticsCacheRepository(queries)
-	scrumAnalyticsRepo := repositories.NewScrumAnalyticsRepository(queries)
-	kanbanAnalyticsRepo := repositories.NewKanbanAnalyticsRepository(queries)
 	adminUserRepo := repositories.NewAdminUserRepository(queries)
 	passwordPolicyRepo := repositories.NewPasswordPolicyRepository(queries)
 	roleSvc := services.NewRoleService(roleRepo)
@@ -71,44 +61,28 @@ func main() {
 	meetingSvc := services.NewMeetingService(meetingRepo, notificationSvc)
 	meetingHandler := handlers.NewMeetingHandler(meetingSvc)
 
-	scrumRoleSvc := services.NewScrumRoleService(roleRepo)
-
 	roleHandler := handlers.NewRoleHandler(roleSvc)
-	projectSvc := services.NewProjectService(projectRepo, scrumRoleSvc)
-	projectHandler := handlers.NewProjectHandler(projectSvc)
+
+	projectRoleRepo := repositories.NewProjectRoleRepository(queries)
+	projectRoleSvc := services.NewProjectRoleService(projectRoleRepo)
+	projectRoleHandler := handlers.NewProjectRoleHandler(projectRoleSvc)
+
+	projectParamRepo := repositories.NewProjectParamRepository(queries)
+	projectParamSvc := services.NewProjectParamService(projectParamRepo)
+	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc)
+
+	tagRepo := repositories.NewTagRepository(queries)
+	tagSvc := services.NewTagService(tagRepo)
+	tagHandler := handlers.NewTagHandler(tagSvc)
 
 	boardSvc := services.NewBoardService(boardRepo)
-	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc)
 
-	taskHistorySvc := services.NewTaskHistoryService(taskHistoryRepo)
-
-	taskSvc := services.NewTaskService(taskRepo, projectRepo, taskHistorySvc)
+	taskSvc := services.NewTaskService(taskRepo, projectRepo)
 	taskHandler := handlers.NewTaskHandler(taskSvc)
-
-	classOfServiceSvc := services.NewClassOfServiceService(classOfServiceRepo, swimlaneConfigRepo, boardRepo)
-	classOfServiceHandler := handlers.NewClassOfServiceHandler(classOfServiceSvc)
-
-	kanbanSvc := services.NewKanbanService(kanbanRepo, boardRepo)
-	kanbanHandler := handlers.NewKanbanHandler(kanbanSvc)
-
-	forecastSvc := services.NewMonteCarloForecastService(taskHistoryRepo, forecastRepo)
-	forecastHandler := handlers.NewForecastHandler(forecastSvc)
-
-	scrumAnalyticsSvc := services.NewScrumAnalyticsService(scrumAnalyticsRepo, sprintRepo, analyticsCacheRepo)
-	scrumAnalyticsHandler := handlers.NewScrumAnalyticsHandler(scrumAnalyticsSvc)
-
-	kanbanAnalyticsSvc := services.NewKanbanAnalyticsService(kanbanAnalyticsRepo, boardRepo, analyticsCacheRepo)
-	kanbanAnalyticsHandler := handlers.NewKanbanAnalyticsHandler(kanbanAnalyticsSvc)
 
 	adminUserSvc := services.NewAdminUserService(userRepo, adminUserRepo, roleSvc, passwordSvc, passwordPolicySvc)
 	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc)
 	adminPasswordPolicyHandler := handlers.NewAdminPasswordPolicyHandler(passwordPolicySvc)
-
-	commentSvc := services.NewCommentService(commentRepo, projectMemberRepo)
-	commentHandler := handlers.NewCommentHandler(commentSvc)
-
-	attachmentSvc := services.NewAttachmentService(attachmentRepo)
-	attachmentHandler := handlers.NewAttachmentHandler(attachmentSvc)
 
 	sprintSvc := services.NewSprintService(sprintRepo, sprintTaskRepo, productBacklogRepo, taskRepo)
 	sprintHandler := handlers.NewSprintHandler(sprintSvc)
@@ -117,14 +91,18 @@ func main() {
 	productBacklogHandler := handlers.NewProductBacklogHandler(productBacklogSvc)
 	sprintBacklogHandler := handlers.NewSprintBacklogHandler(sprintSvc)
 
-	projectMemberSvc := services.NewProjectMemberService(projectMemberRepo, userRepo, roleRepo)
+	projectMemberSvc := services.NewProjectMemberService(projectMemberRepo, userRepo, roleRepo, projectRoleRepo)
 	projectMemberHandler := handlers.NewProjectMemberHandler(projectMemberSvc)
 
-	referenceRepo := repositories.NewReferenceRepository(queries)
+	referenceRepo := repositories.NewReferenceRepository()
 	templateSvc := services.NewTemplateService(templateRepo, referenceRepo)
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, commentHandler, attachmentHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, classOfServiceHandler, kanbanHandler, forecastHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, adminUserHandler, adminPasswordPolicyHandler, projectSvc, permissionSvc)
+	projectSvc := services.NewProjectService(projectRepo, templateSvc, boardRepo, projectRoleRepo, projectParamRepo, projectMemberRepo)
+	projectHandler := handlers.NewProjectHandler(projectSvc, templateSvc)
+	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc)
+
+	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, projectSvc, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {
@@ -147,6 +125,8 @@ func main() {
 			}
 		}
 	}()
+
+	_ = boardSvc // used indirectly via boardHandler
 
 	if err := router.Run(":" + cfg.ServerPort); err != nil {
 		log.Fatalf("server error: %v", err)

@@ -168,6 +168,5 @@ func mapNotificationToDTO(n domain.Notification) dto.NotificationResponse {
 		Body:      n.Body,
 		IsRead:    n.IsRead,
 		CreatedAt: n.CreatedAt,
-		ReadAt:    n.ReadAt,
 	}
 }

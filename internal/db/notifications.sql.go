@@ -15,19 +15,17 @@ import (
 
 const createNotification = `-- name: CreateNotification :one
 
-INSERT INTO notifications (user_id, event_type, channel, title, body, payload, email_status)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, event_type, channel, title, body, payload, is_read, created_at, read_at, email_status, email_sent_at
+INSERT INTO notifications (user_id, event_type, title, body, payload)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, event_type, title, body, payload, is_read, created_at
 `
 
 type CreateNotificationParams struct {
-	UserID      uuid.UUID             `json:"user_id"`
-	EventType   string                `json:"event_type"`
-	Channel     string                `json:"channel"`
-	Title       string                `json:"title"`
-	Body        sql.NullString        `json:"body"`
-	Payload     pqtype.NullRawMessage `json:"payload"`
-	EmailStatus sql.NullString        `json:"email_status"`
+	UserID    uuid.UUID             `json:"user_id"`
+	EventType string                `json:"event_type"`
+	Title     string                `json:"title"`
+	Body      sql.NullString        `json:"body"`
+	Payload   pqtype.NullRawMessage `json:"payload"`
 }
 
 // Notification feed
@@ -35,32 +33,26 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	row := q.db.QueryRowContext(ctx, createNotification,
 		arg.UserID,
 		arg.EventType,
-		arg.Channel,
 		arg.Title,
 		arg.Body,
 		arg.Payload,
-		arg.EmailStatus,
 	)
 	var i Notification
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.EventType,
-		&i.Channel,
 		&i.Title,
 		&i.Body,
 		&i.Payload,
 		&i.IsRead,
 		&i.CreatedAt,
-		&i.ReadAt,
-		&i.EmailStatus,
-		&i.EmailSentAt,
 	)
 	return i, err
 }
 
 const getNotificationSetting = `-- name: GetNotificationSetting :one
-SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes, created_at, updated_at
+SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes
 FROM notification_settings
 WHERE user_id = $1 AND event_type = $2
 `
@@ -80,15 +72,13 @@ func (q *Queries) GetNotificationSetting(ctx context.Context, arg GetNotificatio
 		&i.InSystem,
 		&i.InEmail,
 		&i.ReminderOffsetMinutes,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getNotificationSettingsByUser = `-- name: GetNotificationSettingsByUser :many
 
-SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes, created_at, updated_at
+SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes
 FROM notification_settings
 WHERE user_id = $1
 ORDER BY event_type
@@ -111,51 +101,6 @@ func (q *Queries) GetNotificationSettingsByUser(ctx context.Context, userID uuid
 			&i.InSystem,
 			&i.InEmail,
 			&i.ReminderOffsetMinutes,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getNotificationsForEmail = `-- name: GetNotificationsForEmail :many
-SELECT id, user_id, event_type, channel, title, body, payload, is_read, created_at, read_at, email_status, email_sent_at
-FROM notifications
-WHERE channel = 'email'
-  AND email_status = 'pending'
-`
-
-func (q *Queries) GetNotificationsForEmail(ctx context.Context) ([]Notification, error) {
-	rows, err := q.db.QueryContext(ctx, getNotificationsForEmail)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Notification{}
-	for rows.Next() {
-		var i Notification
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.EventType,
-			&i.Channel,
-			&i.Title,
-			&i.Body,
-			&i.Payload,
-			&i.IsRead,
-			&i.CreatedAt,
-			&i.ReadAt,
-			&i.EmailStatus,
-			&i.EmailSentAt,
 		); err != nil {
 			return nil, err
 		}
@@ -185,7 +130,7 @@ func (q *Queries) GetUnreadNotificationCount(ctx context.Context, userID uuid.UU
 }
 
 const getUserNotifications = `-- name: GetUserNotifications :many
-SELECT id, user_id, event_type, channel, title, body, payload, is_read, created_at, read_at, email_status, email_sent_at
+SELECT id, user_id, event_type, title, body, payload, is_read, created_at
 FROM notifications
 WHERE user_id = $1
   AND ($2::bool IS FALSE OR is_read = FALSE)
@@ -218,15 +163,11 @@ func (q *Queries) GetUserNotifications(ctx context.Context, arg GetUserNotificat
 			&i.ID,
 			&i.UserID,
 			&i.EventType,
-			&i.Channel,
 			&i.Title,
 			&i.Body,
 			&i.Payload,
 			&i.IsRead,
 			&i.CreatedAt,
-			&i.ReadAt,
-			&i.EmailStatus,
-			&i.EmailSentAt,
 		); err != nil {
 			return nil, err
 		}
@@ -243,8 +184,7 @@ func (q *Queries) GetUserNotifications(ctx context.Context, arg GetUserNotificat
 
 const markAllNotificationsAsRead = `-- name: MarkAllNotificationsAsRead :exec
 UPDATE notifications
-SET is_read = TRUE,
-    read_at = NOW()
+SET is_read = TRUE
 WHERE user_id = $1
   AND is_read = FALSE
 `
@@ -256,8 +196,7 @@ func (q *Queries) MarkAllNotificationsAsRead(ctx context.Context, userID uuid.UU
 
 const markNotificationAsRead = `-- name: MarkNotificationAsRead :exec
 UPDATE notifications
-SET is_read = TRUE,
-    read_at = NOW()
+SET is_read = TRUE
 WHERE id = $1
   AND user_id = $2
 `
@@ -278,8 +217,7 @@ VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (user_id, event_type) DO UPDATE
 SET in_system = EXCLUDED.in_system,
     in_email = EXCLUDED.in_email,
-    reminder_offset_minutes = EXCLUDED.reminder_offset_minutes,
-    updated_at = NOW()
+    reminder_offset_minutes = EXCLUDED.reminder_offset_minutes
 `
 
 type UpsertNotificationSettingParams struct {

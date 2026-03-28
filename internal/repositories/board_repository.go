@@ -17,22 +17,39 @@ type BoardRepository interface {
 	ListProjectBoards(ctx context.Context, projectID string) ([]domain.Board, error)
 	UpdateBoard(ctx context.Context, b *domain.Board) (*domain.Board, error)
 	DeleteBoard(ctx context.Context, id string) error
+	UpdateBoardOrder(ctx context.Context, id string, order int16) error
 
 	ListColumns(ctx context.Context, boardID string) ([]domain.Column, error)
+	GetColumnByID(ctx context.Context, id string) (*domain.Column, error)
 	CreateColumn(ctx context.Context, c *domain.Column) (*domain.Column, error)
 	UpdateColumn(ctx context.Context, c *domain.Column) (*domain.Column, error)
 	DeleteColumn(ctx context.Context, id string) error
+	UpdateColumnOrder(ctx context.Context, id string, order int16) error
+	CountTasksInColumn(ctx context.Context, id string) (int, error)
 
 	ListSwimlanes(ctx context.Context, boardID string) ([]domain.Swimlane, error)
+	GetSwimlaneByID(ctx context.Context, id string) (*domain.Swimlane, error)
 	CreateSwimlane(ctx context.Context, s *domain.Swimlane) (*domain.Swimlane, error)
 	UpdateSwimlane(ctx context.Context, s *domain.Swimlane) (*domain.Swimlane, error)
 	DeleteSwimlane(ctx context.Context, id string) error
+	UpdateSwimlaneOrder(ctx context.Context, id string, order int16) error
+	CountTasksInSwimlane(ctx context.Context, id string) (int, error)
 
 	ListNotes(ctx context.Context, boardID string) ([]domain.Note, error)
+	GetNoteByID(ctx context.Context, id string) (*domain.Note, error)
 	CreateNoteForColumn(ctx context.Context, n *domain.Note) (*domain.Note, error)
 	CreateNoteForSwimlane(ctx context.Context, n *domain.Note) (*domain.Note, error)
 	UpdateNote(ctx context.Context, n *domain.Note) (*domain.Note, error)
 	DeleteNote(ctx context.Context, id string) error
+
+	// Custom fields
+	ListCustomFields(ctx context.Context, boardID string) ([]domain.BoardCustomField, error)
+	GetCustomFieldByID(ctx context.Context, id string) (*domain.BoardCustomField, error)
+	CreateCustomField(ctx context.Context, f *domain.BoardCustomField) (*domain.BoardCustomField, error)
+	UpdateCustomField(ctx context.Context, f *domain.BoardCustomField) (*domain.BoardCustomField, error)
+	DeleteCustomField(ctx context.Context, id string) error
+	UpdateCustomFieldOrder(ctx context.Context, id string, order int32) error
+
 }
 
 type boardRepository struct {
@@ -61,16 +78,20 @@ func (r *boardRepository) CreateBoard(ctx context.Context, b *domain.Board) (*do
 		desc = sql.NullString{String: *b.Description, Valid: true}
 	}
 	row, err := r.q.CreateBoard(ctx, db.CreateBoardParams{
-		ProjectID:   projectID,
-		TemplateID:  templateID,
-		Name:        b.Name,
-		Description: desc,
-		Order:       b.Order,
+		ProjectID:       projectID,
+		TemplateID:      templateID,
+		Name:            b.Name,
+		Description:     desc,
+		IsDefault:       false,
+		SortOrder:       b.Order,
+		PriorityType:    b.PriorityType,
+		EstimationUnit:  b.EstimationUnit,
+		SwimlaneGroupBy: b.SwimlaneGroupBy,
 	})
 	if err != nil {
 		return nil, err
 	}
-	dbBoard := mapDBBoardToDomain(row)
+	dbBoard := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
 	return &dbBoard, nil
 }
 
@@ -86,7 +107,7 @@ func (r *boardRepository) GetBoardByID(ctx context.Context, id string) (*domain.
 		}
 		return nil, err
 	}
-	b := mapDBBoardToDomain(row)
+	b := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
 	return &b, nil
 }
 
@@ -101,7 +122,7 @@ func (r *boardRepository) ListProjectBoards(ctx context.Context, projectID strin
 	}
 	result := make([]domain.Board, len(rows))
 	for i, row := range rows {
-		result[i] = mapDBBoardToDomain(row)
+		result[i] = mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
 	}
 	return result, nil
 }
@@ -118,13 +139,20 @@ func (r *boardRepository) UpdateBoard(ctx context.Context, b *domain.Board) (*do
 	if b.Description != nil {
 		params.Description = sql.NullString{String: *b.Description, Valid: true}
 	}
-	params.Order = sql.NullInt16{Int16: b.Order, Valid: true}
+	params.SortOrder = sql.NullInt16{Int16: b.Order, Valid: true}
+	if b.PriorityType != "" {
+		params.PriorityType = sql.NullString{String: b.PriorityType, Valid: true}
+	}
+	if b.EstimationUnit != "" {
+		params.EstimationUnit = sql.NullString{String: b.EstimationUnit, Valid: true}
+	}
+	params.SwimlaneGroupBy = sql.NullString{String: b.SwimlaneGroupBy, Valid: true}
 
 	row, err := r.q.UpdateBoard(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	updated := mapDBBoardToDomain(row)
+	updated := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
 	return &updated, nil
 }
 
@@ -170,7 +198,8 @@ func (r *boardRepository) CreateColumn(ctx context.Context, c *domain.Column) (*
 		Name:       c.Name,
 		SystemType: systemType,
 		WipLimit:   wipLimit,
-		Order:      c.Order,
+		SortOrder:  c.Order,
+		IsLocked:   c.IsLocked,
 	})
 	if err != nil {
 		return nil, err
@@ -194,7 +223,7 @@ func (r *boardRepository) UpdateColumn(ctx context.Context, c *domain.Column) (*
 	if c.WipLimit != nil {
 		params.WipLimit = sql.NullInt16{Int16: *c.WipLimit, Valid: true}
 	}
-	params.Order = sql.NullInt16{Int16: c.Order, Valid: true}
+	params.SortOrder = sql.NullInt16{Int16: c.Order, Valid: true}
 	row, err := r.q.UpdateColumn(ctx, params)
 	if err != nil {
 		return nil, err
@@ -237,10 +266,10 @@ func (r *boardRepository) CreateSwimlane(ctx context.Context, s *domain.Swimlane
 		wipLimit = sql.NullInt16{Int16: *s.WipLimit, Valid: true}
 	}
 	row, err := r.q.CreateSwimlane(ctx, db.CreateSwimlaneParams{
-		BoardID:  bid,
-		Name:     s.Name,
-		WipLimit: wipLimit,
-		Order:    s.Order,
+		BoardID:   bid,
+		Name:      s.Name,
+		WipLimit:  wipLimit,
+		SortOrder: s.Order,
 	})
 	if err != nil {
 		return nil, err
@@ -261,7 +290,7 @@ func (r *boardRepository) UpdateSwimlane(ctx context.Context, s *domain.Swimlane
 	if s.WipLimit != nil {
 		params.WipLimit = sql.NullInt16{Int16: *s.WipLimit, Valid: true}
 	}
-	params.Order = sql.NullInt16{Int16: s.Order, Valid: true}
+	params.SortOrder = sql.NullInt16{Int16: s.Order, Valid: true}
 	row, err := r.q.UpdateSwimlane(ctx, params)
 	if err != nil {
 		return nil, err
@@ -357,31 +386,231 @@ func (r *boardRepository) DeleteNote(ctx context.Context, id string) error {
 	return r.q.DeleteNote(ctx, uid)
 }
 
-func mapDBBoardToDomain(b db.Board) domain.Board {
-	var projectID *string
-	if b.ProjectID.Valid {
-		id := b.ProjectID.UUID.String()
-		projectID = &id
+func (r *boardRepository) UpdateBoardOrder(ctx context.Context, id string, order int16) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
 	}
-	var templateID *string
-	if b.TemplateID.Valid {
-		id := b.TemplateID.UUID.String()
-		templateID = &id
+	return r.q.UpdateBoardOrder(ctx, db.UpdateBoardOrderParams{ID: uid, SortOrder: order})
+}
+
+func (r *boardRepository) GetColumnByID(ctx context.Context, id string) (*domain.Column, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
 	}
-	var desc *string
-	if b.Description.Valid {
-		v := b.Description.String
-		desc = &v
+	row, err := r.q.GetColumnByID(ctx, uid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	c := mapDBColumnToDomain(row)
+	return &c, nil
+}
+
+func (r *boardRepository) UpdateColumnOrder(ctx context.Context, id string, order int16) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	return r.q.UpdateColumnOrder(ctx, db.UpdateColumnOrderParams{ID: uid, SortOrder: order})
+}
+
+func (r *boardRepository) CountTasksInColumn(ctx context.Context, id string) (int, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return 0, err
+	}
+	count, err := r.q.CountTasksInColumn(ctx, uid)
+	return int(count), err
+}
+
+func (r *boardRepository) GetSwimlaneByID(ctx context.Context, id string) (*domain.Swimlane, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	row, err := r.q.GetSwimlaneByID(ctx, uid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	s := mapDBSwimlaneToDomain(row)
+	return &s, nil
+}
+
+func (r *boardRepository) UpdateSwimlaneOrder(ctx context.Context, id string, order int16) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	return r.q.UpdateSwimlaneOrder(ctx, db.UpdateSwimlaneOrderParams{ID: uid, SortOrder: order})
+}
+
+func (r *boardRepository) CountTasksInSwimlane(ctx context.Context, id string) (int, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return 0, err
+	}
+	count, err := r.q.CountTasksInSwimlane(ctx, uuid.NullUUID{UUID: uid, Valid: true})
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+func (r *boardRepository) GetNoteByID(ctx context.Context, id string) (*domain.Note, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	row, err := r.q.GetNoteByID(ctx, uid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	n := mapDBNoteToDomain(row)
+	return &n, nil
+}
+
+// --- Custom fields ---
+
+func (r *boardRepository) ListCustomFields(ctx context.Context, boardID string) ([]domain.BoardCustomField, error) {
+	bid, err := uuid.Parse(boardID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListBoardCustomFields(ctx, uuid.NullUUID{UUID: bid, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.BoardCustomField, len(rows))
+	for i, row := range rows {
+		result[i] = domain.BoardCustomField{
+			ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
+			Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+			IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+		}
+	}
+	return result, nil
+}
+
+func (r *boardRepository) GetCustomFieldByID(ctx context.Context, id string) (*domain.BoardCustomField, error) {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	row, err := r.q.GetBoardCustomFieldByID(ctx, uid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	f := domain.BoardCustomField{
+		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
+		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+		IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+	}
+	return &f, nil
+}
+
+func (r *boardRepository) CreateCustomField(ctx context.Context, f *domain.BoardCustomField) (*domain.BoardCustomField, error) {
+	bid, err := uuid.Parse(f.BoardID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := r.q.CreateBoardCustomField(ctx, db.CreateBoardCustomFieldParams{
+		BoardID:    uuid.NullUUID{UUID: bid, Valid: true},
+		Name:       f.Name,
+		FieldType:  f.FieldType,
+		IsSystem:   f.IsSystem,
+		IsRequired: f.IsRequired,
+		SortOrder:  f.Order,
+		Options:    OptionsToJSON(f.Options),
+	})
+	if err != nil {
+		return nil, err
+	}
+	created := domain.BoardCustomField{
+		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
+		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+		IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+	}
+	return &created, nil
+}
+
+func (r *boardRepository) UpdateCustomField(ctx context.Context, f *domain.BoardCustomField) (*domain.BoardCustomField, error) {
+	uid, err := uuid.Parse(f.ID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := r.q.UpdateBoardCustomField(ctx, db.UpdateBoardCustomFieldParams{
+		ID:         uid,
+		Name:       f.Name,
+		IsRequired: f.IsRequired,
+		Options:    OptionsToJSON(f.Options),
+	})
+	if err != nil {
+		return nil, err
+	}
+	updated := domain.BoardCustomField{
+		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
+		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+		IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+	}
+	return &updated, nil
+}
+
+func (r *boardRepository) DeleteCustomField(ctx context.Context, id string) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	return r.q.DeleteBoardCustomFieldByID(ctx, uid)
+}
+
+func (r *boardRepository) UpdateCustomFieldOrder(ctx context.Context, id string, order int32) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	return r.q.UpdateBoardCustomFieldOrder(ctx, db.UpdateBoardCustomFieldOrderParams{ID: uid, SortOrder: order})
+}
+
+func mapBoardRowToDomain(id uuid.UUID, projectID, templateID uuid.NullUUID, name string, desc sql.NullString, isDefault bool, sortOrder int16, priorityType, estimationUnit, swimlaneGroupBy string) domain.Board {
+	var pid *string
+	if projectID.Valid {
+		s := projectID.UUID.String()
+		pid = &s
+	}
+	var tid *string
+	if templateID.Valid {
+		s := templateID.UUID.String()
+		tid = &s
+	}
+	var d *string
+	if desc.Valid {
+		v := desc.String
+		d = &v
 	}
 	return domain.Board{
-		ID:          b.ID.String(),
-		ProjectID:   projectID,
-		TemplateID:  templateID,
-		Name:        b.Name,
-		Description: desc,
-		Order:       b.Order,
-		CreatedAt:   b.CreatedAt,
-		UpdatedAt:   b.UpdatedAt,
+		ID:              id.String(),
+		ProjectID:       pid,
+		TemplateID:      tid,
+		Name:            name,
+		Description:     d,
+		IsDefault:       isDefault,
+		Order:           sortOrder,
+		PriorityType:    priorityType,
+		EstimationUnit:  estimationUnit,
+		SwimlaneGroupBy: swimlaneGroupBy,
 	}
 }
 
@@ -402,9 +631,8 @@ func mapDBColumnToDomain(c db.Column) domain.Column {
 		Name:       c.Name,
 		SystemType: systemType,
 		WipLimit:   wip,
-		Order:      c.Order,
-		CreatedAt:  c.CreatedAt,
-		UpdatedAt:  c.UpdatedAt,
+		Order:      c.SortOrder,
+		IsLocked:   c.IsLocked,
 	}
 }
 
@@ -415,13 +643,11 @@ func mapDBSwimlaneToDomain(s db.Swimlane) domain.Swimlane {
 		wip = &v
 	}
 	return domain.Swimlane{
-		ID:        s.ID.String(),
-		BoardID:   s.BoardID.String(),
-		Name:      s.Name,
-		WipLimit:  wip,
-		Order:     s.Order,
-		CreatedAt: s.CreatedAt,
-		UpdatedAt: s.UpdatedAt,
+		ID:       s.ID.String(),
+		BoardID:  s.BoardID.String(),
+		Name:     s.Name,
+		WipLimit: wip,
+		Order:    s.SortOrder,
 	}
 }
 
@@ -441,7 +667,5 @@ func mapDBNoteToDomain(n db.Note) domain.Note {
 		ColumnID:   columnID,
 		SwimlaneID: swimlaneID,
 		Content:    n.Content,
-		CreatedAt:  n.CreatedAt,
-		UpdatedAt:  n.UpdatedAt,
 	}
 }

@@ -149,8 +149,8 @@ func (r *userRepository) UpdateProfile(ctx context.Context, userID, fullName, em
 		Position:                  pos,
 		OnVacation:                onVacation,
 		IsSick:                    isSick,
-		AlternativeContactChannel: altChannel,
-		AlternativeContactInfo:    altInfo,
+		AltContactChannel: altChannel,
+		AltContactInfo:    altInfo,
 	})
 	return errctx.Wrap(err, "UpdateProfile", "userID", userID)
 }
@@ -206,12 +206,12 @@ func mapDBUserToDomain(u db.User) *domain.User {
 		position = &u.Position.String
 	}
 	var altContactChannel *string
-	if u.AlternativeContactChannel.Valid {
-		altContactChannel = &u.AlternativeContactChannel.String
+	if u.AltContactChannel.Valid {
+		altContactChannel = &u.AltContactChannel.String
 	}
 	var altContactInfo *string
-	if u.AlternativeContactInfo.Valid {
-		altContactInfo = &u.AlternativeContactInfo.String
+	if u.AltContactInfo.Valid {
+		altContactInfo = &u.AltContactInfo.String
 	}
 	return &domain.User{
 		ID:                        u.ID.String(),
@@ -226,7 +226,5 @@ func mapDBUserToDomain(u db.User) *domain.User {
 		AlternativeContactChannel: altContactChannel,
 		AlternativeContactInfo:    altContactInfo,
 		IsActive:                  u.IsActive,
-		CreatedAt:                 u.CreatedAt,
-		UpdatedAt:                 u.UpdatedAt,
 	}
 }

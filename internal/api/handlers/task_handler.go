@@ -317,7 +317,7 @@ func (h *TaskHandler) AddChecklistItem(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	item, err := h.service.AddChecklistItem(c.Request.Context(), checklistID, req.Content, req.Order)
+	item, err := h.service.AddChecklistItem(c.Request.Context(), checklistID, req.Content, int16(req.Order))
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректное содержимое пункта чек-листа")
@@ -369,7 +369,7 @@ func mapChecklistItemToDTO(it *domain.ChecklistItem) dto.ChecklistItemResponse {
 		ChecklistID: uuid.MustParse(it.ChecklistID),
 		Content:     it.Content,
 		IsChecked:   it.IsChecked,
-		Order:       it.Order,
+		Order:       int32(it.Order),
 	}
 }
 

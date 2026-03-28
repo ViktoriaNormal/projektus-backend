@@ -209,6 +209,6 @@ func mapAdminUserToResponse(u services.AdminUserWithRoles) dto.AdminUserResponse
 		AlternativeContactInfo:    u.User.AlternativeContactInfo,
 		IsActive:                  u.User.IsActive,
 		Roles:                     roles,
-		CreatedAt:                 u.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:                 "",
 	}
 }

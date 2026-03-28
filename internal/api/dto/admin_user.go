@@ -7,28 +7,28 @@ type AdminCreateUserRequest struct {
 	Username                  string      `json:"username" binding:"required,min=3,max=50"`
 	Email                     string      `json:"email" binding:"required,email"`
 	FullName                  string      `json:"full_name" binding:"required"`
-	Position                  *string     `json:"position"`
+	Position                  *string     `json:"position,omitempty"`
 	Password                  string      `json:"password" binding:"required,min=6"`
-	IsActive                  *bool       `json:"is_active"`
+	IsActive                  *bool       `json:"is_active,omitempty"`
 	RoleIDs                   []uuid.UUID `json:"role_ids"`
-	OnVacation                *bool       `json:"on_vacation"`
-	IsSick                    *bool       `json:"is_sick"`
-	AlternativeContactChannel *string     `json:"alternative_contact_channel"`
-	AlternativeContactInfo    *string     `json:"alternative_contact_info"`
+	OnVacation                *bool       `json:"on_vacation,omitempty"`
+	IsSick                    *bool       `json:"is_sick,omitempty"`
+	AlternativeContactChannel *string     `json:"alt_contact_channel,omitempty"`
+	AlternativeContactInfo    *string     `json:"alt_contact_info,omitempty"`
 }
 
 // AdminUpdateUserRequest — обновление пользователя администратором.
 type AdminUpdateUserRequest struct {
 	Username                  *string      `json:"username" binding:"omitempty,min=3,max=50"`
 	Email                     *string      `json:"email" binding:"omitempty,email"`
-	FullName                  *string      `json:"full_name"`
-	Position                  *string      `json:"position"`
-	IsActive                  *bool        `json:"is_active"`
-	RoleIDs                   *[]uuid.UUID `json:"role_ids"`
-	OnVacation                *bool        `json:"on_vacation"`
-	IsSick                    *bool        `json:"is_sick"`
-	AlternativeContactChannel *string      `json:"alternative_contact_channel"`
-	AlternativeContactInfo    *string      `json:"alternative_contact_info"`
+	FullName                  *string      `json:"full_name,omitempty"`
+	Position                  *string      `json:"position,omitempty"`
+	IsActive                  *bool        `json:"is_active,omitempty"`
+	RoleIDs                   *[]uuid.UUID `json:"role_ids,omitempty"`
+	OnVacation                *bool        `json:"on_vacation,omitempty"`
+	IsSick                    *bool        `json:"is_sick,omitempty"`
+	AlternativeContactChannel *string      `json:"alt_contact_channel,omitempty"`
+	AlternativeContactInfo    *string      `json:"alt_contact_info,omitempty"`
 }
 
 // AdminRoleResponse — роль в ответе AdminUser.
@@ -43,12 +43,12 @@ type AdminUserResponse struct {
 	Username                  string              `json:"username"`
 	Email                     string              `json:"email"`
 	FullName                  string              `json:"full_name"`
-	AvatarURL                 *string             `json:"avatar_url"`
-	Position                  *string             `json:"position"`
+	AvatarURL                 *string             `json:"avatar_url,omitempty"`
+	Position                  *string             `json:"position,omitempty"`
 	OnVacation                bool                `json:"on_vacation"`
 	IsSick                    bool                `json:"is_sick"`
-	AlternativeContactChannel *string             `json:"alternative_contact_channel"`
-	AlternativeContactInfo    *string             `json:"alternative_contact_info"`
+	AlternativeContactChannel *string             `json:"alt_contact_channel,omitempty"`
+	AlternativeContactInfo    *string             `json:"alt_contact_info,omitempty"`
 	IsActive                  bool                `json:"is_active"`
 	Roles                     []AdminRoleResponse `json:"roles"`
 	CreatedAt                 string              `json:"created_at"`

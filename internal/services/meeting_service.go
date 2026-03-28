@@ -243,61 +243,8 @@ func (s *meetingService) RespondToInvitation(ctx context.Context, userID, meetin
 
 // CheckAndSendMeetingRemindersForUser проверяет, не пора ли напомнить пользователю о предстоящих встречах.
 // now – текущий момент (в UTC), tick – ширина окна (например, 5 минут).
-func (s *meetingService) CheckAndSendMeetingRemindersForUser(ctx context.Context, userID string, now time.Time, tick time.Duration) error {
-	// 1. Читаем настройку для напоминаний о встречах.
-	setting, err := s.notifications.GetSetting(ctx, userID, domain.EventMeetingReminder)
-	if err != nil {
-		return err
-	}
-	if setting == nil || (!setting.InSystem && !setting.InEmail) {
-		return nil
-	}
-
-	// 2. Определяем offset (по умолчанию 30 минут).
-	// Если фронт прислал 0, это значит "напоминание по факту начала встречи".
-	offsetMinutes := 30
-	if setting.ReminderOffsetMinutes != nil {
-		offsetMinutes = *setting.ReminderOffsetMinutes
-	}
-	offset := time.Duration(offsetMinutes) * time.Minute
-
-	from := now.Add(offset)
-	to := from.Add(tick)
-
-	// 3. Берем встречи пользователя, для которых напоминание еще не отправлялось (фильтр в SQL).
-	meetings, err := s.meetings.GetUpcomingMeetingsForUser(ctx, userID, from, to)
-	if err != nil {
-		return err
-	}
-
-	if len(meetings) == 0 {
-		return nil
-	}
-
-	for _, m := range meetings {
-		// пропускаем отменённые
-		if m.CanceledAt != nil {
-			continue
-		}
-
-		reminderTime := m.StartTime.Add(-offset)
-
-		// 4. Записываем факт напоминания. Если запись уже есть (ON CONFLICT DO NOTHING),
-		// CreateReminder не вернет ошибку, а просто не изменит таблицу.
-		if setting.InSystem {
-			_ = s.meetings.CreateReminder(ctx, m.ID, userID, domain.ChannelSystem, reminderTime)
-		}
-		if setting.InEmail {
-			_ = s.meetings.CreateReminder(ctx, m.ID, userID, domain.ChannelEmail, reminderTime)
-		}
-
-		// 5. Создаем уведомление (внутрисистемное / email в зависимости от настроек).
-		title := "Напоминание о встрече: " + m.Name
-		body := "Встреча начинается в " + m.StartTime.Format(time.RFC3339)
-
-		_ = s.notifications.SendEvent(ctx, domain.EventMeetingReminder, []string{userID}, title, body, nil)
-	}
-
+func (s *meetingService) CheckAndSendMeetingRemindersForUser(_ context.Context, _ string, _ time.Time, _ time.Duration) error {
+	// meeting reminders removed in schema redesign
 	return nil
 }
 

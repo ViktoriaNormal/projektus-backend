@@ -13,13 +13,23 @@ type UpdateProjectRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	Status      *string `json:"status"`
+	OwnerID     *string `json:"owner_id"`
 }
 
 type ProjectOwnerResponse struct {
-	ID       string  `json:"id"`
-	FullName string  `json:"full_name"`
-	AvatarURL *string `json:"avatar_url"`
-	Email    string  `json:"email"`
+	ID        string  `json:"id"`
+	FullName  string  `json:"full_name"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
+	Email     string  `json:"email"`
+}
+
+type ProjectReferencesResponse struct {
+	ColumnSystemTypes    []ReferenceColumnType     `json:"column_system_types"`
+	FieldTypes           []ReferenceFieldType      `json:"field_types"`
+	EstimationUnits      []ReferenceAvailable      `json:"estimation_units"`
+	PriorityTypeOptions  []ReferencePriorityType   `json:"priority_type_options"`
+	PermissionAreas      []ReferencePermissionArea `json:"permission_areas"`
+	AccessLevels         []ReferenceKeyName        `json:"access_levels"`
 }
 
 type ProjectResponse struct {
@@ -33,4 +43,3 @@ type ProjectResponse struct {
 	CreatedAt   string                `json:"created_at"`
 	Owner       *ProjectOwnerResponse `json:"owner,omitempty"`
 }
-

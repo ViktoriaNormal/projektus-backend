@@ -31,9 +31,9 @@ func (r *sprintTaskRepository) AddTask(ctx context.Context, sprintID, taskID uui
 		ord = sql.NullInt32{Int32: *order, Valid: true}
 	}
 	row, err := r.q.AddTaskToSprint(ctx, db.AddTaskToSprintParams{
-		SprintID: sprintID,
-		TaskID:   taskID,
-		Order:    ord,
+		SprintID:  sprintID,
+		TaskID:    taskID,
+		SortOrder: ord,
 	})
 	if err != nil {
 		return nil, err
@@ -63,23 +63,20 @@ func (r *sprintTaskRepository) ListBySprint(ctx context.Context, sprintID uuid.U
 
 func (r *sprintTaskRepository) UpdateTaskOrder(ctx context.Context, sprintID, taskID uuid.UUID, order int32) error {
 	return r.q.UpdateTaskOrder(ctx, db.UpdateTaskOrderParams{
-		SprintID: sprintID,
-		TaskID:   taskID,
-		Order:    sql.NullInt32{Int32: order, Valid: true},
+		SprintID:  sprintID,
+		TaskID:    taskID,
+		SortOrder: sql.NullInt32{Int32: order, Valid: true},
 	})
 }
 
 func mapDBSprintTask(row db.SprintTask) domain.SprintTask {
 	var ord int
-	if row.Order.Valid {
-		ord = int(row.Order.Int32)
+	if row.SortOrder.Valid {
+		ord = int(row.SortOrder.Int32)
 	}
 	return domain.SprintTask{
-		ID:       row.ID,
 		SprintID: row.SprintID,
 		TaskID:   row.TaskID,
 		Order:    ord,
-		AddedAt:  row.AddedAt,
 	}
 }
-

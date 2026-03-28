@@ -14,39 +14,32 @@ import (
 
 const addTaskToSprint = `-- name: AddTaskToSprint :one
 
-INSERT INTO sprint_tasks (sprint_id, task_id, "order")
+INSERT INTO sprint_tasks (sprint_id, task_id, sort_order)
 VALUES ($1, $2, $3)
 ON CONFLICT (sprint_id, task_id) DO UPDATE
-SET "order" = EXCLUDED."order",
-    added_at = NOW()
-RETURNING id, sprint_id, task_id, "order", added_at
+SET sort_order = EXCLUDED.sort_order
+RETURNING sprint_id, task_id, sort_order
 `
 
 type AddTaskToSprintParams struct {
-	SprintID uuid.UUID     `json:"sprint_id"`
-	TaskID   uuid.UUID     `json:"task_id"`
-	Order    sql.NullInt32 `json:"order"`
+	SprintID  uuid.UUID     `json:"sprint_id"`
+	TaskID    uuid.UUID     `json:"task_id"`
+	SortOrder sql.NullInt32 `json:"sort_order"`
 }
 
 // Sprint tasks: linking tasks to sprints
 func (q *Queries) AddTaskToSprint(ctx context.Context, arg AddTaskToSprintParams) (SprintTask, error) {
-	row := q.db.QueryRowContext(ctx, addTaskToSprint, arg.SprintID, arg.TaskID, arg.Order)
+	row := q.db.QueryRowContext(ctx, addTaskToSprint, arg.SprintID, arg.TaskID, arg.SortOrder)
 	var i SprintTask
-	err := row.Scan(
-		&i.ID,
-		&i.SprintID,
-		&i.TaskID,
-		&i.Order,
-		&i.AddedAt,
-	)
+	err := row.Scan(&i.SprintID, &i.TaskID, &i.SortOrder)
 	return i, err
 }
 
 const getSprintTasks = `-- name: GetSprintTasks :many
-SELECT id, sprint_id, task_id, "order", added_at
+SELECT sprint_id, task_id, sort_order
 FROM sprint_tasks
 WHERE sprint_id = $1
-ORDER BY "order" NULLS LAST, added_at
+ORDER BY sort_order NULLS LAST
 `
 
 func (q *Queries) GetSprintTasks(ctx context.Context, sprintID uuid.UUID) ([]SprintTask, error) {
@@ -58,13 +51,7 @@ func (q *Queries) GetSprintTasks(ctx context.Context, sprintID uuid.UUID) ([]Spr
 	items := []SprintTask{}
 	for rows.Next() {
 		var i SprintTask
-		if err := rows.Scan(
-			&i.ID,
-			&i.SprintID,
-			&i.TaskID,
-			&i.Order,
-			&i.AddedAt,
-		); err != nil {
+		if err := rows.Scan(&i.SprintID, &i.TaskID, &i.SortOrder); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -95,17 +82,17 @@ func (q *Queries) RemoveTaskFromSprint(ctx context.Context, arg RemoveTaskFromSp
 
 const updateTaskOrder = `-- name: UpdateTaskOrder :exec
 UPDATE sprint_tasks
-SET "order" = $3
+SET sort_order = $3
 WHERE sprint_id = $1 AND task_id = $2
 `
 
 type UpdateTaskOrderParams struct {
-	SprintID uuid.UUID     `json:"sprint_id"`
-	TaskID   uuid.UUID     `json:"task_id"`
-	Order    sql.NullInt32 `json:"order"`
+	SprintID  uuid.UUID     `json:"sprint_id"`
+	TaskID    uuid.UUID     `json:"task_id"`
+	SortOrder sql.NullInt32 `json:"sort_order"`
 }
 
 func (q *Queries) UpdateTaskOrder(ctx context.Context, arg UpdateTaskOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateTaskOrder, arg.SprintID, arg.TaskID, arg.Order)
+	_, err := q.db.ExecContext(ctx, updateTaskOrder, arg.SprintID, arg.TaskID, arg.SortOrder)
 	return err
 }

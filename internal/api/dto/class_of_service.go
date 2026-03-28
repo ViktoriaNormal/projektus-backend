@@ -9,12 +9,11 @@ type ClassOfServiceResponse struct {
 }
 
 type UpdateTaskClassRequest struct {
-	ClassOfService string `json:"classOfService" binding:"required"`
+	ClassOfService string `json:"class_of_service" binding:"required"`
 }
 
 type SwimlaneConfigRequest struct {
-	SourceType    string            `json:"sourceType" binding:"required,oneof=class_of_service custom_field"`
-	CustomFieldID *uuid.UUID        `json:"customFieldId,omitempty"`
-	ValueMappings map[string]string `json:"valueMappings,omitempty"`
+	SourceType    string            `json:"source_type" binding:"required,oneof=class_of_service custom_field"`
+	CustomFieldID *uuid.UUID        `json:"custom_field_id,omitempty"`
+	ValueMappings map[string]string `json:"value_mappings,omitempty"`
 }
-

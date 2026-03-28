@@ -134,7 +134,7 @@ func (r *projectMemberRepository) ReplaceMemberRoles(ctx context.Context, member
 	}
 	for _, roleID := range roleIDs {
 		if err := r.q.AddRoleToMember(ctx, db.AddRoleToMemberParams{
-			ProjectMemberID: memberID,
+			MemberID: memberID,
 			RoleID:          roleID,
 		}); err != nil {
 			return err

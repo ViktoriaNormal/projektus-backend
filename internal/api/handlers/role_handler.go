@@ -35,14 +35,16 @@ func (h *RoleHandler) mapRoleToResponse(c *gin.Context, r domain.Role) dto.RoleR
 func (h *RoleHandler) ListPermissions(c *gin.Context) {
 	perms, err := h.roleService.ListPermissions(c.Request.Context())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список разрешений")
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список прав доступа")
 		return
 	}
 
 	resp := make([]dto.PermissionResponse, 0, len(perms))
 	for _, p := range perms {
 		resp = append(resp, dto.PermissionResponse{
-			Key:         p.Code,
+			Code:        p.Code,
+			Scope:       p.Scope,
+			Name:        p.Name,
 			Description: p.Description,
 		})
 	}
@@ -130,6 +132,10 @@ func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
 			return
 		}
+		if err == domain.ErrSystemAdminRole {
+			writeError(c, http.StatusForbidden, "SYSTEM_ADMIN_ROLE", "Системная роль администратора неизменяема")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить роль")
 		return
 	}
@@ -146,8 +152,8 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 	}
 
 	if err := h.roleService.DeleteSystemRole(c.Request.Context(), id); err != nil {
-		if err == domain.ErrForbidden {
-			writeError(c, http.StatusForbidden, "FORBIDDEN", "Нельзя удалить системную роль администратора")
+		if err == domain.ErrSystemAdminRole {
+			writeError(c, http.StatusForbidden, "SYSTEM_ADMIN_ROLE", "Нельзя удалить системную роль администратора")
 			return
 		}
 		if err == domain.ErrNotFound {

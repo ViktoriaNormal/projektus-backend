@@ -115,10 +115,15 @@ func (r *projectRepository) ListUserProjects(ctx context.Context, userID uuid.UU
 }
 
 func (r *projectRepository) Update(ctx context.Context, p *domain.Project) (*domain.Project, error) {
+	ownerID := uuid.NullUUID{}
+	if p.OwnerID != uuid.Nil {
+		ownerID = uuid.NullUUID{UUID: p.OwnerID, Valid: true}
+	}
 	row, err := r.q.UpdateProject(ctx, db.UpdateProjectParams{
 		Name:        stringToNullString(p.Name),
 		Description: stringPtrToNullString(p.Description),
 		Status:      stringToNullString(string(p.Status)),
+		OwnerID:     ownerID,
 		ID:          p.ID,
 	})
 	if err != nil {

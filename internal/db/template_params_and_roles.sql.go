@@ -7,16 +7,17 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 )
 
 const countTemplateRolesByTemplateID = `-- name: CountTemplateRolesByTemplateID :one
-SELECT COUNT(*)::int AS count FROM template_roles WHERE template_id = $1
+SELECT COUNT(*)::int AS count FROM roles WHERE template_id = $1
 `
 
-func (q *Queries) CountTemplateRolesByTemplateID(ctx context.Context, templateID uuid.UUID) (int32, error) {
+func (q *Queries) CountTemplateRolesByTemplateID(ctx context.Context, templateID uuid.NullUUID) (int32, error) {
 	row := q.db.QueryRowContext(ctx, countTemplateRolesByTemplateID, templateID)
 	var count int32
 	err := row.Scan(&count)
@@ -24,78 +25,93 @@ func (q *Queries) CountTemplateRolesByTemplateID(ctx context.Context, templateID
 }
 
 const createTemplateProjectParam = `-- name: CreateTemplateProjectParam :one
-INSERT INTO template_project_params (template_id, name, field_type, is_required, "order", options)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, template_id, name, field_type, is_required, "order", options
+INSERT INTO fields (kind, template_id, name, description, field_type, is_required, sort_order, options)
+VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7)
+RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options
 `
 
 type CreateTemplateProjectParamParams struct {
-	TemplateID uuid.UUID             `json:"template_id"`
-	Name       string                `json:"name"`
-	FieldType  string                `json:"field_type"`
-	IsRequired bool                  `json:"is_required"`
-	Order      int32                 `json:"order"`
-	Options    pqtype.NullRawMessage `json:"options"`
+	TemplateID  uuid.NullUUID         `json:"template_id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	FieldType   string                `json:"field_type"`
+	IsRequired  bool                  `json:"is_required"`
+	SortOrder   int32                 `json:"sort_order"`
+	Options     pqtype.NullRawMessage `json:"options"`
 }
 
-func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemplateProjectParamParams) (TemplateProjectParam, error) {
+type CreateTemplateProjectParamRow struct {
+	ID          uuid.UUID             `json:"id"`
+	TemplateID  uuid.NullUUID         `json:"template_id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	FieldType   string                `json:"field_type"`
+	IsSystem    bool                  `json:"is_system"`
+	IsRequired  bool                  `json:"is_required"`
+	SortOrder   int32                 `json:"sort_order"`
+	Options     pqtype.NullRawMessage `json:"options"`
+}
+
+func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemplateProjectParamParams) (CreateTemplateProjectParamRow, error) {
 	row := q.db.QueryRowContext(ctx, createTemplateProjectParam,
 		arg.TemplateID,
 		arg.Name,
+		arg.Description,
 		arg.FieldType,
 		arg.IsRequired,
-		arg.Order,
+		arg.SortOrder,
 		arg.Options,
 	)
-	var i TemplateProjectParam
+	var i CreateTemplateProjectParamRow
 	err := row.Scan(
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
+		&i.Description,
 		&i.FieldType,
+		&i.IsSystem,
 		&i.IsRequired,
-		&i.Order,
+		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
 }
 
 const createTemplateRole = `-- name: CreateTemplateRole :one
-INSERT INTO template_roles (template_id, name, description, is_default, "order")
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, template_id, name, description, is_default, "order"
+INSERT INTO roles (template_id, scope, name, description)
+VALUES ($1, 'template', $2, $3)
+RETURNING id, template_id, name, description, is_admin
 `
 
 type CreateTemplateRoleParams struct {
-	TemplateID  uuid.UUID `json:"template_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	IsDefault   bool      `json:"is_default"`
-	Order       int32     `json:"order"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
 }
 
-func (q *Queries) CreateTemplateRole(ctx context.Context, arg CreateTemplateRoleParams) (TemplateRole, error) {
-	row := q.db.QueryRowContext(ctx, createTemplateRole,
-		arg.TemplateID,
-		arg.Name,
-		arg.Description,
-		arg.IsDefault,
-		arg.Order,
-	)
-	var i TemplateRole
+type CreateTemplateRoleRow struct {
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+}
+
+func (q *Queries) CreateTemplateRole(ctx context.Context, arg CreateTemplateRoleParams) (CreateTemplateRoleRow, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateRole, arg.TemplateID, arg.Name, arg.Description)
+	var i CreateTemplateRoleRow
 	err := row.Scan(
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
 		&i.Description,
-		&i.IsDefault,
-		&i.Order,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const deleteTemplateProjectParamByID = `-- name: DeleteTemplateProjectParamByID :exec
-DELETE FROM template_project_params WHERE id = $1
+DELETE FROM fields WHERE id = $1 AND kind = 'project_param'
 `
 
 func (q *Queries) DeleteTemplateProjectParamByID(ctx context.Context, id uuid.UUID) error {
@@ -104,7 +120,7 @@ func (q *Queries) DeleteTemplateProjectParamByID(ctx context.Context, id uuid.UU
 }
 
 const deleteTemplateRoleByID = `-- name: DeleteTemplateRoleByID :exec
-DELETE FROM template_roles WHERE id = $1
+DELETE FROM roles WHERE id = $1
 `
 
 func (q *Queries) DeleteTemplateRoleByID(ctx context.Context, id uuid.UUID) error {
@@ -113,7 +129,7 @@ func (q *Queries) DeleteTemplateRoleByID(ctx context.Context, id uuid.UUID) erro
 }
 
 const deleteTemplateRolePermissionsByRoleID = `-- name: DeleteTemplateRolePermissionsByRoleID :exec
-DELETE FROM template_role_permissions WHERE role_id = $1
+DELETE FROM role_permissions WHERE role_id = $1
 `
 
 func (q *Queries) DeleteTemplateRolePermissionsByRoleID(ctx context.Context, roleID uuid.UUID) error {
@@ -122,173 +138,106 @@ func (q *Queries) DeleteTemplateRolePermissionsByRoleID(ctx context.Context, rol
 }
 
 const getTemplateProjectParamByID = `-- name: GetTemplateProjectParamByID :one
-SELECT id, template_id, name, field_type, is_required, "order", options
-FROM template_project_params
-WHERE id = $1
+SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+FROM fields
+WHERE id = $1 AND kind = 'project_param'
 `
 
-func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID) (TemplateProjectParam, error) {
+type GetTemplateProjectParamByIDRow struct {
+	ID          uuid.UUID             `json:"id"`
+	TemplateID  uuid.NullUUID         `json:"template_id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	FieldType   string                `json:"field_type"`
+	IsSystem    bool                  `json:"is_system"`
+	IsRequired  bool                  `json:"is_required"`
+	SortOrder   int32                 `json:"sort_order"`
+	Options     pqtype.NullRawMessage `json:"options"`
+}
+
+func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID) (GetTemplateProjectParamByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getTemplateProjectParamByID, id)
-	var i TemplateProjectParam
+	var i GetTemplateProjectParamByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
+		&i.Description,
 		&i.FieldType,
+		&i.IsSystem,
 		&i.IsRequired,
-		&i.Order,
+		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
 }
 
 const getTemplateRoleByID = `-- name: GetTemplateRoleByID :one
-SELECT id, template_id, name, description, is_default, "order"
-FROM template_roles
+SELECT id, template_id, name, description, is_admin
+FROM roles
 WHERE id = $1
 `
 
-func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (TemplateRole, error) {
+type GetTemplateRoleByIDRow struct {
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+}
+
+func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTemplateRoleByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getTemplateRoleByID, id)
-	var i TemplateRole
+	var i GetTemplateRoleByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
 		&i.Description,
-		&i.IsDefault,
-		&i.Order,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
-const listRefAccessLevels = `-- name: ListRefAccessLevels :many
-SELECT key, name, sort_order
-FROM ref_access_levels
-ORDER BY sort_order ASC
-`
-
-func (q *Queries) ListRefAccessLevels(ctx context.Context) ([]RefAccessLevel, error) {
-	rows, err := q.db.QueryContext(ctx, listRefAccessLevels)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RefAccessLevel{}
-	for rows.Next() {
-		var i RefAccessLevel
-		if err := rows.Scan(&i.Key, &i.Name, &i.SortOrder); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRefPermissionAreas = `-- name: ListRefPermissionAreas :many
-SELECT area, project_type, name, description, sort_order
-FROM ref_permission_areas
-ORDER BY project_type, sort_order ASC
-`
-
-func (q *Queries) ListRefPermissionAreas(ctx context.Context) ([]RefPermissionArea, error) {
-	rows, err := q.db.QueryContext(ctx, listRefPermissionAreas)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RefPermissionArea{}
-	for rows.Next() {
-		var i RefPermissionArea
-		if err := rows.Scan(
-			&i.Area,
-			&i.ProjectType,
-			&i.Name,
-			&i.Description,
-			&i.SortOrder,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRefSystemProjectParams = `-- name: ListRefSystemProjectParams :many
-
-SELECT key, name, field_type, is_required, options, sort_order
-FROM ref_system_project_params
-ORDER BY sort_order ASC
-`
-
-// Reference queries for new tables
-func (q *Queries) ListRefSystemProjectParams(ctx context.Context) ([]RefSystemProjectParam, error) {
-	rows, err := q.db.QueryContext(ctx, listRefSystemProjectParams)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RefSystemProjectParam{}
-	for rows.Next() {
-		var i RefSystemProjectParam
-		if err := rows.Scan(
-			&i.Key,
-			&i.Name,
-			&i.FieldType,
-			&i.IsRequired,
-			&i.Options,
-			&i.SortOrder,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listTemplateProjectParams = `-- name: ListTemplateProjectParams :many
 
-SELECT id, template_id, name, field_type, is_required, "order", options
-FROM template_project_params
-WHERE template_id = $1
-ORDER BY "order" ASC
+SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+FROM fields
+WHERE template_id = $1 AND kind = 'project_param'
+ORDER BY sort_order ASC
 `
 
-// Template project params
-func (q *Queries) ListTemplateProjectParams(ctx context.Context, templateID uuid.UUID) ([]TemplateProjectParam, error) {
+type ListTemplateProjectParamsRow struct {
+	ID          uuid.UUID             `json:"id"`
+	TemplateID  uuid.NullUUID         `json:"template_id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	FieldType   string                `json:"field_type"`
+	IsSystem    bool                  `json:"is_system"`
+	IsRequired  bool                  `json:"is_required"`
+	SortOrder   int32                 `json:"sort_order"`
+	Options     pqtype.NullRawMessage `json:"options"`
+}
+
+// Template project params (in unified `fields` table, kind='project_param')
+func (q *Queries) ListTemplateProjectParams(ctx context.Context, templateID uuid.NullUUID) ([]ListTemplateProjectParamsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateProjectParams, templateID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TemplateProjectParam{}
+	items := []ListTemplateProjectParamsRow{}
 	for rows.Next() {
-		var i TemplateProjectParam
+		var i ListTemplateProjectParamsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TemplateID,
 			&i.Name,
+			&i.Description,
 			&i.FieldType,
+			&i.IsSystem,
 			&i.IsRequired,
-			&i.Order,
+			&i.SortOrder,
 			&i.Options,
 		); err != nil {
 			return nil, err
@@ -306,27 +255,22 @@ func (q *Queries) ListTemplateProjectParams(ctx context.Context, templateID uuid
 
 const listTemplateRolePermissions = `-- name: ListTemplateRolePermissions :many
 
-SELECT id, role_id, area, access
-FROM template_role_permissions
-WHERE role_id = $1
+SELECT rp.role_id, rp.permission_code, rp.access
+FROM role_permissions rp
+WHERE rp.role_id = $1
 `
 
-// Template role permissions
-func (q *Queries) ListTemplateRolePermissions(ctx context.Context, roleID uuid.UUID) ([]TemplateRolePermission, error) {
+// Template role permissions (uses permission_code directly)
+func (q *Queries) ListTemplateRolePermissions(ctx context.Context, roleID uuid.UUID) ([]RolePermission, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateRolePermissions, roleID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TemplateRolePermission{}
+	items := []RolePermission{}
 	for rows.Next() {
-		var i TemplateRolePermission
-		if err := rows.Scan(
-			&i.ID,
-			&i.RoleID,
-			&i.Area,
-			&i.Access,
-		); err != nil {
+		var i RolePermission
+		if err := rows.Scan(&i.RoleID, &i.PermissionCode, &i.Access); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -342,29 +286,36 @@ func (q *Queries) ListTemplateRolePermissions(ctx context.Context, roleID uuid.U
 
 const listTemplateRoles = `-- name: ListTemplateRoles :many
 
-SELECT id, template_id, name, description, is_default, "order"
-FROM template_roles
+SELECT id, template_id, name, description, is_admin
+FROM roles
 WHERE template_id = $1
-ORDER BY "order" ASC
+ORDER BY name
 `
 
-// Template roles
-func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.UUID) ([]TemplateRole, error) {
+type ListTemplateRolesRow struct {
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+}
+
+// Template roles (in unified roles table, scope='template')
+func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.NullUUID) ([]ListTemplateRolesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateRoles, templateID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TemplateRole{}
+	items := []ListTemplateRolesRow{}
 	for rows.Next() {
-		var i TemplateRole
+		var i ListTemplateRolesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TemplateID,
 			&i.Name,
 			&i.Description,
-			&i.IsDefault,
-			&i.Order,
+			&i.IsAdmin,
 		); err != nil {
 			return nil, err
 		}
@@ -380,10 +331,10 @@ func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.UUID) (
 }
 
 const updateTemplateProjectParam = `-- name: UpdateTemplateProjectParam :one
-UPDATE template_project_params
+UPDATE fields
 SET name = $2, is_required = $3, options = $4
-WHERE id = $1
-RETURNING id, template_id, name, field_type, is_required, "order", options
+WHERE id = $1 AND kind = 'project_param'
+RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options
 `
 
 type UpdateTemplateProjectParamParams struct {
@@ -393,45 +344,59 @@ type UpdateTemplateProjectParamParams struct {
 	Options    pqtype.NullRawMessage `json:"options"`
 }
 
-func (q *Queries) UpdateTemplateProjectParam(ctx context.Context, arg UpdateTemplateProjectParamParams) (TemplateProjectParam, error) {
+type UpdateTemplateProjectParamRow struct {
+	ID          uuid.UUID             `json:"id"`
+	TemplateID  uuid.NullUUID         `json:"template_id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	FieldType   string                `json:"field_type"`
+	IsSystem    bool                  `json:"is_system"`
+	IsRequired  bool                  `json:"is_required"`
+	SortOrder   int32                 `json:"sort_order"`
+	Options     pqtype.NullRawMessage `json:"options"`
+}
+
+func (q *Queries) UpdateTemplateProjectParam(ctx context.Context, arg UpdateTemplateProjectParamParams) (UpdateTemplateProjectParamRow, error) {
 	row := q.db.QueryRowContext(ctx, updateTemplateProjectParam,
 		arg.ID,
 		arg.Name,
 		arg.IsRequired,
 		arg.Options,
 	)
-	var i TemplateProjectParam
+	var i UpdateTemplateProjectParamRow
 	err := row.Scan(
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
+		&i.Description,
 		&i.FieldType,
+		&i.IsSystem,
 		&i.IsRequired,
-		&i.Order,
+		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
 }
 
 const updateTemplateProjectParamOrder = `-- name: UpdateTemplateProjectParamOrder :exec
-UPDATE template_project_params SET "order" = $2 WHERE id = $1
+UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'project_param'
 `
 
 type UpdateTemplateProjectParamOrderParams struct {
-	ID    uuid.UUID `json:"id"`
-	Order int32     `json:"order"`
+	ID        uuid.UUID `json:"id"`
+	SortOrder int32     `json:"sort_order"`
 }
 
 func (q *Queries) UpdateTemplateProjectParamOrder(ctx context.Context, arg UpdateTemplateProjectParamOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateTemplateProjectParamOrder, arg.ID, arg.Order)
+	_, err := q.db.ExecContext(ctx, updateTemplateProjectParamOrder, arg.ID, arg.SortOrder)
 	return err
 }
 
 const updateTemplateRole = `-- name: UpdateTemplateRole :one
-UPDATE template_roles
+UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, template_id, name, description, is_default, "order"
+RETURNING id, template_id, name, description, is_admin
 `
 
 type UpdateTemplateRoleParams struct {
@@ -440,47 +405,40 @@ type UpdateTemplateRoleParams struct {
 	Description string    `json:"description"`
 }
 
-func (q *Queries) UpdateTemplateRole(ctx context.Context, arg UpdateTemplateRoleParams) (TemplateRole, error) {
+type UpdateTemplateRoleRow struct {
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+}
+
+func (q *Queries) UpdateTemplateRole(ctx context.Context, arg UpdateTemplateRoleParams) (UpdateTemplateRoleRow, error) {
 	row := q.db.QueryRowContext(ctx, updateTemplateRole, arg.ID, arg.Name, arg.Description)
-	var i TemplateRole
+	var i UpdateTemplateRoleRow
 	err := row.Scan(
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
 		&i.Description,
-		&i.IsDefault,
-		&i.Order,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
-const updateTemplateRoleOrder = `-- name: UpdateTemplateRoleOrder :exec
-UPDATE template_roles SET "order" = $2 WHERE id = $1
-`
-
-type UpdateTemplateRoleOrderParams struct {
-	ID    uuid.UUID `json:"id"`
-	Order int32     `json:"order"`
-}
-
-func (q *Queries) UpdateTemplateRoleOrder(ctx context.Context, arg UpdateTemplateRoleOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateTemplateRoleOrder, arg.ID, arg.Order)
-	return err
-}
-
 const upsertTemplateRolePermission = `-- name: UpsertTemplateRolePermission :exec
-INSERT INTO template_role_permissions (role_id, area, access)
+INSERT INTO role_permissions (role_id, permission_code, access)
 VALUES ($1, $2, $3)
-ON CONFLICT (role_id, area) DO UPDATE SET access = EXCLUDED.access
+ON CONFLICT (role_id, permission_code) DO UPDATE SET access = EXCLUDED.access
 `
 
 type UpsertTemplateRolePermissionParams struct {
-	RoleID uuid.UUID `json:"role_id"`
-	Area   string    `json:"area"`
-	Access string    `json:"access"`
+	RoleID         uuid.UUID      `json:"role_id"`
+	PermissionCode string         `json:"permission_code"`
+	Access         sql.NullString `json:"access"`
 }
 
 func (q *Queries) UpsertTemplateRolePermission(ctx context.Context, arg UpsertTemplateRolePermissionParams) error {
-	_, err := q.db.ExecContext(ctx, upsertTemplateRolePermission, arg.RoleID, arg.Area, arg.Access)
+	_, err := q.db.ExecContext(ctx, upsertTemplateRolePermission, arg.RoleID, arg.PermissionCode, arg.Access)
 	return err
 }

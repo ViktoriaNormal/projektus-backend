@@ -12,39 +12,39 @@ import (
 )
 
 const addRoleToMember = `-- name: AddRoleToMember :exec
-INSERT INTO project_member_roles (project_member_id, role_id)
+INSERT INTO member_roles (member_id, role_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING
 `
 
 type AddRoleToMemberParams struct {
-	ProjectMemberID uuid.UUID `json:"project_member_id"`
-	RoleID          uuid.UUID `json:"role_id"`
+	MemberID uuid.UUID `json:"member_id"`
+	RoleID   uuid.UUID `json:"role_id"`
 }
 
 func (q *Queries) AddRoleToMember(ctx context.Context, arg AddRoleToMemberParams) error {
-	_, err := q.db.ExecContext(ctx, addRoleToMember, arg.ProjectMemberID, arg.RoleID)
+	_, err := q.db.ExecContext(ctx, addRoleToMember, arg.MemberID, arg.RoleID)
 	return err
 }
 
 const deleteMemberRoles = `-- name: DeleteMemberRoles :exec
-DELETE FROM project_member_roles
-WHERE project_member_id = $1
+DELETE FROM member_roles
+WHERE member_id = $1
 `
 
-func (q *Queries) DeleteMemberRoles(ctx context.Context, projectMemberID uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, deleteMemberRoles, projectMemberID)
+func (q *Queries) DeleteMemberRoles(ctx context.Context, memberID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteMemberRoles, memberID)
 	return err
 }
 
 const listMemberRoleIDs = `-- name: ListMemberRoleIDs :many
-SELECT pmr.role_id
-FROM project_member_roles pmr
-WHERE pmr.project_member_id = $1
+SELECT mr.role_id
+FROM member_roles mr
+WHERE mr.member_id = $1
 `
 
-func (q *Queries) ListMemberRoleIDs(ctx context.Context, projectMemberID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.QueryContext(ctx, listMemberRoleIDs, projectMemberID)
+func (q *Queries) ListMemberRoleIDs(ctx context.Context, memberID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.QueryContext(ctx, listMemberRoleIDs, memberID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,15 +69,15 @@ func (q *Queries) ListMemberRoleIDs(ctx context.Context, projectMemberID uuid.UU
 const listMemberRoles = `-- name: ListMemberRoles :many
 
 SELECT r.name
-FROM project_member_roles pmr
-JOIN roles r ON r.id = pmr.role_id
-WHERE pmr.project_member_id = $1
+FROM member_roles mr
+JOIN roles r ON r.id = mr.role_id
+WHERE mr.member_id = $1
 ORDER BY r.name
 `
 
-// Project member roles
-func (q *Queries) ListMemberRoles(ctx context.Context, projectMemberID uuid.UUID) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listMemberRoles, projectMemberID)
+// Member roles
+func (q *Queries) ListMemberRoles(ctx context.Context, memberID uuid.UUID) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listMemberRoles, memberID)
 	if err != nil {
 		return nil, err
 	}

@@ -12,48 +12,93 @@ import (
 	"github.com/google/uuid"
 )
 
+const countTasksInColumn = `-- name: CountTasksInColumn :one
+SELECT COUNT(*)::int AS count FROM tasks WHERE column_id = $1
+`
+
+func (q *Queries) CountTasksInColumn(ctx context.Context, columnID uuid.UUID) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countTasksInColumn, columnID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTasksInSwimlane = `-- name: CountTasksInSwimlane :one
+SELECT COUNT(*)::int AS count FROM tasks WHERE swimlane_id = $1
+`
+
+func (q *Queries) CountTasksInSwimlane(ctx context.Context, swimlaneID uuid.NullUUID) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countTasksInSwimlane, swimlaneID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBoard = `-- name: CreateBoard :one
 
-INSERT INTO boards (project_id, template_id, name, description, "order")
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, project_id, template_id, name, description, "order", created_at, updated_at
+INSERT INTO boards (project_id, template_id, name, description, sort_order, is_default, priority_type, estimation_unit, swimlane_group_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
 `
 
 type CreateBoardParams struct {
-	ProjectID   uuid.NullUUID  `json:"project_id"`
-	TemplateID  uuid.NullUUID  `json:"template_id"`
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
-	Order       int16          `json:"order"`
+	ProjectID       uuid.NullUUID  `json:"project_id"`
+	TemplateID      uuid.NullUUID  `json:"template_id"`
+	Name            string         `json:"name"`
+	Description     sql.NullString `json:"description"`
+	SortOrder       int16          `json:"sort_order"`
+	IsDefault       bool           `json:"is_default"`
+	PriorityType    string         `json:"priority_type"`
+	EstimationUnit  string         `json:"estimation_unit"`
+	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+}
+
+type CreateBoardRow struct {
+	ID              uuid.UUID      `json:"id"`
+	ProjectID       uuid.NullUUID  `json:"project_id"`
+	TemplateID      uuid.NullUUID  `json:"template_id"`
+	Name            string         `json:"name"`
+	Description     sql.NullString `json:"description"`
+	SortOrder       int16          `json:"sort_order"`
+	PriorityType    string         `json:"priority_type"`
+	EstimationUnit  string         `json:"estimation_unit"`
+	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	IsDefault       bool           `json:"is_default"`
 }
 
 // Boards
-func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board, error) {
+func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (CreateBoardRow, error) {
 	row := q.db.QueryRowContext(ctx, createBoard,
 		arg.ProjectID,
 		arg.TemplateID,
 		arg.Name,
 		arg.Description,
-		arg.Order,
+		arg.SortOrder,
+		arg.IsDefault,
+		arg.PriorityType,
+		arg.EstimationUnit,
+		arg.SwimlaneGroupBy,
 	)
-	var i Board
+	var i CreateBoardRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
 		&i.TemplateID,
 		&i.Name,
 		&i.Description,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.SortOrder,
+		&i.PriorityType,
+		&i.EstimationUnit,
+		&i.SwimlaneGroupBy,
+		&i.IsDefault,
 	)
 	return i, err
 }
 
 const createColumn = `-- name: CreateColumn :one
-INSERT INTO columns (board_id, name, system_type, wip_limit, "order")
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, board_id, name, system_type, wip_limit, "order", created_at, updated_at, is_sprint_backlog
+INSERT INTO columns (board_id, name, system_type, wip_limit, sort_order, is_locked)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, board_id, name, system_type, wip_limit, sort_order, is_locked, note
 `
 
 type CreateColumnParams struct {
@@ -61,7 +106,8 @@ type CreateColumnParams struct {
 	Name       string         `json:"name"`
 	SystemType sql.NullString `json:"system_type"`
 	WipLimit   sql.NullInt16  `json:"wip_limit"`
-	Order      int16          `json:"order"`
+	SortOrder  int16          `json:"sort_order"`
+	IsLocked   bool           `json:"is_locked"`
 }
 
 func (q *Queries) CreateColumn(ctx context.Context, arg CreateColumnParams) (Column, error) {
@@ -70,7 +116,8 @@ func (q *Queries) CreateColumn(ctx context.Context, arg CreateColumnParams) (Col
 		arg.Name,
 		arg.SystemType,
 		arg.WipLimit,
-		arg.Order,
+		arg.SortOrder,
+		arg.IsLocked,
 	)
 	var i Column
 	err := row.Scan(
@@ -79,10 +126,9 @@ func (q *Queries) CreateColumn(ctx context.Context, arg CreateColumnParams) (Col
 		&i.Name,
 		&i.SystemType,
 		&i.WipLimit,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.IsSprintBacklog,
+		&i.SortOrder,
+		&i.IsLocked,
+		&i.Note,
 	)
 	return i, err
 }
@@ -90,7 +136,7 @@ func (q *Queries) CreateColumn(ctx context.Context, arg CreateColumnParams) (Col
 const createNoteForColumn = `-- name: CreateNoteForColumn :one
 INSERT INTO notes (column_id, content)
 VALUES ($1, $2)
-RETURNING id, column_id, swimlane_id, content, created_at, updated_at
+RETURNING id, column_id, swimlane_id, content
 `
 
 type CreateNoteForColumnParams struct {
@@ -106,8 +152,6 @@ func (q *Queries) CreateNoteForColumn(ctx context.Context, arg CreateNoteForColu
 		&i.ColumnID,
 		&i.SwimlaneID,
 		&i.Content,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -115,7 +159,7 @@ func (q *Queries) CreateNoteForColumn(ctx context.Context, arg CreateNoteForColu
 const createNoteForSwimlane = `-- name: CreateNoteForSwimlane :one
 INSERT INTO notes (swimlane_id, content)
 VALUES ($1, $2)
-RETURNING id, column_id, swimlane_id, content, created_at, updated_at
+RETURNING id, column_id, swimlane_id, content
 `
 
 type CreateNoteForSwimlaneParams struct {
@@ -131,23 +175,21 @@ func (q *Queries) CreateNoteForSwimlane(ctx context.Context, arg CreateNoteForSw
 		&i.ColumnID,
 		&i.SwimlaneID,
 		&i.Content,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const createSwimlane = `-- name: CreateSwimlane :one
-INSERT INTO swimlanes (board_id, name, wip_limit, "order")
+INSERT INTO swimlanes (board_id, name, wip_limit, sort_order)
 VALUES ($1, $2, $3, $4)
-RETURNING id, board_id, name, wip_limit, "order", created_at, updated_at, source_type, custom_field_id, value_mappings
+RETURNING id, board_id, name, wip_limit, sort_order, note
 `
 
 type CreateSwimlaneParams struct {
-	BoardID  uuid.UUID     `json:"board_id"`
-	Name     string        `json:"name"`
-	WipLimit sql.NullInt16 `json:"wip_limit"`
-	Order    int16         `json:"order"`
+	BoardID   uuid.UUID     `json:"board_id"`
+	Name      string        `json:"name"`
+	WipLimit  sql.NullInt16 `json:"wip_limit"`
+	SortOrder int16         `json:"sort_order"`
 }
 
 func (q *Queries) CreateSwimlane(ctx context.Context, arg CreateSwimlaneParams) (Swimlane, error) {
@@ -155,7 +197,7 @@ func (q *Queries) CreateSwimlane(ctx context.Context, arg CreateSwimlaneParams) 
 		arg.BoardID,
 		arg.Name,
 		arg.WipLimit,
-		arg.Order,
+		arg.SortOrder,
 	)
 	var i Swimlane
 	err := row.Scan(
@@ -163,12 +205,8 @@ func (q *Queries) CreateSwimlane(ctx context.Context, arg CreateSwimlaneParams) 
 		&i.BoardID,
 		&i.Name,
 		&i.WipLimit,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.SourceType,
-		&i.CustomFieldID,
-		&i.ValueMappings,
+		&i.SortOrder,
+		&i.Note,
 	)
 	return i, err
 }
@@ -214,33 +252,108 @@ func (q *Queries) DeleteSwimlane(ctx context.Context, id uuid.UUID) error {
 }
 
 const getBoardByID = `-- name: GetBoardByID :one
-SELECT id, project_id, template_id, name, description, "order", created_at, updated_at
+SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
 FROM boards
 WHERE id = $1
 `
 
-func (q *Queries) GetBoardByID(ctx context.Context, id uuid.UUID) (Board, error) {
+type GetBoardByIDRow struct {
+	ID              uuid.UUID      `json:"id"`
+	ProjectID       uuid.NullUUID  `json:"project_id"`
+	TemplateID      uuid.NullUUID  `json:"template_id"`
+	Name            string         `json:"name"`
+	Description     sql.NullString `json:"description"`
+	SortOrder       int16          `json:"sort_order"`
+	PriorityType    string         `json:"priority_type"`
+	EstimationUnit  string         `json:"estimation_unit"`
+	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	IsDefault       bool           `json:"is_default"`
+}
+
+func (q *Queries) GetBoardByID(ctx context.Context, id uuid.UUID) (GetBoardByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getBoardByID, id)
-	var i Board
+	var i GetBoardByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
 		&i.TemplateID,
 		&i.Name,
 		&i.Description,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.SortOrder,
+		&i.PriorityType,
+		&i.EstimationUnit,
+		&i.SwimlaneGroupBy,
+		&i.IsDefault,
+	)
+	return i, err
+}
+
+const getColumnByID = `-- name: GetColumnByID :one
+SELECT id, board_id, name, system_type, wip_limit, sort_order, is_locked, note
+FROM columns
+WHERE id = $1
+`
+
+func (q *Queries) GetColumnByID(ctx context.Context, id uuid.UUID) (Column, error) {
+	row := q.db.QueryRowContext(ctx, getColumnByID, id)
+	var i Column
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.SystemType,
+		&i.WipLimit,
+		&i.SortOrder,
+		&i.IsLocked,
+		&i.Note,
+	)
+	return i, err
+}
+
+const getNoteByID = `-- name: GetNoteByID :one
+SELECT id, column_id, swimlane_id, content
+FROM notes
+WHERE id = $1
+`
+
+func (q *Queries) GetNoteByID(ctx context.Context, id uuid.UUID) (Note, error) {
+	row := q.db.QueryRowContext(ctx, getNoteByID, id)
+	var i Note
+	err := row.Scan(
+		&i.ID,
+		&i.ColumnID,
+		&i.SwimlaneID,
+		&i.Content,
+	)
+	return i, err
+}
+
+const getSwimlaneByID = `-- name: GetSwimlaneByID :one
+SELECT id, board_id, name, wip_limit, sort_order, note
+FROM swimlanes
+WHERE id = $1
+`
+
+func (q *Queries) GetSwimlaneByID(ctx context.Context, id uuid.UUID) (Swimlane, error) {
+	row := q.db.QueryRowContext(ctx, getSwimlaneByID, id)
+	var i Swimlane
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Name,
+		&i.WipLimit,
+		&i.SortOrder,
+		&i.Note,
 	)
 	return i, err
 }
 
 const listBoardColumns = `-- name: ListBoardColumns :many
 
-SELECT id, board_id, name, system_type, wip_limit, "order", created_at, updated_at, is_sprint_backlog
+SELECT id, board_id, name, system_type, wip_limit, sort_order, is_locked, note
 FROM columns
 WHERE board_id = $1
-ORDER BY "order"
+ORDER BY sort_order
 `
 
 // Columns
@@ -259,10 +372,9 @@ func (q *Queries) ListBoardColumns(ctx context.Context, boardID uuid.UUID) ([]Co
 			&i.Name,
 			&i.SystemType,
 			&i.WipLimit,
-			&i.Order,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.IsSprintBacklog,
+			&i.SortOrder,
+			&i.IsLocked,
+			&i.Note,
 		); err != nil {
 			return nil, err
 		}
@@ -279,12 +391,12 @@ func (q *Queries) ListBoardColumns(ctx context.Context, boardID uuid.UUID) ([]Co
 
 const listBoardNotes = `-- name: ListBoardNotes :many
 
-SELECT n.id, n.column_id, n.swimlane_id, n.content, n.created_at, n.updated_at
+SELECT n.id, n.column_id, n.swimlane_id, n.content
 FROM notes n
 JOIN columns c ON n.column_id = c.id
 WHERE c.board_id = $1
 UNION ALL
-SELECT n.id, n.column_id, n.swimlane_id, n.content, n.created_at, n.updated_at
+SELECT n.id, n.column_id, n.swimlane_id, n.content
 FROM notes n
 JOIN swimlanes s ON n.swimlane_id = s.id
 WHERE s.board_id = $1
@@ -305,8 +417,6 @@ func (q *Queries) ListBoardNotes(ctx context.Context, boardID uuid.UUID) ([]Note
 			&i.ColumnID,
 			&i.SwimlaneID,
 			&i.Content,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -323,10 +433,10 @@ func (q *Queries) ListBoardNotes(ctx context.Context, boardID uuid.UUID) ([]Note
 
 const listBoardSwimlanes = `-- name: ListBoardSwimlanes :many
 
-SELECT id, board_id, name, wip_limit, "order", created_at, updated_at, source_type, custom_field_id, value_mappings
+SELECT id, board_id, name, wip_limit, sort_order, note
 FROM swimlanes
 WHERE board_id = $1
-ORDER BY "order"
+ORDER BY sort_order
 `
 
 // Swimlanes
@@ -344,12 +454,8 @@ func (q *Queries) ListBoardSwimlanes(ctx context.Context, boardID uuid.UUID) ([]
 			&i.BoardID,
 			&i.Name,
 			&i.WipLimit,
-			&i.Order,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.SourceType,
-			&i.CustomFieldID,
-			&i.ValueMappings,
+			&i.SortOrder,
+			&i.Note,
 		); err != nil {
 			return nil, err
 		}
@@ -365,30 +471,45 @@ func (q *Queries) ListBoardSwimlanes(ctx context.Context, boardID uuid.UUID) ([]
 }
 
 const listProjectBoards = `-- name: ListProjectBoards :many
-SELECT id, project_id, template_id, name, description, "order", created_at, updated_at
+SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
 FROM boards
 WHERE project_id = $1
-ORDER BY "order"
+ORDER BY sort_order
 `
 
-func (q *Queries) ListProjectBoards(ctx context.Context, projectID uuid.NullUUID) ([]Board, error) {
+type ListProjectBoardsRow struct {
+	ID              uuid.UUID      `json:"id"`
+	ProjectID       uuid.NullUUID  `json:"project_id"`
+	TemplateID      uuid.NullUUID  `json:"template_id"`
+	Name            string         `json:"name"`
+	Description     sql.NullString `json:"description"`
+	SortOrder       int16          `json:"sort_order"`
+	PriorityType    string         `json:"priority_type"`
+	EstimationUnit  string         `json:"estimation_unit"`
+	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	IsDefault       bool           `json:"is_default"`
+}
+
+func (q *Queries) ListProjectBoards(ctx context.Context, projectID uuid.NullUUID) ([]ListProjectBoardsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectBoards, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Board{}
+	items := []ListProjectBoardsRow{}
 	for rows.Next() {
-		var i Board
+		var i ListProjectBoardsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
 			&i.TemplateID,
 			&i.Name,
 			&i.Description,
-			&i.Order,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.SortOrder,
+			&i.PriorityType,
+			&i.EstimationUnit,
+			&i.SwimlaneGroupBy,
+			&i.IsDefault,
 		); err != nil {
 			return nil, err
 		}
@@ -407,38 +528,75 @@ const updateBoard = `-- name: UpdateBoard :one
 UPDATE boards
 SET name        = COALESCE($1, name),
     description = COALESCE($2, description),
-    "order"     = COALESCE($3, "order"),
-    updated_at  = NOW()
-WHERE id = $4
-RETURNING id, project_id, template_id, name, description, "order", created_at, updated_at
+    sort_order  = COALESCE($3, sort_order),
+    priority_type    = COALESCE($4, priority_type),
+    estimation_unit  = COALESCE($5, estimation_unit),
+    swimlane_group_by = COALESCE($6, swimlane_group_by)
+WHERE id = $7
+RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
 `
 
 type UpdateBoardParams struct {
-	Name        sql.NullString `json:"name"`
-	Description sql.NullString `json:"description"`
-	Order       sql.NullInt16  `json:"order"`
-	ID          uuid.UUID      `json:"id"`
+	Name            sql.NullString `json:"name"`
+	Description     sql.NullString `json:"description"`
+	SortOrder       sql.NullInt16  `json:"sort_order"`
+	PriorityType    sql.NullString `json:"priority_type"`
+	EstimationUnit  sql.NullString `json:"estimation_unit"`
+	SwimlaneGroupBy sql.NullString `json:"swimlane_group_by"`
+	ID              uuid.UUID      `json:"id"`
 }
 
-func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board, error) {
+type UpdateBoardRow struct {
+	ID              uuid.UUID      `json:"id"`
+	ProjectID       uuid.NullUUID  `json:"project_id"`
+	TemplateID      uuid.NullUUID  `json:"template_id"`
+	Name            string         `json:"name"`
+	Description     sql.NullString `json:"description"`
+	SortOrder       int16          `json:"sort_order"`
+	PriorityType    string         `json:"priority_type"`
+	EstimationUnit  string         `json:"estimation_unit"`
+	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	IsDefault       bool           `json:"is_default"`
+}
+
+func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (UpdateBoardRow, error) {
 	row := q.db.QueryRowContext(ctx, updateBoard,
 		arg.Name,
 		arg.Description,
-		arg.Order,
+		arg.SortOrder,
+		arg.PriorityType,
+		arg.EstimationUnit,
+		arg.SwimlaneGroupBy,
 		arg.ID,
 	)
-	var i Board
+	var i UpdateBoardRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
 		&i.TemplateID,
 		&i.Name,
 		&i.Description,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.SortOrder,
+		&i.PriorityType,
+		&i.EstimationUnit,
+		&i.SwimlaneGroupBy,
+		&i.IsDefault,
 	)
 	return i, err
+}
+
+const updateBoardOrder = `-- name: UpdateBoardOrder :exec
+UPDATE boards SET sort_order = $2 WHERE id = $1
+`
+
+type UpdateBoardOrderParams struct {
+	ID        uuid.UUID `json:"id"`
+	SortOrder int16     `json:"sort_order"`
+}
+
+func (q *Queries) UpdateBoardOrder(ctx context.Context, arg UpdateBoardOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateBoardOrder, arg.ID, arg.SortOrder)
+	return err
 }
 
 const updateColumn = `-- name: UpdateColumn :one
@@ -446,17 +604,16 @@ UPDATE columns
 SET name        = COALESCE($1, name),
     system_type = COALESCE($2, system_type),
     wip_limit   = COALESCE($3, wip_limit),
-    "order"     = COALESCE($4, "order"),
-    updated_at  = NOW()
+    sort_order  = COALESCE($4, sort_order)
 WHERE id = $5
-RETURNING id, board_id, name, system_type, wip_limit, "order", created_at, updated_at, is_sprint_backlog
+RETURNING id, board_id, name, system_type, wip_limit, sort_order, is_locked, note
 `
 
 type UpdateColumnParams struct {
 	Name       sql.NullString `json:"name"`
 	SystemType sql.NullString `json:"system_type"`
 	WipLimit   sql.NullInt16  `json:"wip_limit"`
-	Order      sql.NullInt16  `json:"order"`
+	SortOrder  sql.NullInt16  `json:"sort_order"`
 	ID         uuid.UUID      `json:"id"`
 }
 
@@ -465,7 +622,7 @@ func (q *Queries) UpdateColumn(ctx context.Context, arg UpdateColumnParams) (Col
 		arg.Name,
 		arg.SystemType,
 		arg.WipLimit,
-		arg.Order,
+		arg.SortOrder,
 		arg.ID,
 	)
 	var i Column
@@ -475,20 +632,32 @@ func (q *Queries) UpdateColumn(ctx context.Context, arg UpdateColumnParams) (Col
 		&i.Name,
 		&i.SystemType,
 		&i.WipLimit,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.IsSprintBacklog,
+		&i.SortOrder,
+		&i.IsLocked,
+		&i.Note,
 	)
 	return i, err
 }
 
+const updateColumnOrder = `-- name: UpdateColumnOrder :exec
+UPDATE columns SET sort_order = $2 WHERE id = $1
+`
+
+type UpdateColumnOrderParams struct {
+	ID        uuid.UUID `json:"id"`
+	SortOrder int16     `json:"sort_order"`
+}
+
+func (q *Queries) UpdateColumnOrder(ctx context.Context, arg UpdateColumnOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateColumnOrder, arg.ID, arg.SortOrder)
+	return err
+}
+
 const updateNote = `-- name: UpdateNote :one
 UPDATE notes
-SET content    = COALESCE($1, content),
-    updated_at = NOW()
+SET content = COALESCE($1, content)
 WHERE id = $2
-RETURNING id, column_id, swimlane_id, content, created_at, updated_at
+RETURNING id, column_id, swimlane_id, content
 `
 
 type UpdateNoteParams struct {
@@ -504,8 +673,6 @@ func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, e
 		&i.ColumnID,
 		&i.SwimlaneID,
 		&i.Content,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -514,24 +681,23 @@ const updateSwimlane = `-- name: UpdateSwimlane :one
 UPDATE swimlanes
 SET name       = COALESCE($1, name),
     wip_limit  = COALESCE($2, wip_limit),
-    "order"    = COALESCE($3, "order"),
-    updated_at = NOW()
+    sort_order = COALESCE($3, sort_order)
 WHERE id = $4
-RETURNING id, board_id, name, wip_limit, "order", created_at, updated_at, source_type, custom_field_id, value_mappings
+RETURNING id, board_id, name, wip_limit, sort_order, note
 `
 
 type UpdateSwimlaneParams struct {
-	Name     sql.NullString `json:"name"`
-	WipLimit sql.NullInt16  `json:"wip_limit"`
-	Order    sql.NullInt16  `json:"order"`
-	ID       uuid.UUID      `json:"id"`
+	Name      sql.NullString `json:"name"`
+	WipLimit  sql.NullInt16  `json:"wip_limit"`
+	SortOrder sql.NullInt16  `json:"sort_order"`
+	ID        uuid.UUID      `json:"id"`
 }
 
 func (q *Queries) UpdateSwimlane(ctx context.Context, arg UpdateSwimlaneParams) (Swimlane, error) {
 	row := q.db.QueryRowContext(ctx, updateSwimlane,
 		arg.Name,
 		arg.WipLimit,
-		arg.Order,
+		arg.SortOrder,
 		arg.ID,
 	)
 	var i Swimlane
@@ -540,12 +706,22 @@ func (q *Queries) UpdateSwimlane(ctx context.Context, arg UpdateSwimlaneParams) 
 		&i.BoardID,
 		&i.Name,
 		&i.WipLimit,
-		&i.Order,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.SourceType,
-		&i.CustomFieldID,
-		&i.ValueMappings,
+		&i.SortOrder,
+		&i.Note,
 	)
 	return i, err
+}
+
+const updateSwimlaneOrder = `-- name: UpdateSwimlaneOrder :exec
+UPDATE swimlanes SET sort_order = $2 WHERE id = $1
+`
+
+type UpdateSwimlaneOrderParams struct {
+	ID        uuid.UUID `json:"id"`
+	SortOrder int16     `json:"sort_order"`
+}
+
+func (q *Queries) UpdateSwimlaneOrder(ctx context.Context, arg UpdateSwimlaneOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateSwimlaneOrder, arg.ID, arg.SortOrder)
+	return err
 }

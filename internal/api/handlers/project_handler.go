@@ -13,11 +13,60 @@ import (
 )
 
 type ProjectHandler struct {
-	service *services.ProjectService
+	service     *services.ProjectService
+	templateSvc *services.TemplateService
 }
 
-func NewProjectHandler(service *services.ProjectService) *ProjectHandler {
-	return &ProjectHandler{service: service}
+func NewProjectHandler(service *services.ProjectService, templateSvc *services.TemplateService) *ProjectHandler {
+	return &ProjectHandler{service: service, templateSvc: templateSvc}
+}
+
+func (h *ProjectHandler) GetReferences(c *gin.Context) {
+	refs, err := h.templateSvc.GetReferences(c.Request.Context())
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось загрузить справочники")
+		return
+	}
+
+	resp := dto.ProjectReferencesResponse{
+		ColumnSystemTypes:    make([]dto.ReferenceColumnType, 0, len(refs.ColumnSystemTypes)),
+		FieldTypes:           make([]dto.ReferenceFieldType, 0, len(refs.FieldTypes)),
+		EstimationUnits:      make([]dto.ReferenceAvailable, 0, len(refs.EstimationUnits)),
+		PriorityTypeOptions:  make([]dto.ReferencePriorityType, 0, len(refs.PriorityTypeOptions)),
+		PermissionAreas:      make([]dto.ReferencePermissionArea, 0, len(refs.PermissionAreas)),
+		AccessLevels:         make([]dto.ReferenceKeyName, 0, len(refs.AccessLevels)),
+	}
+
+	for _, ct := range refs.ColumnSystemTypes {
+		resp.ColumnSystemTypes = append(resp.ColumnSystemTypes, dto.ReferenceColumnType{
+			Key: ct.Key, Name: ct.Name, Description: ct.Description,
+		})
+	}
+	for _, ft := range refs.FieldTypes {
+		resp.FieldTypes = append(resp.FieldTypes, dto.ReferenceFieldType{
+			Key: ft.Key, Name: ft.Name, AvailableFor: ft.AvailableFor,
+		})
+	}
+	for _, eu := range refs.EstimationUnits {
+		resp.EstimationUnits = append(resp.EstimationUnits, dto.ReferenceAvailable{
+			Key: eu.Key, Name: eu.Name, AvailableFor: eu.AvailableFor,
+		})
+	}
+	for _, pt := range refs.PriorityTypeOptions {
+		resp.PriorityTypeOptions = append(resp.PriorityTypeOptions, dto.ReferencePriorityType{
+			Key: pt.Key, Name: pt.Name, AvailableFor: pt.AvailableFor, DefaultValues: pt.DefaultValues,
+		})
+	}
+	for _, a := range refs.PermissionAreas {
+		resp.PermissionAreas = append(resp.PermissionAreas, dto.ReferencePermissionArea{
+			Area: a.Area, Name: a.Name, Description: a.Description, AvailableFor: a.AvailableFor,
+		})
+	}
+	for _, l := range refs.AccessLevels {
+		resp.AccessLevels = append(resp.AccessLevels, dto.ReferenceKeyName{Key: l.Key, Name: l.Name})
+	}
+
+	writeSuccess(c, resp)
 }
 
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
@@ -148,6 +197,14 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	}
 	if req.Status != nil {
 		p.Status = domain.ProjectStatus(*req.Status)
+	}
+	if req.OwnerID != nil {
+		ownerID, err := uuid.Parse(*req.OwnerID)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный owner_id")
+			return
+		}
+		p.OwnerID = ownerID
 	}
 
 	updated, err := h.service.UpdateProject(c.Request.Context(), p)

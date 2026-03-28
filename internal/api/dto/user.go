@@ -9,8 +9,8 @@ type UserResponse struct {
 	Position                  *string `json:"position,omitempty"`
 	OnVacation                bool    `json:"on_vacation"`
 	IsSick                    bool    `json:"is_sick"`
-	AlternativeContactChannel *string `json:"alternative_contact_channel"`
-	AlternativeContactInfo    *string `json:"alternative_contact_info"`
+	AlternativeContactChannel *string `json:"alt_contact_channel,omitempty"`
+	AlternativeContactInfo    *string `json:"alt_contact_info,omitempty"`
 }
 
 type UpdateUserProfileRequest struct {
@@ -19,6 +19,6 @@ type UpdateUserProfileRequest struct {
 	Position                  *string `json:"position"`
 	OnVacation                *bool   `json:"on_vacation"`
 	IsSick                    *bool   `json:"is_sick"`
-	AlternativeContactChannel *string `json:"alternative_contact_channel"`
-	AlternativeContactInfo    *string `json:"alternative_contact_info"`
+	AlternativeContactChannel *string `json:"alt_contact_channel"`
+	AlternativeContactInfo    *string `json:"alt_contact_info"`
 }

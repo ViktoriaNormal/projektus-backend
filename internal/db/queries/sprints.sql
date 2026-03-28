@@ -3,15 +3,15 @@
 -- name: CreateSprint :one
 INSERT INTO sprints (project_id, name, goal, start_date, end_date, status)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING *;
+RETURNING id, project_id, name, goal, start_date, end_date, status, created_at, updated_at;
 
 -- name: GetSprintByID :one
-SELECT *
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
 FROM sprints
 WHERE id = $1;
 
 -- name: GetProjectSprints :many
-SELECT *
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
 FROM sprints
 WHERE project_id = $1
 ORDER BY start_date DESC;
@@ -25,14 +25,14 @@ SET name       = COALESCE(sqlc.narg('name'), name),
     status     = COALESCE(sqlc.narg('status'), status),
     updated_at = NOW()
 WHERE id = sqlc.arg('id')
-RETURNING *;
+RETURNING id, project_id, name, goal, start_date, end_date, status, created_at, updated_at;
 
 -- name: DeleteSprint :exec
 DELETE FROM sprints
 WHERE id = $1;
 
 -- name: GetActiveSprint :one
-SELECT *
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
 FROM sprints
 WHERE project_id = $1
   AND status = 'active'
@@ -46,4 +46,3 @@ SET status = CASE
                  ELSE 'active'
              END,
     updated_at = NOW();
-

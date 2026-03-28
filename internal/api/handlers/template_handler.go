@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -30,42 +31,34 @@ func (h *TemplateHandler) GetReferences(c *gin.Context) {
 
 	resp := dto.ReferencesResponse{
 		ColumnSystemTypes:    make([]dto.ReferenceColumnType, 0, len(refs.ColumnSystemTypes)),
-		TaskStatusTypes:      make([]dto.ReferenceTaskStatusType, 0, len(refs.TaskStatusTypes)),
-		FieldTypes:           make([]dto.ReferenceKeyName, 0, len(refs.FieldTypes)),
+		FieldTypes:           make([]dto.ReferenceFieldType, 0, len(refs.FieldTypes)),
 		EstimationUnits:      make([]dto.ReferenceAvailable, 0, len(refs.EstimationUnits)),
-		SwimlaneGroupOptions:        make([]dto.ReferenceAvailable, 0, len(refs.SwimlaneGroupOptions)),
-		SwimlaneGroupableFieldTypes: []string{"select", "multiselect", "checkbox", "user", "sprint", "tags"},
 		PriorityTypeOptions:         make([]dto.ReferencePriorityType, 0, len(refs.PriorityTypeOptions)),
 		SystemTaskFields:     make([]dto.ReferenceSystemField, 0, len(refs.SystemTaskFields)),
 	}
 
 	for _, ct := range refs.ColumnSystemTypes {
 		resp.ColumnSystemTypes = append(resp.ColumnSystemTypes, dto.ReferenceColumnType{
-			Key: ct.Key, Name: ct.Name, Description: ct.Description, Order: ct.Order,
-		})
-	}
-	for _, st := range refs.TaskStatusTypes {
-		resp.TaskStatusTypes = append(resp.TaskStatusTypes, dto.ReferenceTaskStatusType{
-			Key: st.Key, Name: st.Name, Description: st.Description, IsColumnType: st.IsColumnType,
+			Key: ct.Key, Name: ct.Name, Description: ct.Description,
 		})
 	}
 	for _, ft := range refs.FieldTypes {
-		resp.FieldTypes = append(resp.FieldTypes, dto.ReferenceKeyName{Key: ft.Key, Name: ft.Name})
+		resp.FieldTypes = append(resp.FieldTypes, dto.ReferenceFieldType{
+			Key: ft.Key, Name: ft.Name, AvailableFor: ft.AvailableFor, AllowedScopes: ft.AllowedScopes,
+		})
 	}
 	for _, eu := range refs.EstimationUnits {
 		resp.EstimationUnits = append(resp.EstimationUnits, dto.ReferenceAvailable{
 			Key: eu.Key, Name: eu.Name, AvailableFor: eu.AvailableFor,
 		})
 	}
-	for _, so := range refs.SwimlaneGroupOptions {
-		resp.SwimlaneGroupOptions = append(resp.SwimlaneGroupOptions, dto.ReferenceAvailable{
-			Key: so.Key, Name: so.Name, AvailableFor: so.AvailableFor,
-		})
-	}
 	for _, pt := range refs.PriorityTypeOptions {
 		resp.PriorityTypeOptions = append(resp.PriorityTypeOptions, dto.ReferencePriorityType{
 			Key: pt.Key, Name: pt.Name, AvailableFor: pt.AvailableFor, DefaultValues: pt.DefaultValues,
 		})
+	}
+	for _, ps := range refs.ProjectStatuses {
+		resp.ProjectStatuses = append(resp.ProjectStatuses, dto.ReferenceKeyName{Key: ps.Key, Name: ps.Name})
 	}
 	for _, sf := range refs.SystemTaskFields {
 		resp.SystemTaskFields = append(resp.SystemTaskFields, dto.ReferenceSystemField{
@@ -239,21 +232,22 @@ func (h *TemplateHandler) UpdateBoard(c *gin.Context) {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var raw map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
+	var req dto.UpdateTemplateBoardRequest
+	rawBytes, _ := json.Marshal(raw)
+	_ = json.Unmarshal(rawBytes, &req)
 
 	// Detect explicit null for swimlaneGroupBy
 	clearSwimlaneGroup := false
 	var swimlaneGroupBy *string
-	if req.SwimlaneGroupBy != nil {
-		if *req.SwimlaneGroupBy == "" {
-			clearSwimlaneGroup = true
-		} else {
-			swimlaneGroupBy = req.SwimlaneGroupBy
-		}
+	if rawVal, exists := raw["swimlane_group_by"]; exists && string(rawVal) == "null" {
+		clearSwimlaneGroup = true
+	} else if req.SwimlaneGroupBy != nil {
+		swimlaneGroupBy = req.SwimlaneGroupBy
 	}
 
 	board, err := h.service.UpdateBoard(c.Request.Context(), templateID, boardID, req.Name, req.Description, req.IsDefault, req.Order, req.PriorityType, req.EstimationUnit, swimlaneGroupBy, clearSwimlaneGroup)
@@ -288,8 +282,12 @@ func (h *TemplateHandler) DeleteBoard(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
 			return
 		}
-		if strings.Contains(err.Error(), "LAST_BOARD") {
-			writeError(c, http.StatusBadRequest, "LAST_BOARD", "Нельзя удалить единственную доску")
+		if strings.Contains(err.Error(), "DEFAULT_BOARD_DELETE") {
+			writeError(c, http.StatusBadRequest, "DEFAULT_BOARD_DELETE", "Нельзя удалить доску по умолчанию")
+			return
+		}
+		if strings.Contains(err.Error(), "LAST_BOARD_DELETE") {
+			writeError(c, http.StatusBadRequest, "LAST_BOARD_DELETE", "Нельзя удалить единственную доску")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить доску")
@@ -355,10 +353,6 @@ func (h *TemplateHandler) CreateColumn(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
 			return
 		}
-		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
-			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
-			return
-		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать колонку")
 		return
 	}
@@ -384,13 +378,27 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardColumnRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var raw map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
 
-	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, req.WipLimit, req.Note)
+	var req dto.UpdateTemplateBoardColumnRequest
+	rawBytes, _ := json.Marshal(raw)
+	_ = json.Unmarshal(rawBytes, &req)
+
+	// Различаем "wip_limit не передан" vs "wip_limit: null"
+	clearWipLimit := false
+	if rawVal, exists := raw["wip_limit"]; exists && string(rawVal) == "null" {
+		clearWipLimit = true
+	}
+	clearNote := false
+	if rawVal, exists := raw["note"]; exists && string(rawVal) == "null" {
+		clearNote = true
+	}
+
+	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, req.WipLimit, clearWipLimit, req.Note, clearNote)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Колонка не найдена")
@@ -491,6 +499,38 @@ func (h *TemplateHandler) ReorderColumns(c *gin.Context) {
 	writeSuccess(c, nil)
 }
 
+// POST /v1/admin/project-templates/:templateId/boards/:boardId/swimlanes
+func (h *TemplateHandler) CreateSwimlane(c *gin.Context) {
+	templateID, err := uuid.Parse(c.Param("templateId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+		return
+	}
+	boardID, err := uuid.Parse(c.Param("boardId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+		return
+	}
+
+	var req dto.CreateTemplateBoardSwimlaneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+		return
+	}
+
+	sw, err := h.service.CreateSwimlane(c.Request.Context(), templateID, boardID, req.Name, req.WipLimit, req.Order)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать дорожку")
+		return
+	}
+
+	writeSuccess(c, mapSwimlaneToResponse(sw))
+}
+
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId/swimlanes/:swimlaneId
 func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 	templateID, err := uuid.Parse(c.Param("templateId"))
@@ -509,13 +549,25 @@ func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardSwimlaneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var raw map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
+	var req dto.UpdateTemplateBoardSwimlaneRequest
+	rawBytes, _ := json.Marshal(raw)
+	_ = json.Unmarshal(rawBytes, &req)
 
-	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, req.WipLimit, req.Note)
+	clearWipLimit := false
+	if rawVal, exists := raw["wip_limit"]; exists && string(rawVal) == "null" {
+		clearWipLimit = true
+	}
+	clearNote := false
+	if rawVal, exists := raw["note"]; exists && string(rawVal) == "null" {
+		clearNote = true
+	}
+
+	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, req.WipLimit, clearWipLimit, req.Note, clearNote)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")
@@ -591,55 +643,6 @@ func (h *TemplateHandler) ReorderSwimlanes(c *gin.Context) {
 	writeSuccess(c, nil)
 }
 
-// PUT /v1/admin/project-templates/:templateId/boards/:boardId/priority-values
-func (h *TemplateHandler) ReplacePriorityValues(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
-		return
-	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
-		return
-	}
-
-	var items []dto.PriorityValueItem
-	if err := c.ShouldBindJSON(&items); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
-		return
-	}
-
-	values := make([]struct {
-		Value string
-		Order int32
-	}, len(items))
-	for i, item := range items {
-		values[i] = struct {
-			Value string
-			Order int32
-		}{Value: item.Value, Order: item.Order}
-	}
-
-	pvs, err := h.service.ReplacePriorityValues(c.Request.Context(), templateID, boardID, values)
-	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить значения приоритетов")
-		return
-	}
-
-	resp := make([]dto.TemplateBoardPriorityValueResponse, 0, len(pvs))
-	for _, pv := range pvs {
-		resp = append(resp, dto.TemplateBoardPriorityValueResponse{
-			ID: pv.ID, Value: pv.Value, Order: pv.Order,
-		})
-	}
-	writeSuccess(c, resp)
-}
-
 // POST /v1/admin/project-templates/:templateId/boards/:boardId/custom-fields
 func (h *TemplateHandler) CreateCustomField(c *gin.Context) {
 	templateID, err := uuid.Parse(c.Param("templateId"))
@@ -663,6 +666,14 @@ func (h *TemplateHandler) CreateCustomField(c *gin.Context) {
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
+			return
+		}
+		if err == domain.ErrInvalidFieldType {
+			writeError(c, http.StatusBadRequest, "INVALID_FIELD_TYPE", "Тип поля недопустим для данного типа проекта")
+			return
+		}
+		if err == domain.ErrConflict {
+			writeError(c, http.StatusConflict, "DUPLICATE_NAME", "Поле с таким именем уже существует")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать поле")
@@ -698,8 +709,16 @@ func (h *TemplateHandler) UpdateCustomField(c *gin.Context) {
 
 	field, err := h.service.UpdateCustomField(c.Request.Context(), templateID, boardID, fieldID, req.Name, req.IsRequired, req.Options)
 	if err != nil {
+		if err == domain.ErrInvalidInput {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+			return
+		}
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
+			return
+		}
+		if err == domain.ErrSystemField {
+			writeError(c, http.StatusBadRequest, "SYSTEM_FIELD", "Нельзя изменять системное поле")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить поле")
@@ -789,6 +808,14 @@ func (h *TemplateHandler) CreateProjectParam(c *gin.Context) {
 	}
 	p, err := h.service.CreateProjectParam(c.Request.Context(), templateID, req.Name, req.FieldType, req.IsRequired, req.Order, req.Options)
 	if err != nil {
+		if err == domain.ErrInvalidFieldType {
+			writeError(c, http.StatusBadRequest, "INVALID_FIELD_TYPE", "Тип поля недопустим для параметров проекта")
+			return
+		}
+		if err == domain.ErrConflict {
+			writeError(c, http.StatusConflict, "DUPLICATE_NAME", "Параметр с таким именем уже существует")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать параметр")
 		return
 	}
@@ -813,6 +840,10 @@ func (h *TemplateHandler) UpdateProjectParam(c *gin.Context) {
 	}
 	p, err := h.service.UpdateProjectParam(c.Request.Context(), templateID, paramID, req.Name, req.IsRequired, req.Options)
 	if err != nil {
+		if err == domain.ErrInvalidInput {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+			return
+		}
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
 			return
@@ -886,6 +917,10 @@ func (h *TemplateHandler) CreateRole(c *gin.Context) {
 	}
 	role, err := h.service.CreateRole(c.Request.Context(), templateID, req.Name, req.Description, perms)
 	if err != nil {
+		if err == domain.ErrInvalidInput {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать роль")
 		return
 	}
@@ -917,8 +952,16 @@ func (h *TemplateHandler) UpdateRole(c *gin.Context) {
 	}
 	role, err := h.service.UpdateRole(c.Request.Context(), templateID, roleID, req.Name, req.Description, perms)
 	if err != nil {
+		if err == domain.ErrInvalidInput {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+			return
+		}
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
+			return
+		}
+		if err == domain.ErrTemplateAdminRole {
+			writeError(c, http.StatusBadRequest, "TEMPLATE_ADMIN_ROLE", "Нельзя изменять права доступа роли администратора проекта в шаблоне")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить роль")
@@ -943,29 +986,11 @@ func (h *TemplateHandler) DeleteRole(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
 			return
 		}
+		if err == domain.ErrTemplateAdminRole {
+			writeError(c, http.StatusBadRequest, "TEMPLATE_ADMIN_ROLE", "Нельзя удалить роль администратора проекта из шаблона")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить роль")
-		return
-	}
-	writeSuccess(c, nil)
-}
-
-func (h *TemplateHandler) ReorderRoles(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
-		return
-	}
-	var req dto.ReorderRolesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
-		return
-	}
-	orders := make(map[uuid.UUID]int32)
-	for _, o := range req.Orders {
-		orders[o.RoleID] = o.Order
-	}
-	if err := h.service.ReorderRoles(c.Request.Context(), templateID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок")
 		return
 	}
 	writeSuccess(c, nil)
@@ -991,22 +1016,20 @@ func mapTemplateToResponse(tmpl *domain.ProjectTemplate, data services.TemplateF
 		roleResp = append(roleResp, mapRoleToResponse(r))
 	}
 	return dto.ProjectTemplateResponse{
-		ID:                  tmpl.ID,
-		Name:                tmpl.Name,
-		Description:         desc,
-		ProjectType:         string(tmpl.Type),
-		CreatedAt:           tmpl.CreatedAt,
-		UpdatedAt:           tmpl.UpdatedAt,
-		Boards:              boardResp,
-		CustomProjectParams: paramResp,
-		Roles:               roleResp,
+		ID:          tmpl.ID,
+		Name:        tmpl.Name,
+		Description: desc,
+		ProjectType: string(tmpl.Type),
+		Boards:      boardResp,
+		Params:      paramResp,
+		Roles:       roleResp,
 	}
 }
 
 func mapProjectParamToResponse(p domain.TemplateProjectParam) dto.TemplateProjectParamResponse {
 	return dto.TemplateProjectParamResponse{
-		ID: p.ID, Name: p.Name, FieldType: p.FieldType, IsSystem: false,
-		IsRequired: p.IsRequired, Order: p.Order, Options: p.Options,
+		ID: p.ID, Name: p.Name, Description: p.Description, FieldType: p.FieldType,
+		IsSystem: p.IsSystem, IsRequired: p.IsRequired, Order: p.Order, Options: p.Options,
 	}
 }
 
@@ -1016,8 +1039,8 @@ func mapRoleToResponse(r domain.TemplateRole) dto.TemplateRoleResponse {
 		perms = append(perms, dto.TemplateRolePermissionResponse{Area: p.Area, Access: p.Access})
 	}
 	return dto.TemplateRoleResponse{
-		ID: r.ID, Name: r.Name, Description: r.Description, IsDefault: r.IsDefault,
-		Order: r.Order, Permissions: perms,
+		ID: r.ID, Name: r.Name, Description: r.Description,
+		IsAdmin: r.IsAdmin, Permissions: perms,
 	}
 }
 
@@ -1037,13 +1060,6 @@ func mapBoardToResponse(b domain.TemplateBoard) dto.TemplateBoardResponse {
 		swimlanes = append(swimlanes, mapSwimlaneToResponse(sw))
 	}
 
-	pvs := make([]dto.TemplateBoardPriorityValueResponse, 0, len(b.PriorityValues))
-	for _, pv := range b.PriorityValues {
-		pvs = append(pvs, dto.TemplateBoardPriorityValueResponse{
-			ID: pv.ID, Value: pv.Value, Order: pv.Order,
-		})
-	}
-
 	fields := make([]dto.TemplateBoardCustomFieldResponse, 0, len(b.CustomFields))
 	for _, f := range b.CustomFields {
 		fields = append(fields, mapCustomFieldToResponse(f))
@@ -1060,8 +1076,7 @@ func mapBoardToResponse(b domain.TemplateBoard) dto.TemplateBoardResponse {
 		SwimlaneGroupBy: sgb,
 		Columns:         columns,
 		Swimlanes:       swimlanes,
-		PriorityValues:  pvs,
-		CustomFields:    fields,
+		Fields:          fields,
 	}
 }
 
@@ -1089,12 +1104,13 @@ func mapSwimlaneToResponse(sw domain.TemplateBoardSwimlane) dto.TemplateBoardSwi
 
 func mapCustomFieldToResponse(f domain.TemplateBoardCustomField) dto.TemplateBoardCustomFieldResponse {
 	return dto.TemplateBoardCustomFieldResponse{
-		ID:         f.ID,
-		Name:       f.Name,
-		FieldType:  f.FieldType,
-		IsSystem:   f.IsSystem,
-		IsRequired: f.IsRequired,
-		Order:      f.Order,
-		Options:    f.Options,
+		ID:          f.ID,
+		Name:        f.Name,
+		Description: f.Description,
+		FieldType:   f.FieldType,
+		IsSystem:    f.IsSystem,
+		IsRequired:  f.IsRequired,
+		Order:       f.Order,
+		Options:     f.Options,
 	}
 }

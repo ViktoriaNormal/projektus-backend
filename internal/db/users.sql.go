@@ -15,7 +15,8 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, full_name, avatar_url)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info
+RETURNING id, username, email, password_hash, full_name, avatar_url, position,
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
 `
 
 type CreateUserParams struct {
@@ -42,15 +43,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.FullName,
 		&i.AvatarUrl,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.Position,
+		&i.IsActive,
 		&i.OnVacation,
 		&i.IsSick,
-		&i.AlternativeContactChannel,
-		&i.AlternativeContactInfo,
+		&i.AltContactChannel,
+		&i.AltContactInfo,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -92,7 +91,9 @@ func (q *Queries) GetLastNPasswordHashes(ctx context.Context, arg GetLastNPasswo
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+FROM users
 WHERE email = $1
 `
 
@@ -106,21 +107,21 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordHash,
 		&i.FullName,
 		&i.AvatarUrl,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.Position,
+		&i.IsActive,
 		&i.OnVacation,
 		&i.IsSick,
-		&i.AlternativeContactChannel,
-		&i.AlternativeContactInfo,
+		&i.AltContactChannel,
+		&i.AltContactInfo,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+FROM users
 WHERE id = $1
 `
 
@@ -134,21 +135,21 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.PasswordHash,
 		&i.FullName,
 		&i.AvatarUrl,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.Position,
+		&i.IsActive,
 		&i.OnVacation,
 		&i.IsSick,
-		&i.AlternativeContactChannel,
-		&i.AlternativeContactInfo,
+		&i.AltContactChannel,
+		&i.AltContactInfo,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info FROM users
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+FROM users
 WHERE username = $1
 `
 
@@ -162,15 +163,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.PasswordHash,
 		&i.FullName,
 		&i.AvatarUrl,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.Position,
+		&i.IsActive,
 		&i.OnVacation,
 		&i.IsSick,
-		&i.AlternativeContactChannel,
-		&i.AlternativeContactInfo,
+		&i.AltContactChannel,
+		&i.AltContactInfo,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -219,7 +218,8 @@ func (q *Queries) ListAllUserIDs(ctx context.Context) ([]uuid.UUID, error) {
 }
 
 const searchUsers = `-- name: SearchUsers :many
-SELECT id, username, email, password_hash, full_name, avatar_url, is_active, created_at, updated_at, deleted_at, position, on_vacation, is_sick, alternative_contact_channel, alternative_contact_info
+SELECT id, username, email, password_hash, full_name, avatar_url, position,
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
 FROM users
 WHERE deleted_at IS NULL
   AND ($1::text IS NULL OR $1::text = '' OR (
@@ -227,7 +227,7 @@ WHERE deleted_at IS NULL
    OR email ILIKE '%' || $1 || '%'
    OR full_name ILIKE '%' || $1 || '%'
    OR position ILIKE '%' || $1 || '%'
-   OR alternative_contact_info ILIKE '%' || $1 || '%'))
+   OR alt_contact_info ILIKE '%' || $1 || '%'))
 ORDER BY full_name
 LIMIT $2 OFFSET $3
 `
@@ -254,15 +254,13 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 			&i.PasswordHash,
 			&i.FullName,
 			&i.AvatarUrl,
-			&i.IsActive,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
 			&i.Position,
+			&i.IsActive,
 			&i.OnVacation,
 			&i.IsSick,
-			&i.AlternativeContactChannel,
-			&i.AlternativeContactInfo,
+			&i.AltContactChannel,
+			&i.AltContactInfo,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -279,8 +277,7 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 
 const updateUserAvatar = `-- name: UpdateUserAvatar :exec
 UPDATE users
-SET avatar_url = $2,
-    updated_at = NOW()
+SET avatar_url = $2
 WHERE id = $1
 `
 
@@ -296,8 +293,7 @@ func (q *Queries) UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarPara
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
 UPDATE users
-SET password_hash = $2,
-    updated_at    = NOW()
+SET password_hash = $2
 WHERE id = $1
 `
 
@@ -318,21 +314,20 @@ SET full_name = $2,
     position  = $4,
     on_vacation = $5,
     is_sick     = $6,
-    alternative_contact_channel = $7,
-    alternative_contact_info    = $8,
-    updated_at = NOW()
+    alt_contact_channel = $7,
+    alt_contact_info    = $8
 WHERE id = $1
 `
 
 type UpdateUserProfileParams struct {
-	ID                        uuid.UUID      `json:"id"`
-	FullName                  string         `json:"full_name"`
-	Email                     string         `json:"email"`
-	Position                  sql.NullString `json:"position"`
-	OnVacation                bool           `json:"on_vacation"`
-	IsSick                    bool           `json:"is_sick"`
-	AlternativeContactChannel sql.NullString `json:"alternative_contact_channel"`
-	AlternativeContactInfo    sql.NullString `json:"alternative_contact_info"`
+	ID                uuid.UUID      `json:"id"`
+	FullName          string         `json:"full_name"`
+	Email             string         `json:"email"`
+	Position          sql.NullString `json:"position"`
+	OnVacation        bool           `json:"on_vacation"`
+	IsSick            bool           `json:"is_sick"`
+	AltContactChannel sql.NullString `json:"alt_contact_channel"`
+	AltContactInfo    sql.NullString `json:"alt_contact_info"`
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error {
@@ -343,8 +338,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.Position,
 		arg.OnVacation,
 		arg.IsSick,
-		arg.AlternativeContactChannel,
-		arg.AlternativeContactInfo,
+		arg.AltContactChannel,
+		arg.AltContactInfo,
 	)
 	return err
 }

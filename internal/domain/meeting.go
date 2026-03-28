@@ -50,9 +50,6 @@ type Meeting struct {
 	StartTime   time.Time     `json:"start_time"`
 	EndTime     time.Time     `json:"end_time"`
 	CreatedBy   string        `json:"created_by"`
-	CreatedAt   time.Time     `json:"-"`
-	UpdatedAt   time.Time     `json:"-"`
-	CanceledAt  *time.Time    `json:"-"`
 }
 
 type MeetingParticipant struct {
@@ -60,6 +57,4 @@ type MeetingParticipant struct {
 	MeetingID string            `json:"meeting_id"`
 	UserID    string            `json:"user_id"`
 	Status    ParticipantStatus `json:"status"`
-	CreatedAt time.Time         `json:"-"`
-	UpdatedAt time.Time         `json:"-"`
 }

@@ -7,16 +7,15 @@ package db
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 const addProjectMember = `-- name: AddProjectMember :one
-INSERT INTO project_members (project_id, user_id)
+INSERT INTO members (project_id, user_id)
 VALUES ($1, $2)
 ON CONFLICT (project_id, user_id) DO NOTHING
-RETURNING id, project_id, user_id, created_at, updated_at
+RETURNING id, project_id, user_id
 `
 
 type AddProjectMemberParams struct {
@@ -24,71 +23,45 @@ type AddProjectMemberParams struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
-func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberParams) (ProjectMember, error) {
+func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberParams) (Member, error) {
 	row := q.db.QueryRowContext(ctx, addProjectMember, arg.ProjectID, arg.UserID)
-	var i ProjectMember
-	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.UserID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	var i Member
+	err := row.Scan(&i.ID, &i.ProjectID, &i.UserID)
 	return i, err
 }
 
 const getProjectMember = `-- name: GetProjectMember :one
-SELECT pm.id,
-       pm.project_id,
-       pm.user_id,
-       pm.created_at,
-       pm.updated_at
-FROM project_members pm
-WHERE pm.id = $1
+SELECT m.id, m.project_id, m.user_id
+FROM members m
+WHERE m.id = $1
 `
 
-func (q *Queries) GetProjectMember(ctx context.Context, id uuid.UUID) (ProjectMember, error) {
+func (q *Queries) GetProjectMember(ctx context.Context, id uuid.UUID) (Member, error) {
 	row := q.db.QueryRowContext(ctx, getProjectMember, id)
-	var i ProjectMember
-	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.UserID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	var i Member
+	err := row.Scan(&i.ID, &i.ProjectID, &i.UserID)
 	return i, err
 }
 
 const listProjectMembers = `-- name: ListProjectMembers :many
 
-SELECT pm.id,
-       pm.project_id,
-       pm.user_id,
-       pm.created_at,
-       pm.updated_at
-FROM project_members pm
-WHERE pm.project_id = $1
-ORDER BY pm.created_at ASC
+SELECT m.id, m.project_id, m.user_id
+FROM members m
+WHERE m.project_id = $1
+ORDER BY m.id ASC
 `
 
 // Project members
-func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ProjectMember, error) {
+func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]Member, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectMembers, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProjectMember{}
+	items := []Member{}
 	for rows.Next() {
-		var i ProjectMember
-		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.UserID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
+		var i Member
+		if err := rows.Scan(&i.ID, &i.ProjectID, &i.UserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -103,15 +76,10 @@ func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) (
 }
 
 const listProjectMembersByUser = `-- name: ListProjectMembersByUser :many
-SELECT pm.id,
-       pm.project_id,
-       pm.user_id,
-       p.name AS project_name,
-       pm.created_at,
-       pm.updated_at
-FROM project_members pm
-JOIN projects p ON p.id = pm.project_id
-WHERE pm.user_id = $1
+SELECT m.id, m.project_id, m.user_id, p.name AS project_name
+FROM members m
+JOIN projects p ON p.id = m.project_id
+WHERE m.user_id = $1
 ORDER BY p.name
 `
 
@@ -120,8 +88,6 @@ type ListProjectMembersByUserRow struct {
 	ProjectID   uuid.UUID `json:"project_id"`
 	UserID      uuid.UUID `json:"user_id"`
 	ProjectName string    `json:"project_name"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (q *Queries) ListProjectMembersByUser(ctx context.Context, userID uuid.UUID) ([]ListProjectMembersByUserRow, error) {
@@ -138,8 +104,6 @@ func (q *Queries) ListProjectMembersByUser(ctx context.Context, userID uuid.UUID
 			&i.ProjectID,
 			&i.UserID,
 			&i.ProjectName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -155,7 +119,7 @@ func (q *Queries) ListProjectMembersByUser(ctx context.Context, userID uuid.UUID
 }
 
 const removeProjectMember = `-- name: RemoveProjectMember :exec
-DELETE FROM project_members
+DELETE FROM members
 WHERE id = $1
 `
 

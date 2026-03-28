@@ -25,10 +25,12 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required"`
 }
 
+// AuthResponse contains tokens and user info after successful authentication.
+// User is interface{} because the shape varies depending on context (e.g. admin vs regular user).
 type AuthResponse struct {
-	AccessToken  string        `json:"access_token"`
-	RefreshToken string        `json:"refresh_token"`
-	User         interface{}   `json:"user"`
+	AccessToken  string         `json:"access_token"`
+	RefreshToken string         `json:"refresh_token"`
+	User         interface{}    `json:"user"`
 	Roles        []RoleResponse `json:"roles,omitempty"`
 }
 
@@ -42,4 +44,3 @@ type APIResponse struct {
 	Data    interface{} `json:"data"`
 	Error   *APIError   `json:"error"`
 }
-

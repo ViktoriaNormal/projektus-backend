@@ -102,7 +102,6 @@ func (s *notificationService) SendEvent(ctx context.Context, eventType domain.Ev
 		}
 
 		if inEmail {
-			status := "pending"
 			if _, err := s.repo.CreateNotification(ctx, domain.Notification{
 				UserID:      uid,
 				EventType:   eventType,
@@ -110,7 +109,6 @@ func (s *notificationService) SendEvent(ctx context.Context, eventType domain.Ev
 				Title:       title,
 				Body:        bodyPtr,
 				PayloadJSON: payload,
-				EmailStatus: &status,
 			}); err != nil {
 				return err
 			}

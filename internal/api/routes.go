@@ -6,11 +6,11 @@ import (
 	"projektus-backend/config"
 	"projektus-backend/internal/api/handlers"
 	"projektus-backend/internal/api/middleware"
-	"projektus-backend/internal/domain"
+	"projektus-backend/internal/repositories"
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, notificationHandler *handlers.NotificationHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, commentHandler *handlers.CommentHandler, attachmentHandler *handlers.AttachmentHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, classOfServiceHandler *handlers.ClassOfServiceHandler, kanbanHandler *handlers.KanbanHandler, forecastHandler *handlers.ForecastHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, kanbanAnalyticsHandler *handlers.KanbanAnalyticsHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, notificationHandler *handlers.NotificationHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, projectRoleHandler *handlers.ProjectRoleHandler, projectParamHandler *handlers.ProjectParamHandler, tagHandler *handlers.TagHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	// Раздача статических файлов (аватары, вложения)
@@ -79,6 +79,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 		projects := v1.Group("/projects")
 		projects.Use(middleware.AuthMiddleware(cfg))
 		{
+			projects.GET("/references", projectHandler.GetReferences)
 			projects.GET("", projectHandler.ListProjects)
 			projects.POST("", projectHandler.CreateProject)
 			projects.GET("/:projectId", projectHandler.GetProject)
@@ -89,6 +90,19 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.POST("/:projectId/members", projectMemberHandler.AddMember)
 			projects.DELETE("/:projectId/members/:memberId", projectMemberHandler.RemoveMember)
 			projects.PATCH("/:projectId/members/:memberId", projectMemberHandler.UpdateMemberRoles)
+
+			// Project roles
+			projects.GET("/:projectId/roles", projectRoleHandler.ListRoles)
+			projects.POST("/:projectId/roles", projectRoleHandler.CreateRole)
+			projects.PATCH("/:projectId/roles/:roleId", projectRoleHandler.UpdateRole)
+			projects.DELETE("/:projectId/roles/:roleId", projectRoleHandler.DeleteRole)
+
+			// Project params
+			projects.GET("/:projectId/params", projectParamHandler.ListParams)
+			projects.POST("/:projectId/params", projectParamHandler.CreateParam)
+			projects.PATCH("/:projectId/params/reorder", projectParamHandler.ReorderParams)
+			projects.PATCH("/:projectId/params/:paramId", projectParamHandler.UpdateParam)
+			projects.DELETE("/:projectId/params/:paramId", projectParamHandler.DeleteParam)
 
 			projects.GET("/:projectId/sprints", sprintHandler.ListProjectSprints)
 			projects.POST("/:projectId/sprints", sprintHandler.CreateSprint)
@@ -101,32 +115,6 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.GET("/:projectId/backlog/sprint", sprintBacklogHandler.GetSprintBacklog)
 			projects.POST("/:projectId/backlog/move-to-sprint", sprintBacklogHandler.MoveTasksToSprint)
 
-			projects.GET("/:projectId/classes-of-service", classOfServiceHandler.GetClassesOfService)
-
-			projects.GET("/:projectId/kanban/wip-limits", kanbanHandler.GetWipLimits)
-			projects.PUT("/:projectId/kanban/wip-limits", kanbanHandler.UpdateWipLimits)
-
-			projects.POST("/:projectId/kanban/forecast", forecastHandler.GenerateForecast)
-
-			scrumAnalytics := projects.Group("/:projectId/analytics/scrum")
-			scrumAnalytics.Use(middleware.RequireProjectType(domain.ProjectTypeScrum, projectService))
-			{
-				scrumAnalytics.GET("/velocity", scrumAnalyticsHandler.GetVelocity)
-				scrumAnalytics.GET("/burndown", scrumAnalyticsHandler.GetBurndown)
-			}
-
-			kanbanAnalytics := projects.Group("/:projectId/analytics/kanban")
-			kanbanAnalytics.Use(middleware.RequireProjectType(domain.ProjectTypeKanban, projectService))
-			{
-				kanbanAnalytics.GET("/cumulative-flow", kanbanAnalyticsHandler.GetCumulativeFlow)
-				kanbanAnalytics.GET("/throughput", kanbanAnalyticsHandler.GetThroughput)
-				kanbanAnalytics.GET("/wip/over-time", kanbanAnalyticsHandler.GetWipOverTime)
-				kanbanAnalytics.GET("/wip/age", kanbanAnalyticsHandler.GetWipAge)
-				kanbanAnalytics.GET("/cycle-time/scatterplot", kanbanAnalyticsHandler.GetCycleTimeScatterplot)
-				kanbanAnalytics.GET("/cycle-time/trend", kanbanAnalyticsHandler.GetCycleTimeTrend)
-				kanbanAnalytics.GET("/cycle-time/histogram", kanbanAnalyticsHandler.GetCycleTimeHistogram)
-				kanbanAnalytics.GET("/throughput/histogram", kanbanAnalyticsHandler.GetThroughputHistogram)
-			}
 		}
 
 		sprints := v1.Group("/sprints")
@@ -144,24 +132,43 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 		{
 			boards.GET("", boardHandler.ListBoards)
 			boards.POST("", boardHandler.CreateBoard)
+			boards.PATCH("/reorder", boardHandler.ReorderBoards)
 			boards.GET("/:boardId", boardHandler.GetBoard)
 			boards.PATCH("/:boardId", boardHandler.UpdateBoard)
 			boards.DELETE("/:boardId", boardHandler.DeleteBoard)
 
+			// Columns
 			boards.GET("/:boardId/columns", boardHandler.ListColumns)
 			boards.POST("/:boardId/columns", boardHandler.CreateColumn)
+			boards.PATCH("/:boardId/columns/reorder", boardHandler.ReorderColumns)
+			boards.PATCH("/:boardId/columns/:columnId", boardHandler.UpdateColumn)
+			boards.DELETE("/:boardId/columns/:columnId", boardHandler.DeleteColumn)
 
+			// Swimlanes
 			boards.GET("/:boardId/swimlanes", boardHandler.ListSwimlanes)
 			boards.POST("/:boardId/swimlanes", boardHandler.CreateSwimlane)
+			boards.PATCH("/:boardId/swimlanes/reorder", boardHandler.ReorderSwimlanes)
+			boards.PATCH("/:boardId/swimlanes/:swimlaneId", boardHandler.UpdateSwimlane)
+			boards.DELETE("/:boardId/swimlanes/:swimlaneId", boardHandler.DeleteSwimlane)
 
+			// Notes
 			boards.GET("/:boardId/notes", boardHandler.ListNotes)
-
 			boards.POST("/columns/:columnId/notes", boardHandler.CreateNoteForColumn)
 			boards.POST("/swimlanes/:swimlaneId/notes", boardHandler.CreateNoteForSwimlane)
+			boards.PATCH("/notes/:noteId", boardHandler.UpdateNote)
+			boards.DELETE("/notes/:noteId", boardHandler.DeleteNote)
 
-			boards.POST("/:boardId/swimlanes/configure", classOfServiceHandler.ConfigureSwimlanes)
+			// Custom fields
+			boards.GET("/:boardId/fields", boardHandler.ListCustomFields)
+			boards.POST("/:boardId/fields", boardHandler.CreateCustomField)
+			boards.PATCH("/:boardId/fields/reorder", boardHandler.ReorderCustomFields)
+			boards.PATCH("/:boardId/fields/:fieldId", boardHandler.UpdateCustomField)
+			boards.DELETE("/:boardId/fields/:fieldId", boardHandler.DeleteCustomField)
 
-			boards.GET("/:boardId/wip-counts", kanbanHandler.GetCurrentWipCounts)
+			// Tags (board-scoped)
+			boards.GET("/:boardId/tags", tagHandler.ListBoardTags)
+			boards.POST("/:boardId/tasks/:taskId/tags", tagHandler.AddTagToTask)
+			boards.PUT("/:boardId/tasks/:taskId/tags", tagHandler.SetTaskTags)
 		}
 
 		tasks := v1.Group("/tasks")
@@ -184,13 +191,9 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			tasks.POST("/checklists/:checklistId/items", taskHandler.AddChecklistItem)
 			tasks.PATCH("/checklist-items/:itemId/status", taskHandler.SetChecklistItemStatus)
 
-			tasks.GET("/:taskId/comments", commentHandler.ListTaskComments)
-			tasks.POST("/comments", commentHandler.CreateComment)
-
-			tasks.GET("/:taskId/attachments", attachmentHandler.ListTaskAttachments)
-			tasks.POST("/:taskId/attachments", attachmentHandler.UploadTaskAttachment)
-
-			tasks.PATCH("/:taskId/class-of-service", classOfServiceHandler.UpdateTaskClass)
+			// Tags (task-scoped)
+			tasks.GET("/:taskId/tags", tagHandler.ListTaskTags)
+			tasks.DELETE("/:taskId/tags/:tagId", tagHandler.RemoveTagFromTask)
 		}
 
 		admin := v1.Group("/admin")
@@ -198,7 +201,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 		{
 			// Roles — require system.roles.manage
 			roles := admin.Group("/roles")
-			roles.Use(middleware.RequireSystemPermission(services.SystemPermissionManageRoles, permissionSvc))
+			roles.Use(middleware.RequireSystemPermission(repositories.SystemPermissionManageRoles, permissionSvc))
 			{
 				roles.GET("", roleHandler.ListSystemRoles)
 				roles.POST("", roleHandler.CreateSystemRole)
@@ -209,7 +212,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			// Users — require system.users.manage
 			adminUsers := admin.Group("/users")
-			adminUsers.Use(middleware.RequireSystemPermission(services.SystemPermissionManageUsers, permissionSvc))
+			adminUsers.Use(middleware.RequireSystemPermission(repositories.SystemPermissionManageUsers, permissionSvc))
 			{
 				adminUsers.GET("", adminUserHandler.ListUsers)
 				adminUsers.POST("", adminUserHandler.CreateUser)
@@ -220,7 +223,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			// Password policy — require system.password_policy.manage
 			passwordPolicy := admin.Group("/password-policy")
-			passwordPolicy.Use(middleware.RequireSystemPermission(services.SystemPermissionManagePasswordPolicy, permissionSvc))
+			passwordPolicy.Use(middleware.RequireSystemPermission(repositories.SystemPermissionManagePasswordPolicy, permissionSvc))
 			{
 				passwordPolicy.GET("", adminPasswordPolicyHandler.GetPasswordPolicy)
 				passwordPolicy.PUT("", adminPasswordPolicyHandler.UpdatePasswordPolicy)
@@ -228,7 +231,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			// Project templates — require system.project_templates.manage
 			templates := admin.Group("/project-templates")
-			templates.Use(middleware.RequireSystemPermission(services.SystemPermissionManageTemplates, permissionSvc))
+			templates.Use(middleware.RequireSystemPermission(repositories.SystemPermissionManageTemplates, permissionSvc))
 			{
 				templates.GET("/references", templateHandler.GetReferences)
 				templates.GET("", templateHandler.ListTemplates)
@@ -250,18 +253,16 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 				templates.DELETE("/:templateId/boards/:boardId/columns/:columnId", templateHandler.DeleteColumn)
 
 				// Swimlanes
+				templates.POST("/:templateId/boards/:boardId/swimlanes", templateHandler.CreateSwimlane)
 				templates.PATCH("/:templateId/boards/:boardId/swimlanes/reorder", templateHandler.ReorderSwimlanes)
 				templates.PATCH("/:templateId/boards/:boardId/swimlanes/:swimlaneId", templateHandler.UpdateSwimlane)
 				templates.DELETE("/:templateId/boards/:boardId/swimlanes/:swimlaneId", templateHandler.DeleteSwimlane)
 
-				// Priority values
-				templates.PUT("/:templateId/boards/:boardId/priority-values", templateHandler.ReplacePriorityValues)
-
 				// Custom fields
-				templates.POST("/:templateId/boards/:boardId/custom-fields", templateHandler.CreateCustomField)
-				templates.PATCH("/:templateId/boards/:boardId/custom-fields/reorder", templateHandler.ReorderCustomFields)
-				templates.PATCH("/:templateId/boards/:boardId/custom-fields/:fieldId", templateHandler.UpdateCustomField)
-				templates.DELETE("/:templateId/boards/:boardId/custom-fields/:fieldId", templateHandler.DeleteCustomField)
+				templates.POST("/:templateId/boards/:boardId/fields", templateHandler.CreateCustomField)
+				templates.PATCH("/:templateId/boards/:boardId/fields/reorder", templateHandler.ReorderCustomFields)
+				templates.PATCH("/:templateId/boards/:boardId/fields/:fieldId", templateHandler.UpdateCustomField)
+				templates.DELETE("/:templateId/boards/:boardId/fields/:fieldId", templateHandler.DeleteCustomField)
 
 				// Project params
 				templates.POST("/:templateId/project-params", templateHandler.CreateProjectParam)
@@ -271,7 +272,6 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 				// Roles
 				templates.POST("/:templateId/roles", templateHandler.CreateRole)
-				templates.PATCH("/:templateId/roles/reorder", templateHandler.ReorderRoles)
 				templates.PATCH("/:templateId/roles/:roleId", templateHandler.UpdateRole)
 				templates.DELETE("/:templateId/roles/:roleId", templateHandler.DeleteRole)
 			}

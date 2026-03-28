@@ -17,4 +17,3 @@ type AddMemberRequest struct {
 type UpdateMemberRolesRequest struct {
 	Roles []string `json:"roles" binding:"required"`
 }
-

@@ -28,12 +28,12 @@ func (r *productBacklogRepository) Add(ctx context.Context, projectID, taskID uu
 	row, err := r.q.AddToProductBacklog(ctx, db.AddToProductBacklogParams{
 		ProjectID: projectID,
 		TaskID:    taskID,
-		Order:     order,
+		SortOrder: order,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return mapDBProductBacklog(row), nil
+	return mapDBBacklog(row), nil
 }
 
 func (r *productBacklogRepository) Remove(ctx context.Context, projectID, taskID uuid.UUID) error {
@@ -50,7 +50,7 @@ func (r *productBacklogRepository) List(ctx context.Context, projectID uuid.UUID
 	}
 	result := make([]domain.ProductBacklogItem, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, *mapDBProductBacklog(row))
+		result = append(result, *mapDBBacklog(row))
 	}
 	return result, nil
 }
@@ -59,17 +59,14 @@ func (r *productBacklogRepository) UpdateOrder(ctx context.Context, projectID, t
 	return r.q.UpdateProductBacklogOrder(ctx, db.UpdateProductBacklogOrderParams{
 		ProjectID: projectID,
 		TaskID:    taskID,
-		Order:     order,
+		SortOrder: order,
 	})
 }
 
-func mapDBProductBacklog(row db.ProductBacklog) *domain.ProductBacklogItem {
+func mapDBBacklog(row db.Backlog) *domain.ProductBacklogItem {
 	return &domain.ProductBacklogItem{
-		ID:        row.ID,
 		ProjectID: row.ProjectID,
 		TaskID:    row.TaskID,
-		Order:     int(row.Order),
-		AddedAt:   row.AddedAt,
+		Order:     int(row.SortOrder),
 	}
 }
-

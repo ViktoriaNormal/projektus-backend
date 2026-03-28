@@ -12,8 +12,8 @@ import (
 )
 
 const assignRoleToUser = `-- name: AssignRoleToUser :exec
-INSERT INTO role_users (role_id, user_id)
-VALUES ($1, $2)
+INSERT INTO user_roles (user_id, role_id)
+VALUES ($2, $1)
 ON CONFLICT DO NOTHING
 `
 
@@ -28,7 +28,7 @@ func (q *Queries) AssignRoleToUser(ctx context.Context, arg AssignRoleToUserPara
 }
 
 const deleteUserRoles = `-- name: DeleteUserRoles :exec
-DELETE FROM role_users
+DELETE FROM user_roles
 WHERE user_id = $1
 `
 
@@ -38,12 +38,11 @@ func (q *Queries) DeleteUserRoles(ctx context.Context, userID uuid.UUID) error {
 }
 
 const deleteUserSystemRoles = `-- name: DeleteUserSystemRoles :exec
-DELETE FROM role_users
+DELETE FROM user_roles
 WHERE user_id = $1
   AND role_id IN (SELECT id FROM roles WHERE scope = 'system')
 `
 
-// Удалить только системные роли пользователя (для замены системных ролей без затрагивания проектных)
 func (q *Queries) DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, deleteUserSystemRoles, userID)
 	return err
@@ -51,32 +50,38 @@ func (q *Queries) DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) e
 
 const listUserSystemRoles = `-- name: ListUserSystemRoles :many
 
-SELECT r.id, r.name, r.description, r.scope, r.project_id, r.created_at, r.updated_at
-FROM role_users ru
-JOIN roles r ON r.id = ru.role_id
-WHERE ru.user_id = $1
+SELECT r.id, r.name, r.description, r.scope, r.is_admin
+FROM user_roles ur
+JOIN roles r ON r.id = ur.role_id
+WHERE ur.user_id = $1
   AND r.scope = 'system'
 ORDER BY r.name
 `
 
-// User system roles
-func (q *Queries) ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]Role, error) {
+type ListUserSystemRolesRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+// User role assignments (system roles)
+func (q *Queries) ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]ListUserSystemRolesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUserSystemRoles, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Role{}
+	items := []ListUserSystemRolesRow{}
 	for rows.Next() {
-		var i Role
+		var i ListUserSystemRolesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Description,
 			&i.Scope,
-			&i.ProjectID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.IsAdmin,
 		); err != nil {
 			return nil, err
 		}
@@ -92,7 +97,7 @@ func (q *Queries) ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]
 }
 
 const removeRoleFromUser = `-- name: RemoveRoleFromUser :exec
-DELETE FROM role_users
+DELETE FROM user_roles
 WHERE role_id = $1 AND user_id = $2
 `
 
@@ -109,23 +114,22 @@ func (q *Queries) RemoveRoleFromUser(ctx context.Context, arg RemoveRoleFromUser
 const userHasSystemPermission = `-- name: UserHasSystemPermission :one
 SELECT EXISTS (
     SELECT 1
-    FROM role_users ru
-    JOIN roles r ON r.id = ru.role_id
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
     JOIN role_permissions rp ON rp.role_id = r.id
-    JOIN permissions p ON p.id = rp.permission_id
-    WHERE ru.user_id = $1
+    WHERE ur.user_id = $1
       AND r.scope = 'system'
-      AND p.code = $2
+      AND rp.permission_code = $2
 ) AS has_permission
 `
 
 type UserHasSystemPermissionParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Code   string    `json:"code"`
+	UserID         uuid.UUID `json:"user_id"`
+	PermissionCode string    `json:"permission_code"`
 }
 
 func (q *Queries) UserHasSystemPermission(ctx context.Context, arg UserHasSystemPermissionParams) (bool, error) {
-	row := q.db.QueryRowContext(ctx, userHasSystemPermission, arg.UserID, arg.Code)
+	row := q.db.QueryRowContext(ctx, userHasSystemPermission, arg.UserID, arg.PermissionCode)
 	var has_permission bool
 	err := row.Scan(&has_permission)
 	return has_permission, err

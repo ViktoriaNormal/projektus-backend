@@ -1,8 +1,6 @@
 package dto
 
 import (
-	"time"
-
 	"github.com/google/uuid"
 )
 
@@ -12,40 +10,36 @@ type ProjectTemplateListResponse struct {
 	ID          uuid.UUID `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
-	ProjectType string    `json:"projectType"`
-	BoardCount  int       `json:"boardCount"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ProjectType string    `json:"project_type"`
+	BoardCount  int       `json:"board_count"`
 }
 
 type ProjectTemplateResponse struct {
-	ID                  uuid.UUID                       `json:"id"`
-	Name                string                          `json:"name"`
-	Description         string                          `json:"description,omitempty"`
-	ProjectType         string                          `json:"projectType"`
-	CreatedAt           time.Time                       `json:"createdAt"`
-	UpdatedAt           time.Time                       `json:"updatedAt"`
-	Boards              []TemplateBoardResponse          `json:"boards"`
-	CustomProjectParams []TemplateProjectParamResponse   `json:"customProjectParams"`
-	Roles               []TemplateRoleResponse           `json:"roles"`
+	ID          uuid.UUID                       `json:"id"`
+	Name        string                          `json:"name"`
+	Description string                          `json:"description,omitempty"`
+	ProjectType string                          `json:"project_type"`
+	Boards      []TemplateBoardResponse          `json:"boards"`
+	Params      []TemplateProjectParamResponse   `json:"params"`
+	Roles       []TemplateRoleResponse           `json:"roles"`
 }
 
 type TemplateProjectParamResponse struct {
-	ID         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
-	FieldType  string    `json:"fieldType"`
-	IsSystem   bool      `json:"isSystem"`
-	IsRequired bool      `json:"isRequired"`
-	Order      int32     `json:"order"`
-	Options    []string  `json:"options"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	FieldType   string    `json:"field_type"`
+	IsSystem    bool      `json:"is_system"`
+	IsRequired  bool      `json:"is_required"`
+	Order       int32     `json:"order"`
+	Options     []string  `json:"options"`
 }
 
 type TemplateRoleResponse struct {
 	ID          uuid.UUID                       `json:"id"`
 	Name        string                          `json:"name"`
 	Description string                          `json:"description"`
-	IsDefault   bool                            `json:"isDefault"`
-	Order       int32                           `json:"order"`
+	IsAdmin     bool                            `json:"is_admin"`
 	Permissions []TemplateRolePermissionResponse `json:"permissions"`
 }
 
@@ -58,49 +52,43 @@ type TemplateBoardResponse struct {
 	ID              uuid.UUID                        `json:"id"`
 	Name            string                           `json:"name"`
 	Description     string                           `json:"description,omitempty"`
-	IsDefault       bool                             `json:"isDefault"`
+	IsDefault       bool                             `json:"is_default"`
 	Order           int32                            `json:"order"`
-	PriorityType    string                           `json:"priorityType"`
-	EstimationUnit  string                           `json:"estimationUnit"`
-	SwimlaneGroupBy *string                          `json:"swimlaneGroupBy"`
-	Columns         []TemplateBoardColumnResponse    `json:"columns"`
-	Swimlanes       []TemplateBoardSwimlaneResponse  `json:"swimlanes"`
-	PriorityValues  []TemplateBoardPriorityValueResponse `json:"priorityValues"`
-	CustomFields    []TemplateBoardCustomFieldResponse    `json:"customFields"`
+	PriorityType    string                           `json:"priority_type"`
+	EstimationUnit  string                           `json:"estimation_unit"`
+	SwimlaneGroupBy *string                          `json:"swimlane_group_by"`
+	Columns      []TemplateBoardColumnResponse       `json:"columns"`
+	Swimlanes    []TemplateBoardSwimlaneResponse     `json:"swimlanes"`
+	Fields       []TemplateBoardCustomFieldResponse   `json:"fields"`
 }
 
 type TemplateBoardColumnResponse struct {
 	ID         uuid.UUID `json:"id"`
 	Name       string    `json:"name"`
-	SystemType string    `json:"systemType"`
-	WipLimit   *int32    `json:"wipLimit"`
+	SystemType string    `json:"system_type"`
+	WipLimit   *int32    `json:"wip_limit"`
 	Order      int32     `json:"order"`
-	IsLocked   bool      `json:"isLocked"`
+	IsLocked   bool      `json:"is_locked"`
 	Note       *string   `json:"note"`
 }
 
 type TemplateBoardSwimlaneResponse struct {
 	ID       uuid.UUID `json:"id"`
 	Name     string    `json:"name"`
-	WipLimit *int32    `json:"wipLimit"`
+	WipLimit *int32    `json:"wip_limit"`
 	Order    int32     `json:"order"`
 	Note     *string   `json:"note"`
 }
 
-type TemplateBoardPriorityValueResponse struct {
-	ID    uuid.UUID `json:"id"`
-	Value string    `json:"value"`
-	Order int32     `json:"order"`
-}
-
 type TemplateBoardCustomFieldResponse struct {
-	ID         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
-	FieldType  string    `json:"fieldType"`
-	IsSystem   bool      `json:"isSystem"`
-	IsRequired bool      `json:"isRequired"`
-	Order      int32     `json:"order"`
-	Options    []string  `json:"options"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	FieldType   string    `json:"field_type"`
+	IsSystem    bool      `json:"is_system"`
+	IsRequired  bool      `json:"is_required"`
+	Order       int32     `json:"order"`
+	Options     []string  `json:"options"`
 }
 
 // --- Requests ---
@@ -108,7 +96,7 @@ type TemplateBoardCustomFieldResponse struct {
 type CreateTemplateRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
-	ProjectType string `json:"projectType" binding:"required,oneof=scrum kanban"`
+	ProjectType string `json:"project_type" binding:"required,oneof=scrum kanban"`
 }
 
 type UpdateTemplateRequest struct {
@@ -119,20 +107,20 @@ type UpdateTemplateRequest struct {
 type CreateTemplateBoardRequest struct {
 	Name            string  `json:"name" binding:"required"`
 	Description     string  `json:"description"`
-	IsDefault       bool    `json:"isDefault"`
-	PriorityType    string  `json:"priorityType" binding:"required,oneof=priority service_class"`
-	EstimationUnit  string  `json:"estimationUnit" binding:"required,oneof=story_points time"`
-	SwimlaneGroupBy *string `json:"swimlaneGroupBy"`
+	IsDefault       bool    `json:"is_default"`
+	PriorityType    string  `json:"priority_type" binding:"required,oneof=priority service_class"`
+	EstimationUnit  string  `json:"estimation_unit" binding:"required,oneof=story_points time"`
+	SwimlaneGroupBy *string `json:"swimlane_group_by"`
 }
 
 type UpdateTemplateBoardRequest struct {
 	Name            *string `json:"name"`
 	Description     *string `json:"description"`
-	IsDefault       *bool   `json:"isDefault"`
+	IsDefault       *bool   `json:"is_default"`
 	Order           *int32  `json:"order"`
-	PriorityType    *string `json:"priorityType"`
-	EstimationUnit  *string `json:"estimationUnit"`
-	SwimlaneGroupBy *string `json:"swimlaneGroupBy"`
+	PriorityType    *string `json:"priority_type"`
+	EstimationUnit  *string `json:"estimation_unit"`
+	SwimlaneGroupBy *string `json:"swimlane_group_by"`
 }
 
 type ReorderRequest struct {
@@ -140,22 +128,22 @@ type ReorderRequest struct {
 }
 
 type OrderItem struct {
-	ID    uuid.UUID `json:"boardId,omitempty"`
+	ID    uuid.UUID `json:"board_id,omitempty"`
 	Order int32     `json:"order"`
 }
 
 type ColumnOrderItem struct {
-	ColumnID uuid.UUID `json:"columnId"`
+	ColumnID uuid.UUID `json:"column_id"`
 	Order    int32     `json:"order"`
 }
 
 type SwimlaneOrderItem struct {
-	SwimlaneID uuid.UUID `json:"swimlaneId"`
+	SwimlaneID uuid.UUID `json:"swimlane_id"`
 	Order      int32     `json:"order"`
 }
 
 type FieldOrderItem struct {
-	FieldID uuid.UUID `json:"fieldId"`
+	FieldID uuid.UUID `json:"field_id"`
 	Order   int32     `json:"order"`
 }
 
@@ -173,40 +161,41 @@ type ReorderFieldsRequest struct {
 
 type CreateTemplateBoardColumnRequest struct {
 	Name       string  `json:"name" binding:"required"`
-	SystemType string  `json:"systemType" binding:"required,oneof=initial in_progress completed"`
-	WipLimit   *int32  `json:"wipLimit"`
+	SystemType string  `json:"system_type" binding:"required,oneof=initial in_progress completed"`
+	WipLimit   *int32  `json:"wip_limit"`
 	Order      int32   `json:"order"`
 	Note       *string `json:"note"`
 }
 
 type UpdateTemplateBoardColumnRequest struct {
 	Name       *string `json:"name"`
-	SystemType *string `json:"systemType"`
-	WipLimit   *int32  `json:"wipLimit"`
+	SystemType *string `json:"system_type"`
+	WipLimit   *int32  `json:"wip_limit"`
 	Note       *string `json:"note"`
 }
 
-type UpdateTemplateBoardSwimlaneRequest struct {
-	WipLimit *int32  `json:"wipLimit"`
-	Note     *string `json:"note"`
+type CreateTemplateBoardSwimlaneRequest struct {
+	Name     string `json:"name" binding:"required"`
+	WipLimit *int32 `json:"wip_limit"`
+	Order    int32  `json:"order"`
 }
 
-type PriorityValueItem struct {
-	Value string `json:"value" binding:"required"`
-	Order int32  `json:"order"`
+type UpdateTemplateBoardSwimlaneRequest struct {
+	WipLimit *int32  `json:"wip_limit"`
+	Note     *string `json:"note"`
 }
 
 type CreateTemplateBoardCustomFieldRequest struct {
 	Name       string   `json:"name" binding:"required"`
-	FieldType  string   `json:"fieldType" binding:"required,oneof=text number datetime select multiselect checkbox user"`
-	IsRequired bool     `json:"isRequired"`
+	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list sprint sprint_list"`
+	IsRequired bool     `json:"is_required"`
 	Order      int32    `json:"order"`
 	Options    []string `json:"options"`
 }
 
 type UpdateTemplateBoardCustomFieldRequest struct {
 	Name       *string  `json:"name"`
-	IsRequired *bool    `json:"isRequired"`
+	IsRequired *bool    `json:"is_required"`
 	Options    []string `json:"options"`
 }
 
@@ -214,20 +203,20 @@ type UpdateTemplateBoardCustomFieldRequest struct {
 
 type CreateTemplateProjectParamRequest struct {
 	Name       string   `json:"name" binding:"required"`
-	FieldType  string   `json:"fieldType" binding:"required,oneof=text number datetime select multiselect checkbox user"`
-	IsRequired bool     `json:"isRequired"`
+	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list"`
+	IsRequired bool     `json:"is_required"`
 	Order      int32    `json:"order"`
 	Options    []string `json:"options"`
 }
 
 type UpdateTemplateProjectParamRequest struct {
 	Name       *string  `json:"name"`
-	IsRequired *bool    `json:"isRequired"`
+	IsRequired *bool    `json:"is_required"`
 	Options    []string `json:"options"`
 }
 
 type ParamOrderItem struct {
-	ParamID uuid.UUID `json:"paramId"`
+	ParamID uuid.UUID `json:"param_id"`
 	Order   int32     `json:"order"`
 }
 
@@ -254,36 +243,25 @@ type UpdateTemplateRoleRequest struct {
 	Permissions []RolePermissionInput  `json:"permissions"`
 }
 
-type RoleOrderItem struct {
-	RoleID uuid.UUID `json:"roleId"`
-	Order  int32     `json:"order"`
-}
-
-type ReorderRolesRequest struct {
-	Orders []RoleOrderItem `json:"orders" binding:"required"`
-}
-
 // --- References ---
 
 type ReferencesResponse struct {
-	ColumnSystemTypes           []ReferenceColumnType                `json:"columnSystemTypes"`
-	TaskStatusTypes             []ReferenceTaskStatusType            `json:"taskStatusTypes"`
-	FieldTypes                  []ReferenceKeyName                   `json:"fieldTypes"`
-	EstimationUnits             []ReferenceAvailable                 `json:"estimationUnits"`
-	SwimlaneGroupOptions        []ReferenceAvailable                 `json:"swimlaneGroupOptions"`
-	SwimlaneGroupableFieldTypes []string                             `json:"swimlaneGroupableFieldTypes"`
-	PriorityTypeOptions         []ReferencePriorityType              `json:"priorityTypeOptions"`
-	SystemTaskFields            []ReferenceSystemField               `json:"systemTaskFields"`
-	SystemProjectParams         []ReferenceSystemProjectParam        `json:"systemProjectParams"`
-	PermissionAreas             []ReferencePermissionArea             `json:"permissionAreas"`
-	AccessLevels                []ReferenceKeyName                   `json:"accessLevels"`
+	ColumnSystemTypes           []ReferenceColumnType                `json:"column_system_types"`
+	FieldTypes                  []ReferenceFieldType                 `json:"field_types"`
+	EstimationUnits             []ReferenceAvailable                 `json:"estimation_units"`
+	PriorityTypeOptions         []ReferencePriorityType              `json:"priority_type_options"`
+	ProjectStatuses             []ReferenceKeyName                   `json:"project_statuses"`
+	SystemTaskFields            []ReferenceSystemField               `json:"system_task_fields"`
+	SystemProjectParams         []ReferenceSystemProjectParam        `json:"system_project_params"`
+	PermissionAreas             []ReferencePermissionArea             `json:"permission_areas"`
+	AccessLevels                []ReferenceKeyName                   `json:"access_levels"`
 }
 
 type ReferenceSystemProjectParam struct {
 	Key        string   `json:"key"`
 	Name       string   `json:"name"`
-	FieldType  string   `json:"fieldType"`
-	IsRequired bool     `json:"isRequired"`
+	FieldType  string   `json:"field_type"`
+	IsRequired bool     `json:"is_required"`
 	Options    []string `json:"options"`
 }
 
@@ -291,21 +269,20 @@ type ReferencePermissionArea struct {
 	Area         string   `json:"area"`
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
-	AvailableFor []string `json:"availableFor"`
+	AvailableFor []string `json:"available_for"`
 }
 
 type ReferenceColumnType struct {
 	Key         string `json:"key"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Order       int    `json:"order"`
 }
 
-type ReferenceTaskStatusType struct {
-	Key          string `json:"key"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	IsColumnType bool   `json:"isColumnType"`
+type ReferenceFieldType struct {
+	Key           string   `json:"key"`
+	Name          string   `json:"name"`
+	AvailableFor  []string `json:"available_for"`
+	AllowedScopes []string `json:"allowed_scopes"`
 }
 
 type ReferenceKeyName struct {
@@ -316,20 +293,20 @@ type ReferenceKeyName struct {
 type ReferenceAvailable struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
-	AvailableFor []string `json:"availableFor"`
+	AvailableFor []string `json:"available_for"`
 }
 
 type ReferencePriorityType struct {
 	Key           string   `json:"key"`
 	Name          string   `json:"name"`
-	AvailableFor  []string `json:"availableFor"`
-	DefaultValues []string `json:"defaultValues"`
+	AvailableFor  []string `json:"available_for"`
+	DefaultValues []string `json:"default_values"`
 }
 
 type ReferenceSystemField struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
-	FieldType    string   `json:"fieldType"`
-	AvailableFor []string `json:"availableFor"`
+	FieldType    string   `json:"field_type"`
+	AvailableFor []string `json:"available_for"`
 	Description  string   `json:"description,omitempty"`
 }

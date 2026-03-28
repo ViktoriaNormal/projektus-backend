@@ -1,94 +1,74 @@
--- Template project params
+-- Template project params (in unified `fields` table, kind='project_param')
 
 -- name: ListTemplateProjectParams :many
-SELECT id, template_id, name, field_type, is_required, "order", options
-FROM template_project_params
-WHERE template_id = $1
-ORDER BY "order" ASC;
+SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+FROM fields
+WHERE template_id = $1 AND kind = 'project_param'
+ORDER BY sort_order ASC;
 
 -- name: GetTemplateProjectParamByID :one
-SELECT id, template_id, name, field_type, is_required, "order", options
-FROM template_project_params
-WHERE id = $1;
+SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+FROM fields
+WHERE id = $1 AND kind = 'project_param';
 
 -- name: CreateTemplateProjectParam :one
-INSERT INTO template_project_params (template_id, name, field_type, is_required, "order", options)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, template_id, name, field_type, is_required, "order", options;
+INSERT INTO fields (kind, template_id, name, description, field_type, is_required, sort_order, options)
+VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7)
+RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options;
 
 -- name: UpdateTemplateProjectParam :one
-UPDATE template_project_params
+UPDATE fields
 SET name = $2, is_required = $3, options = $4
-WHERE id = $1
-RETURNING id, template_id, name, field_type, is_required, "order", options;
+WHERE id = $1 AND kind = 'project_param'
+RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options;
 
 -- name: DeleteTemplateProjectParamByID :exec
-DELETE FROM template_project_params WHERE id = $1;
+DELETE FROM fields WHERE id = $1 AND kind = 'project_param';
 
 -- name: UpdateTemplateProjectParamOrder :exec
-UPDATE template_project_params SET "order" = $2 WHERE id = $1;
+UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'project_param';
 
--- Template roles
+-- Template roles (in unified roles table, scope='template')
 
 -- name: ListTemplateRoles :many
-SELECT id, template_id, name, description, is_default, "order"
-FROM template_roles
+SELECT id, template_id, name, description, is_admin
+FROM roles
 WHERE template_id = $1
-ORDER BY "order" ASC;
+ORDER BY name;
 
 -- name: GetTemplateRoleByID :one
-SELECT id, template_id, name, description, is_default, "order"
-FROM template_roles
+SELECT id, template_id, name, description, is_admin
+FROM roles
 WHERE id = $1;
 
 -- name: CreateTemplateRole :one
-INSERT INTO template_roles (template_id, name, description, is_default, "order")
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, template_id, name, description, is_default, "order";
+INSERT INTO roles (template_id, scope, name, description)
+VALUES ($1, 'template', $2, $3)
+RETURNING id, template_id, name, description, is_admin;
 
 -- name: UpdateTemplateRole :one
-UPDATE template_roles
+UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, template_id, name, description, is_default, "order";
+RETURNING id, template_id, name, description, is_admin;
 
 -- name: DeleteTemplateRoleByID :exec
-DELETE FROM template_roles WHERE id = $1;
-
--- name: UpdateTemplateRoleOrder :exec
-UPDATE template_roles SET "order" = $2 WHERE id = $1;
+DELETE FROM roles WHERE id = $1;
 
 -- name: CountTemplateRolesByTemplateID :one
-SELECT COUNT(*)::int AS count FROM template_roles WHERE template_id = $1;
+SELECT COUNT(*)::int AS count FROM roles WHERE template_id = $1;
 
--- Template role permissions
+-- Template role permissions (uses permission_code directly)
 
 -- name: ListTemplateRolePermissions :many
-SELECT id, role_id, area, access
-FROM template_role_permissions
-WHERE role_id = $1;
+SELECT rp.role_id, rp.permission_code, rp.access
+FROM role_permissions rp
+WHERE rp.role_id = $1;
 
 -- name: UpsertTemplateRolePermission :exec
-INSERT INTO template_role_permissions (role_id, area, access)
+INSERT INTO role_permissions (role_id, permission_code, access)
 VALUES ($1, $2, $3)
-ON CONFLICT (role_id, area) DO UPDATE SET access = EXCLUDED.access;
+ON CONFLICT (role_id, permission_code) DO UPDATE SET access = EXCLUDED.access;
 
 -- name: DeleteTemplateRolePermissionsByRoleID :exec
-DELETE FROM template_role_permissions WHERE role_id = $1;
-
--- Reference queries for new tables
-
--- name: ListRefSystemProjectParams :many
-SELECT key, name, field_type, is_required, options, sort_order
-FROM ref_system_project_params
-ORDER BY sort_order ASC;
-
--- name: ListRefPermissionAreas :many
-SELECT area, project_type, name, description, sort_order
-FROM ref_permission_areas
-ORDER BY project_type, sort_order ASC;
-
--- name: ListRefAccessLevels :many
-SELECT key, name, sort_order
-FROM ref_access_levels
-ORDER BY sort_order ASC;
+DELETE FROM role_permissions WHERE role_id = $1;

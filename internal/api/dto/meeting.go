@@ -2,48 +2,47 @@ package dto
 
 // CreateMeetingRequest соответствует схеме CreateMeetingRequest в OpenAPI.
 type CreateMeetingRequest struct {
-	ProjectID      *string  `json:"projectId"`                    // uuid, опционально
+	ProjectID      *string  `json:"project_id"`                      // uuid, опционально
 	Name           string   `json:"name" binding:"required"`
 	Description    *string  `json:"description"`
-	MeetingType    *string  `json:"meetingType"`                  // один из типов из ТЗ, но пока строка
+	MeetingType    *string  `json:"meeting_type"`                    // один из типов из ТЗ, но пока строка
 	Location       string   `json:"location" binding:"required"`
-	StartTime      string   `json:"startTime" binding:"required"` // RFC3339
-	EndTime        string   `json:"endTime" binding:"required"`   // RFC3339
-	ParticipantIDs []string `json:"participantIds"`               // uuid-строки
+	StartTime      string   `json:"start_time" binding:"required"`   // RFC3339
+	EndTime        string   `json:"end_time" binding:"required"`     // RFC3339
+	ParticipantIDs []string `json:"participant_ids"`                 // uuid-строки
 }
 
 // UpdateMeetingRequest соответствует UpdateMeetingRequest в OpenAPI.
 type UpdateMeetingRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
-	MeetingType *string `json:"meetingType"`
+	MeetingType *string `json:"meeting_type"`
 	Location    *string `json:"location"`
-	StartTime   *string `json:"startTime"` // RFC3339
-	EndTime     *string `json:"endTime"`   // RFC3339
+	StartTime   *string `json:"start_time"` // RFC3339
+	EndTime     *string `json:"end_time"`   // RFC3339
 }
 
 type MeetingParticipantResponse struct {
 	ID        string `json:"id"`
-	MeetingID string `json:"meetingId"`
-	UserID    string `json:"userId"`
+	MeetingID string `json:"meeting_id"`
+	UserID    string `json:"user_id"`
 	Status    string `json:"status"`
 }
 
 type MeetingResponse struct {
 	ID          string  `json:"id"`
-	ProjectID   *string `json:"projectId,omitempty"`
-	OrganizerID string  `json:"organizerId"`
+	ProjectID   *string `json:"project_id,omitempty"`
+	OrganizerID string  `json:"organizer_id"`
 	Name        string  `json:"name"`
 	Description *string `json:"description,omitempty"`
-	MeetingType string  `json:"meetingType"`
+	MeetingType string  `json:"meeting_type"`
 	Location    *string `json:"location"`
 	Status      string  `json:"status"`
-	StartTime   string  `json:"startTime"`
-	EndTime     string  `json:"endTime"`
+	StartTime   string  `json:"start_time"`
+	EndTime     string  `json:"end_time"`
 }
 
 type MeetingDetailsResponse struct {
 	MeetingResponse
 	Participants []MeetingParticipantResponse `json:"participants"`
 }
-

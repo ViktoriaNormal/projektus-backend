@@ -27,10 +27,9 @@ type TemplateBoard struct {
 	EstimationUnit  string    `json:"estimation_unit"`
 	SwimlaneGroupBy string    `json:"swimlane_group_by"`
 
-	Columns        []TemplateBoardColumn        `json:"columns"`
-	Swimlanes      []TemplateBoardSwimlane       `json:"swimlanes"`
-	PriorityValues []TemplateBoardPriorityValue  `json:"priority_values"`
-	CustomFields   []TemplateBoardCustomField    `json:"custom_fields"`
+	Columns      []TemplateBoardColumn      `json:"columns"`
+	Swimlanes    []TemplateBoardSwimlane    `json:"swimlanes"`
+	CustomFields []TemplateBoardCustomField `json:"custom_fields"`
 }
 
 type TemplateBoardColumn struct {
@@ -54,32 +53,28 @@ type TemplateBoardSwimlane struct {
 	Note     *string   `json:"note"`
 }
 
-type TemplateBoardPriorityValue struct {
-	ID      uuid.UUID `json:"id"`
-	BoardID uuid.UUID `json:"board_id"`
-	Value   string    `json:"value"`
-	Order   int32     `json:"order"`
-}
-
 type TemplateBoardCustomField struct {
-	ID         uuid.UUID `json:"id"`
-	BoardID    uuid.UUID `json:"board_id"`
-	Name       string    `json:"name"`
-	FieldType  string    `json:"field_type"`
-	IsSystem   bool      `json:"is_system"`
-	IsRequired bool      `json:"is_required"`
-	Order      int32     `json:"order"`
-	Options    []string  `json:"options"`
+	ID          uuid.UUID `json:"id"`
+	BoardID     uuid.UUID `json:"board_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	FieldType   string    `json:"field_type"`
+	IsSystem    bool      `json:"is_system"`
+	IsRequired  bool      `json:"is_required"`
+	Order       int32     `json:"order"`
+	Options     []string  `json:"options"`
 }
 
 type TemplateProjectParam struct {
-	ID         uuid.UUID `json:"id"`
-	TemplateID uuid.UUID `json:"template_id"`
-	Name       string    `json:"name"`
-	FieldType  string    `json:"field_type"`
-	IsRequired bool      `json:"is_required"`
-	Order      int32     `json:"order"`
-	Options    []string  `json:"options"`
+	ID          uuid.UUID `json:"id"`
+	TemplateID  uuid.UUID `json:"template_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	FieldType   string    `json:"field_type"`
+	IsSystem    bool      `json:"is_system"`
+	IsRequired  bool      `json:"is_required"`
+	Order       int32     `json:"order"`
+	Options     []string  `json:"options"`
 }
 
 type TemplateRole struct {
@@ -87,8 +82,7 @@ type TemplateRole struct {
 	TemplateID  uuid.UUID              `json:"template_id"`
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
-	IsDefault   bool                   `json:"is_default"`
-	Order       int32                  `json:"order"`
+	IsAdmin     bool                   `json:"is_admin"`
 	Permissions []TemplateRolePermission `json:"permissions"`
 }
 
@@ -100,11 +94,10 @@ type TemplateRolePermission struct {
 // References — all lookup data loaded from DB
 type References struct {
 	ColumnSystemTypes    []RefColumnSystemType
-	TaskStatusTypes      []RefTaskStatusType
-	FieldTypes           []RefKeyName
+	FieldTypes           []FieldTypeDefinition
 	EstimationUnits      []RefAvailable
-	SwimlaneGroupOptions []RefAvailable
 	PriorityTypeOptions  []RefPriorityType
+	ProjectStatuses      []RefKeyName
 	SystemTaskFields     []RefSystemField
 	SystemProjectParams  []RefSystemProjectParam
 	PermissionAreas      []RefPermissionArea
@@ -123,7 +116,6 @@ type RefColumnSystemType struct {
 	Key         string
 	Name        string
 	Description string
-	Order       int
 }
 
 type RefTaskStatusType struct {
@@ -159,6 +151,24 @@ type RefSystemField struct {
 	Description  string
 }
 
+// DefaultColumnDef — определение колонки по умолчанию для доски.
+type DefaultColumnDef struct {
+	Name       string
+	SystemType string
+	IsLocked   bool
+}
+
+// DefaultBoardFieldDef — определение системного поля доски (единый источник правды).
+type DefaultBoardFieldDef struct {
+	Key          string   // "title", "priority", "estimation", "sprint", ...
+	Name         string
+	Description  string
+	FieldType    string
+	IsRequired   bool
+	Options      []string // статические options (для priority/estimation заменяются динамически)
+	AvailableFor []string
+}
+
 type RefPermissionArea struct {
 	Area         string
 	Name         string
@@ -171,6 +181,7 @@ var (
 	ErrTemplateNotFound   = ErrNotFound
 	ErrTemplateInUse      = ErrConflict
 	ErrLastBoard          = ErrInvalidInput
+	ErrDefaultBoard       = ErrInvalidInput
 	ErrColumnLocked       = ErrInvalidInput
 	ErrInvalidColumnOrder = ErrInvalidInput
 	ErrDefaultRole        = ErrInvalidInput

@@ -2,11 +2,9 @@ package services
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 
-	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
 )
 
@@ -90,24 +88,9 @@ func (s *ScrumRoleService) createProjectRoleWithPermissions(ctx context.Context,
 	}
 
 	for _, code := range permCodes {
-		perm, err := s.ensurePermission(ctx, code)
-		if err != nil {
-			return err
-		}
-		if err := s.roleRepo.AddPermissionToRole(ctx, role.ID, perm.ID); err != nil {
+		if err := s.roleRepo.AddPermissionToRole(ctx, role.ID, code, "full"); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (s *ScrumRoleService) ensurePermission(ctx context.Context, code string) (*domain.Permission, error) {
-	p, err := s.roleRepo.GetPermissionByCode(ctx, code)
-	if err == nil {
-		return p, nil
-	}
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return nil, err
-	}
-	return s.roleRepo.CreatePermission(ctx, code, "")
 }

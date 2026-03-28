@@ -153,8 +153,8 @@ func (s *AdminUserService) CreateUser(ctx context.Context, req AdminCreateUserRe
 		IsActive:                  isActive,
 		OnVacation:                onVacation,
 		IsSick:                    isSick,
-		AlternativeContactChannel: altChannel,
-		AlternativeContactInfo:    altInfo,
+		AltContactChannel: altChannel,
+		AltContactInfo:    altInfo,
 	})
 	if err != nil {
 		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
@@ -238,9 +238,9 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, userID uuid.UUID, req
 		SetIsSick:                 setIsSick,
 		IsSick:                    isSick,
 		SetAltContactChannel:      setAltContactChannel,
-		AlternativeContactChannel: altContactChannel,
-		SetAltContactInfo:         setAltContactInfo,
-		AlternativeContactInfo:    altContactInfo,
+		AltContactChannel:   altContactChannel,
+		SetAltContactInfo:   setAltContactInfo,
+		AltContactInfo:      altContactInfo,
 	})
 	if err != nil {
 		return nil, errctx.Wrap(err, "UpdateUser", "userID", userID)

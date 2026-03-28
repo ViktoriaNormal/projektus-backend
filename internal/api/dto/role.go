@@ -22,8 +22,28 @@ type UpdateRoleRequest struct {
 }
 
 type PermissionResponse struct {
-	Key         string `json:"key"`
+	Code        string `json:"code"`
+	Scope       string `json:"scope"`
+	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+type ColumnSystemTypeResponse struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type FieldTypeResponse struct {
+	Key          string   `json:"key"`
+	Name         string   `json:"name"`
+	AvailableFor []string `json:"available_for"`
+}
+
+type ReferenceDataResponse struct {
+	Permissions       []PermissionResponse       `json:"permissions"`
+	ColumnSystemTypes []ColumnSystemTypeResponse  `json:"column_system_types"`
+	FieldTypes        []FieldTypeResponse         `json:"field_types"`
 }
 
 type AssignRolesRequest struct {
@@ -31,8 +51,8 @@ type AssignRolesRequest struct {
 }
 
 type ProjectRoleResponse struct {
-	ProjectID   uuid.UUID `json:"projectId"`
-	ProjectName string    `json:"projectName"`
+	ProjectID   uuid.UUID `json:"project_id"`
+	ProjectName string    `json:"project_name"`
 	Roles       []string  `json:"roles"`
 	Permissions []string  `json:"permissions"`
 }

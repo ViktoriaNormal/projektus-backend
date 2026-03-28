@@ -1,21 +1,22 @@
 -- Refresh tokens
 
 -- name: CreateRefreshToken :one
-INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+INSERT INTO tokens (user_id, token_hash, expires_at)
 VALUES ($1, $2, $3)
-RETURNING *;
+RETURNING id, user_id, token_hash, expires_at, revoked_at;
 
 -- name: GetRefreshTokenByHash :one
-SELECT * FROM refresh_tokens
+SELECT id, user_id, token_hash, expires_at, revoked_at
+FROM tokens
 WHERE token_hash = $1;
 
 -- name: RevokeRefreshToken :exec
-UPDATE refresh_tokens
+UPDATE tokens
 SET revoked_at = NOW()
 WHERE id = $1;
 
 -- name: RevokeAllUserRefreshTokens :exec
-UPDATE refresh_tokens
+UPDATE tokens
 SET revoked_at = NOW()
 WHERE user_id = $1
   AND revoked_at IS NULL;
@@ -56,21 +57,3 @@ SET blocked_until = EXCLUDED.blocked_until;
 -- name: DeleteExpiredBlockedIPs :exec
 DELETE FROM blocked_ips
 WHERE blocked_until <= NOW();
-
--- Blocked users
-
--- name: GetBlockedUser :one
-SELECT user_id, blocked_until
-FROM blocked_users
-WHERE user_id = $1;
-
--- name: UpsertBlockedUser :exec
-INSERT INTO blocked_users (user_id, blocked_until)
-VALUES ($1, $2)
-ON CONFLICT (user_id) DO UPDATE
-SET blocked_until = EXCLUDED.blocked_until;
-
--- name: DeleteExpiredBlockedUsers :exec
-DELETE FROM blocked_users
-WHERE blocked_until <= NOW();
-

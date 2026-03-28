@@ -1,5 +1,0 @@
-ALTER TABLE users
-    ADD COLUMN on_vacation BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN is_sick BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN alternative_contact_channel VARCHAR(100) DEFAULT NULL,
-    ADD COLUMN alternative_contact_info VARCHAR(255) DEFAULT NULL;

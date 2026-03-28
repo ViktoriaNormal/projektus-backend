@@ -25,7 +25,6 @@ type MeetingRepository interface {
 	UpdateParticipantStatus(ctx context.Context, meetingID, userID string, status domain.ParticipantStatus) error
 	GetMeetingParticipants(ctx context.Context, meetingID string) ([]domain.MeetingParticipant, error)
 	CreateReminder(ctx context.Context, meetingID, userID string, channel domain.ChannelType, reminderTime time.Time) error
-	GetUpcomingMeetingsForUser(ctx context.Context, userID string, from, to time.Time) ([]domain.Meeting, error)
 }
 
 type meetingRepository struct {
@@ -223,57 +222,9 @@ func (r *meetingRepository) GetMeetingParticipants(ctx context.Context, meetingI
 	return result, nil
 }
 
-func (r *meetingRepository) CreateReminder(ctx context.Context, meetingID, userID string, channel domain.ChannelType, reminderTime time.Time) error {
-	mid, err := uuid.Parse(meetingID)
-	if err != nil {
-		return err
-	}
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	return r.q.CreateMeetingReminder(ctx, db.CreateMeetingReminderParams{
-		MeetingID:    mid,
-		UserID:       uid,
-		Channel:      string(channel),
-		ReminderTime: reminderTime,
-		SentAt:       sql.NullTime{Time: time.Now().UTC(), Valid: true},
-	})
-}
-
-func (r *meetingRepository) GetUpcomingMeetingsForUser(ctx context.Context, userID string, from, to time.Time) ([]domain.Meeting, error) {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := r.q.GetUpcomingMeetingsForUser(ctx, db.GetUpcomingMeetingsForUserParams{
-		UserID:    uid,
-		StartTime: from,
-		StartTime_2: to,
-	})
-	if err != nil {
-		return nil, err
-	}
-	result := make([]domain.Meeting, 0, len(rows))
-	for _, row := range rows {
-		// маппим только данные встречи
-		m := db.Meeting{
-			ID:          row.ID,
-			ProjectID:   row.ProjectID,
-			Name:        row.Name,
-			Description: row.Description,
-			MeetingType: row.MeetingType,
-			Location:    row.Location,
-			StartTime:   row.StartTime,
-			EndTime:     row.EndTime,
-			CreatedBy:   row.CreatedBy,
-			CreatedAt:   row.CreatedAt,
-			UpdatedAt:   row.UpdatedAt,
-			CanceledAt:  row.CanceledAt,
-		}
-		result = append(result, mapDBMeetingToDomain(m))
-	}
-	return result, nil
+func (r *meetingRepository) CreateReminder(_ context.Context, _, _ string, _ domain.ChannelType, _ time.Time) error {
+	// meeting_reminders table removed in schema redesign
+	return nil
 }
 
 func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
@@ -290,10 +241,6 @@ func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
 	if m.Location.Valid {
 		loc = &m.Location.String
 	}
-	var canceledAt *time.Time
-	if m.CanceledAt.Valid {
-		canceledAt = &m.CanceledAt.Time
-	}
 	return domain.Meeting{
 		ID:          m.ID.String(),
 		ProjectID:   projectID,
@@ -305,9 +252,6 @@ func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
 		CreatedBy:   m.CreatedBy.String(),
-		CreatedAt:   m.CreatedAt,
-		UpdatedAt:   m.UpdatedAt,
-		CanceledAt:  canceledAt,
 	}
 }
 
@@ -317,8 +261,6 @@ func mapDBMeetingParticipantToDomain(p db.MeetingParticipant) domain.MeetingPart
 		MeetingID: p.MeetingID.String(),
 		UserID:    p.UserID.String(),
 		Status:    domain.ParticipantStatus(p.Status),
-		CreatedAt: p.CreatedAt,
-		UpdatedAt: p.UpdatedAt,
 	}
 }
 

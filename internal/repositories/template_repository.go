@@ -17,69 +17,63 @@ import (
 type TemplateRepository interface {
 	List(ctx context.Context) ([]domain.ProjectTemplate, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.ProjectTemplate, error)
+	GetByType(ctx context.Context, projectType string) (*domain.ProjectTemplate, error)
 	Create(ctx context.Context, name string, description *string, projectType string) (*domain.ProjectTemplate, error)
 	Update(ctx context.Context, id uuid.UUID, name string, description *string) (*domain.ProjectTemplate, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	IsInUse(ctx context.Context, id uuid.UUID) (bool, error)
 
 	// Boards
-	ListBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) ([]db.TemplateBoard, error)
-	GetBoardByID(ctx context.Context, id uuid.UUID) (db.TemplateBoard, error)
-	CreateBoard(ctx context.Context, params db.CreateTemplateBoardParams) (db.TemplateBoard, error)
-	UpdateBoard(ctx context.Context, params db.UpdateTemplateBoardParams) (db.TemplateBoard, error)
+	ListBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateBoardsByTemplateIDRow, error)
+	GetBoardByID(ctx context.Context, id uuid.UUID) (db.GetTemplateBoardByIDRow, error)
+	CreateBoard(ctx context.Context, params db.CreateTemplateBoardParams) (db.ListTemplateBoardsByTemplateIDRow, error)
+	UpdateBoard(ctx context.Context, params db.UpdateTemplateBoardParams) (db.ListTemplateBoardsByTemplateIDRow, error)
 	DeleteBoard(ctx context.Context, id uuid.UUID) error
 	CountBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) (int32, error)
 	UnsetDefaultBoard(ctx context.Context, templateID uuid.UUID) error
-	UpdateBoardOrder(ctx context.Context, id uuid.UUID, order int32) error
+	UpdateBoardOrder(ctx context.Context, id uuid.UUID, order int16) error
 
 	// Columns
-	ListColumns(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardColumn, error)
-	GetColumnByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardColumn, error)
-	CreateColumn(ctx context.Context, params db.CreateTemplateBoardColumnParams) (db.TemplateBoardColumn, error)
-	UpdateColumn(ctx context.Context, params db.UpdateTemplateBoardColumnParams) (db.TemplateBoardColumn, error)
+	ListColumns(ctx context.Context, boardID uuid.UUID) ([]db.Column, error)
+	GetColumnByID(ctx context.Context, id uuid.UUID) (db.Column, error)
+	CreateColumn(ctx context.Context, params db.CreateTemplateBoardColumnParams) (db.Column, error)
+	UpdateColumn(ctx context.Context, params db.UpdateTemplateBoardColumnParams) (db.Column, error)
 	DeleteColumn(ctx context.Context, id uuid.UUID) error
 	DeleteColumnsByBoardID(ctx context.Context, boardID uuid.UUID) error
-	UpdateColumnOrder(ctx context.Context, id uuid.UUID, order int32) error
+	UpdateColumnOrder(ctx context.Context, id uuid.UUID, order int16) error
 
 	// Swimlanes
-	ListSwimlanes(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardSwimlane, error)
-	GetSwimlaneByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardSwimlane, error)
-	CreateSwimlane(ctx context.Context, params db.CreateTemplateBoardSwimlaneParams) (db.TemplateBoardSwimlane, error)
-	UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt32, note string) (db.TemplateBoardSwimlane, error)
+	ListSwimlanes(ctx context.Context, boardID uuid.UUID) ([]db.Swimlane, error)
+	GetSwimlaneByID(ctx context.Context, id uuid.UUID) (db.Swimlane, error)
+	CreateSwimlane(ctx context.Context, params db.CreateTemplateBoardSwimlaneParams) (db.Swimlane, error)
+	UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt16, note string) (db.Swimlane, error)
 	DeleteSwimlane(ctx context.Context, id uuid.UUID) error
 	DeleteSwimlanesByBoardID(ctx context.Context, boardID uuid.UUID) error
-	UpdateSwimlaneOrder(ctx context.Context, id uuid.UUID, order int32) error
-
-	// Priority values
-	ListPriorityValues(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardPriorityValue, error)
-	CreatePriorityValue(ctx context.Context, params db.CreateTemplateBoardPriorityValueParams) (db.TemplateBoardPriorityValue, error)
-	DeletePriorityValuesByBoardID(ctx context.Context, boardID uuid.UUID) error
+	UpdateSwimlaneOrder(ctx context.Context, id uuid.UUID, order int16) error
 
 	// Custom fields
-	ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardField, error)
-	GetFieldByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardField, error)
-	CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.TemplateBoardField, error)
-	UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.TemplateBoardField, error)
+	ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.ListTemplateBoardFieldsRow, error)
+	GetFieldByID(ctx context.Context, id uuid.UUID) (db.GetTemplateBoardFieldByIDRow, error)
+	CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error)
+	UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error)
 	DeleteField(ctx context.Context, id uuid.UUID) error
 	UpdateFieldOrder(ctx context.Context, id uuid.UUID, order int32) error
 
 	// Project params
-	ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.TemplateProjectParam, error)
-	GetProjectParamByID(ctx context.Context, id uuid.UUID) (db.TemplateProjectParam, error)
-	CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.TemplateProjectParam, error)
-	UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.TemplateProjectParam, error)
+	ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateProjectParamsRow, error)
+	GetProjectParamByID(ctx context.Context, id uuid.UUID) (db.GetTemplateProjectParamByIDRow, error)
+	CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.ListTemplateProjectParamsRow, error)
+	UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.ListTemplateProjectParamsRow, error)
 	DeleteProjectParam(ctx context.Context, id uuid.UUID) error
 	UpdateProjectParamOrder(ctx context.Context, id uuid.UUID, order int32) error
 
 	// Roles
-	ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.TemplateRole, error)
-	GetRoleByID(ctx context.Context, id uuid.UUID) (db.TemplateRole, error)
-	CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.TemplateRole, error)
-	UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.TemplateRole, error)
+	ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateRolesRow, error)
+	GetRoleByID(ctx context.Context, id uuid.UUID) (db.GetTemplateRoleByIDRow, error)
+	CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.ListTemplateRolesRow, error)
+	UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.ListTemplateRolesRow, error)
 	DeleteRole(ctx context.Context, id uuid.UUID) error
-	UpdateRoleOrder(ctx context.Context, id uuid.UUID, order int32) error
-	CountRoles(ctx context.Context, templateID uuid.UUID) (int32, error)
-	ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.TemplateRolePermission, error)
+	ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.RolePermission, error)
 	UpsertRolePermission(ctx context.Context, roleID uuid.UUID, area, access string) error
 	DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error
 }
@@ -111,6 +105,18 @@ func (r *templateRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain
 			return nil, domain.ErrNotFound
 		}
 		return nil, errctx.Wrap(err, "GetByID", "id", id)
+	}
+	t := mapDBTemplateToDomainFull(row, 0)
+	return &t, nil
+}
+
+func (r *templateRepository) GetByType(ctx context.Context, projectType string) (*domain.ProjectTemplate, error) {
+	row, err := r.q.GetProjectTemplateByType(ctx, projectType)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, errctx.Wrap(err, "GetByType", "projectType", projectType)
 	}
 	t := mapDBTemplateToDomainFull(row, 0)
 	return &t, nil
@@ -167,20 +173,46 @@ func (r *templateRepository) IsInUse(ctx context.Context, id uuid.UUID) (bool, e
 
 // --- Boards ---
 
-func (r *templateRepository) ListBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) ([]db.TemplateBoard, error) {
-	return r.q.ListTemplateBoardsByTemplateID(ctx, templateID)
+func (r *templateRepository) ListBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateBoardsByTemplateIDRow, error) {
+	return r.q.ListTemplateBoardsByTemplateID(ctx, uuid.NullUUID{UUID: templateID, Valid: true})
 }
 
-func (r *templateRepository) GetBoardByID(ctx context.Context, id uuid.UUID) (db.TemplateBoard, error) {
+func (r *templateRepository) GetBoardByID(ctx context.Context, id uuid.UUID) (db.GetTemplateBoardByIDRow, error) {
 	return r.q.GetTemplateBoardByID(ctx, id)
 }
 
-func (r *templateRepository) CreateBoard(ctx context.Context, params db.CreateTemplateBoardParams) (db.TemplateBoard, error) {
-	return r.q.CreateTemplateBoard(ctx, params)
+func (r *templateRepository) CreateBoard(ctx context.Context, params db.CreateTemplateBoardParams) (db.ListTemplateBoardsByTemplateIDRow, error) {
+	row, err := r.q.CreateTemplateBoard(ctx, params)
+	if err != nil {
+		return db.ListTemplateBoardsByTemplateIDRow{}, err
+	}
+	return db.ListTemplateBoardsByTemplateIDRow{
+		ID:              row.ID,
+		TemplateID:      row.TemplateID,
+		Name:            row.Name,
+		Description:     row.Description,
+		SortOrder:       row.SortOrder,
+		PriorityType:    row.PriorityType,
+		EstimationUnit:  row.EstimationUnit,
+		SwimlaneGroupBy: row.SwimlaneGroupBy,
+	}, nil
 }
 
-func (r *templateRepository) UpdateBoard(ctx context.Context, params db.UpdateTemplateBoardParams) (db.TemplateBoard, error) {
-	return r.q.UpdateTemplateBoard(ctx, params)
+func (r *templateRepository) UpdateBoard(ctx context.Context, params db.UpdateTemplateBoardParams) (db.ListTemplateBoardsByTemplateIDRow, error) {
+	row, err := r.q.UpdateTemplateBoard(ctx, params)
+	if err != nil {
+		return db.ListTemplateBoardsByTemplateIDRow{}, err
+	}
+	return db.ListTemplateBoardsByTemplateIDRow{
+		ID:              row.ID,
+		TemplateID:      row.TemplateID,
+		Name:            row.Name,
+		Description:     row.Description,
+		SortOrder:       row.SortOrder,
+		PriorityType:    row.PriorityType,
+		EstimationUnit:  row.EstimationUnit,
+		SwimlaneGroupBy: row.SwimlaneGroupBy,
+	}, nil
 }
 
 func (r *templateRepository) DeleteBoard(ctx context.Context, id uuid.UUID) error {
@@ -188,32 +220,32 @@ func (r *templateRepository) DeleteBoard(ctx context.Context, id uuid.UUID) erro
 }
 
 func (r *templateRepository) CountBoardsByTemplateID(ctx context.Context, templateID uuid.UUID) (int32, error) {
-	return r.q.CountTemplateBoardsByTemplateID(ctx, templateID)
+	return r.q.CountTemplateBoardsByTemplateID(ctx, uuid.NullUUID{UUID: templateID, Valid: true})
 }
 
 func (r *templateRepository) UnsetDefaultBoard(ctx context.Context, templateID uuid.UUID) error {
-	return r.q.UnsetDefaultBoardByTemplateID(ctx, templateID)
+	return r.q.UnsetDefaultBoardByTemplateID(ctx, uuid.NullUUID{UUID: templateID, Valid: true})
 }
 
-func (r *templateRepository) UpdateBoardOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateBoardOrder(ctx, db.UpdateTemplateBoardOrderParams{ID: id, Order: order})
+func (r *templateRepository) UpdateBoardOrder(ctx context.Context, id uuid.UUID, order int16) error {
+	return r.q.UpdateTemplateBoardOrder(ctx, db.UpdateTemplateBoardOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Columns ---
 
-func (r *templateRepository) ListColumns(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardColumn, error) {
+func (r *templateRepository) ListColumns(ctx context.Context, boardID uuid.UUID) ([]db.Column, error) {
 	return r.q.ListTemplateBoardColumns(ctx, boardID)
 }
 
-func (r *templateRepository) GetColumnByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardColumn, error) {
+func (r *templateRepository) GetColumnByID(ctx context.Context, id uuid.UUID) (db.Column, error) {
 	return r.q.GetTemplateBoardColumnByID(ctx, id)
 }
 
-func (r *templateRepository) CreateColumn(ctx context.Context, params db.CreateTemplateBoardColumnParams) (db.TemplateBoardColumn, error) {
+func (r *templateRepository) CreateColumn(ctx context.Context, params db.CreateTemplateBoardColumnParams) (db.Column, error) {
 	return r.q.CreateTemplateBoardColumn(ctx, params)
 }
 
-func (r *templateRepository) UpdateColumn(ctx context.Context, params db.UpdateTemplateBoardColumnParams) (db.TemplateBoardColumn, error) {
+func (r *templateRepository) UpdateColumn(ctx context.Context, params db.UpdateTemplateBoardColumnParams) (db.Column, error) {
 	return r.q.UpdateTemplateBoardColumn(ctx, params)
 }
 
@@ -225,25 +257,25 @@ func (r *templateRepository) DeleteColumnsByBoardID(ctx context.Context, boardID
 	return r.q.DeleteTemplateBoardColumnsByBoardID(ctx, boardID)
 }
 
-func (r *templateRepository) UpdateColumnOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateBoardColumnOrder(ctx, db.UpdateTemplateBoardColumnOrderParams{ID: id, Order: order})
+func (r *templateRepository) UpdateColumnOrder(ctx context.Context, id uuid.UUID, order int16) error {
+	return r.q.UpdateTemplateBoardColumnOrder(ctx, db.UpdateTemplateBoardColumnOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Swimlanes ---
 
-func (r *templateRepository) ListSwimlanes(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardSwimlane, error) {
+func (r *templateRepository) ListSwimlanes(ctx context.Context, boardID uuid.UUID) ([]db.Swimlane, error) {
 	return r.q.ListTemplateBoardSwimlanes(ctx, boardID)
 }
 
-func (r *templateRepository) GetSwimlaneByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardSwimlane, error) {
+func (r *templateRepository) GetSwimlaneByID(ctx context.Context, id uuid.UUID) (db.Swimlane, error) {
 	return r.q.GetTemplateBoardSwimlaneByID(ctx, id)
 }
 
-func (r *templateRepository) CreateSwimlane(ctx context.Context, params db.CreateTemplateBoardSwimlaneParams) (db.TemplateBoardSwimlane, error) {
+func (r *templateRepository) CreateSwimlane(ctx context.Context, params db.CreateTemplateBoardSwimlaneParams) (db.Swimlane, error) {
 	return r.q.CreateTemplateBoardSwimlane(ctx, params)
 }
 
-func (r *templateRepository) UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt32, note string) (db.TemplateBoardSwimlane, error) {
+func (r *templateRepository) UpdateSwimlane(ctx context.Context, id uuid.UUID, wipLimit sql.NullInt16, note string) (db.Swimlane, error) {
 	return r.q.UpdateTemplateBoardSwimlane(ctx, db.UpdateTemplateBoardSwimlaneParams{ID: id, WipLimit: wipLimit, Note: note})
 }
 
@@ -255,40 +287,52 @@ func (r *templateRepository) DeleteSwimlanesByBoardID(ctx context.Context, board
 	return r.q.DeleteTemplateBoardSwimlanesByBoardID(ctx, boardID)
 }
 
-func (r *templateRepository) UpdateSwimlaneOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateBoardSwimlaneOrder(ctx, db.UpdateTemplateBoardSwimlaneOrderParams{ID: id, Order: order})
-}
-
-// --- Priority values ---
-
-func (r *templateRepository) ListPriorityValues(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardPriorityValue, error) {
-	return r.q.ListTemplateBoardPriorityValues(ctx, boardID)
-}
-
-func (r *templateRepository) CreatePriorityValue(ctx context.Context, params db.CreateTemplateBoardPriorityValueParams) (db.TemplateBoardPriorityValue, error) {
-	return r.q.CreateTemplateBoardPriorityValue(ctx, params)
-}
-
-func (r *templateRepository) DeletePriorityValuesByBoardID(ctx context.Context, boardID uuid.UUID) error {
-	return r.q.DeleteTemplateBoardPriorityValuesByBoardID(ctx, boardID)
+func (r *templateRepository) UpdateSwimlaneOrder(ctx context.Context, id uuid.UUID, order int16) error {
+	return r.q.UpdateTemplateBoardSwimlaneOrder(ctx, db.UpdateTemplateBoardSwimlaneOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Custom fields ---
 
-func (r *templateRepository) ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.TemplateBoardField, error) {
-	return r.q.ListTemplateBoardCustomFields(ctx, boardID)
+func (r *templateRepository) ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.ListTemplateBoardFieldsRow, error) {
+	return r.q.ListTemplateBoardFields(ctx, uuid.NullUUID{UUID: boardID, Valid: true})
 }
 
-func (r *templateRepository) GetFieldByID(ctx context.Context, id uuid.UUID) (db.TemplateBoardField, error) {
+func (r *templateRepository) GetFieldByID(ctx context.Context, id uuid.UUID) (db.GetTemplateBoardFieldByIDRow, error) {
 	return r.q.GetTemplateBoardFieldByID(ctx, id)
 }
 
-func (r *templateRepository) CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.TemplateBoardField, error) {
-	return r.q.CreateTemplateBoardField(ctx, params)
+func (r *templateRepository) CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error) {
+	row, err := r.q.CreateTemplateBoardField(ctx, params)
+	if err != nil {
+		return db.ListTemplateBoardFieldsRow{}, err
+	}
+	return db.ListTemplateBoardFieldsRow{
+		ID:         row.ID,
+		BoardID:    row.BoardID,
+		Name:       row.Name,
+		FieldType:  row.FieldType,
+		IsSystem:   row.IsSystem,
+		IsRequired: row.IsRequired,
+		SortOrder:  row.SortOrder,
+		Options:    row.Options,
+	}, nil
 }
 
-func (r *templateRepository) UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.TemplateBoardField, error) {
-	return r.q.UpdateTemplateBoardField(ctx, params)
+func (r *templateRepository) UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error) {
+	row, err := r.q.UpdateTemplateBoardField(ctx, params)
+	if err != nil {
+		return db.ListTemplateBoardFieldsRow{}, err
+	}
+	return db.ListTemplateBoardFieldsRow{
+		ID:         row.ID,
+		BoardID:    row.BoardID,
+		Name:       row.Name,
+		FieldType:  row.FieldType,
+		IsSystem:   row.IsSystem,
+		IsRequired: row.IsRequired,
+		SortOrder:  row.SortOrder,
+		Options:    row.Options,
+	}, nil
 }
 
 func (r *templateRepository) DeleteField(ctx context.Context, id uuid.UUID) error {
@@ -296,7 +340,7 @@ func (r *templateRepository) DeleteField(ctx context.Context, id uuid.UUID) erro
 }
 
 func (r *templateRepository) UpdateFieldOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateBoardFieldOrder(ctx, db.UpdateTemplateBoardFieldOrderParams{ID: id, Order: order})
+	return r.q.UpdateTemplateBoardFieldOrder(ctx, db.UpdateTemplateBoardFieldOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Helpers ---
@@ -313,12 +357,10 @@ func mapListRowToDomain(row db.ListProjectTemplatesRow) domain.ProjectTemplate {
 		Description: descPtr,
 		Type:        domain.ProjectType(row.ProjectType),
 		BoardCount:  int(row.BoardCount),
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
 	}
 }
 
-func mapDBTemplateToDomainFull(row db.ProjectTemplate, boardCount int) domain.ProjectTemplate {
+func mapDBTemplateToDomainFull(row db.Template, boardCount int) domain.ProjectTemplate {
 	var descPtr *string
 	if row.Description.Valid {
 		d := row.Description.String
@@ -330,8 +372,6 @@ func mapDBTemplateToDomainFull(row db.ProjectTemplate, boardCount int) domain.Pr
 		Description: descPtr,
 		Type:        domain.ProjectType(row.ProjectType),
 		BoardCount:  boardCount,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
 	}
 }
 
@@ -356,20 +396,48 @@ func JSONToOptions(raw pqtype.NullRawMessage) []string {
 
 // --- Project Params ---
 
-func (r *templateRepository) ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.TemplateProjectParam, error) {
-	return r.q.ListTemplateProjectParams(ctx, templateID)
+func (r *templateRepository) ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateProjectParamsRow, error) {
+	return r.q.ListTemplateProjectParams(ctx, uuid.NullUUID{UUID: templateID, Valid: true})
 }
 
-func (r *templateRepository) GetProjectParamByID(ctx context.Context, id uuid.UUID) (db.TemplateProjectParam, error) {
+func (r *templateRepository) GetProjectParamByID(ctx context.Context, id uuid.UUID) (db.GetTemplateProjectParamByIDRow, error) {
 	return r.q.GetTemplateProjectParamByID(ctx, id)
 }
 
-func (r *templateRepository) CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.TemplateProjectParam, error) {
-	return r.q.CreateTemplateProjectParam(ctx, params)
+func (r *templateRepository) CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.ListTemplateProjectParamsRow, error) {
+	row, err := r.q.CreateTemplateProjectParam(ctx, params)
+	if err != nil {
+		return db.ListTemplateProjectParamsRow{}, err
+	}
+	return db.ListTemplateProjectParamsRow{
+		ID:          row.ID,
+		TemplateID:  row.TemplateID,
+		Name:        row.Name,
+		Description: row.Description,
+		FieldType:   row.FieldType,
+		IsSystem:    row.IsSystem,
+		IsRequired:  row.IsRequired,
+		SortOrder:   row.SortOrder,
+		Options:     row.Options,
+	}, nil
 }
 
-func (r *templateRepository) UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.TemplateProjectParam, error) {
-	return r.q.UpdateTemplateProjectParam(ctx, params)
+func (r *templateRepository) UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.ListTemplateProjectParamsRow, error) {
+	row, err := r.q.UpdateTemplateProjectParam(ctx, params)
+	if err != nil {
+		return db.ListTemplateProjectParamsRow{}, err
+	}
+	return db.ListTemplateProjectParamsRow{
+		ID:          row.ID,
+		TemplateID:  row.TemplateID,
+		Name:        row.Name,
+		Description: row.Description,
+		FieldType:   row.FieldType,
+		IsSystem:    row.IsSystem,
+		IsRequired:  row.IsRequired,
+		SortOrder:   row.SortOrder,
+		Options:     row.Options,
+	}, nil
 }
 
 func (r *templateRepository) DeleteProjectParam(ctx context.Context, id uuid.UUID) error {
@@ -377,25 +445,45 @@ func (r *templateRepository) DeleteProjectParam(ctx context.Context, id uuid.UUI
 }
 
 func (r *templateRepository) UpdateProjectParamOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateProjectParamOrder(ctx, db.UpdateTemplateProjectParamOrderParams{ID: id, Order: order})
+	return r.q.UpdateTemplateProjectParamOrder(ctx, db.UpdateTemplateProjectParamOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Roles ---
 
-func (r *templateRepository) ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.TemplateRole, error) {
-	return r.q.ListTemplateRoles(ctx, templateID)
+func (r *templateRepository) ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateRolesRow, error) {
+	return r.q.ListTemplateRoles(ctx, uuid.NullUUID{UUID: templateID, Valid: true})
 }
 
-func (r *templateRepository) GetRoleByID(ctx context.Context, id uuid.UUID) (db.TemplateRole, error) {
+func (r *templateRepository) GetRoleByID(ctx context.Context, id uuid.UUID) (db.GetTemplateRoleByIDRow, error) {
 	return r.q.GetTemplateRoleByID(ctx, id)
 }
 
-func (r *templateRepository) CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.TemplateRole, error) {
-	return r.q.CreateTemplateRole(ctx, params)
+func (r *templateRepository) CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.ListTemplateRolesRow, error) {
+	row, err := r.q.CreateTemplateRole(ctx, params)
+	if err != nil {
+		return db.ListTemplateRolesRow{}, err
+	}
+	return db.ListTemplateRolesRow{
+		ID:          row.ID,
+		TemplateID:  row.TemplateID,
+		Name:        row.Name,
+		Description: row.Description,
+		IsAdmin:     row.IsAdmin,
+	}, nil
 }
 
-func (r *templateRepository) UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.TemplateRole, error) {
-	return r.q.UpdateTemplateRole(ctx, params)
+func (r *templateRepository) UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.ListTemplateRolesRow, error) {
+	row, err := r.q.UpdateTemplateRole(ctx, params)
+	if err != nil {
+		return db.ListTemplateRolesRow{}, err
+	}
+	return db.ListTemplateRolesRow{
+		ID:          row.ID,
+		TemplateID:  row.TemplateID,
+		Name:        row.Name,
+		Description: row.Description,
+		IsAdmin:     row.IsAdmin,
+	}, nil
 }
 
 func (r *templateRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {
@@ -403,20 +491,12 @@ func (r *templateRepository) DeleteRole(ctx context.Context, id uuid.UUID) error
 	return r.q.DeleteTemplateRoleByID(ctx, id)
 }
 
-func (r *templateRepository) UpdateRoleOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateRoleOrder(ctx, db.UpdateTemplateRoleOrderParams{ID: id, Order: order})
-}
-
-func (r *templateRepository) CountRoles(ctx context.Context, templateID uuid.UUID) (int32, error) {
-	return r.q.CountTemplateRolesByTemplateID(ctx, templateID)
-}
-
-func (r *templateRepository) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.TemplateRolePermission, error) {
+func (r *templateRepository) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.RolePermission, error) {
 	return r.q.ListTemplateRolePermissions(ctx, roleID)
 }
 
 func (r *templateRepository) UpsertRolePermission(ctx context.Context, roleID uuid.UUID, area, access string) error {
-	return r.q.UpsertTemplateRolePermission(ctx, db.UpsertTemplateRolePermissionParams{RoleID: roleID, Area: area, Access: access})
+	return r.q.UpsertTemplateRolePermission(ctx, db.UpsertTemplateRolePermissionParams{RoleID: roleID, PermissionCode: area, Access: sql.NullString{String: access, Valid: access != ""}})
 }
 
 func (r *templateRepository) DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error {

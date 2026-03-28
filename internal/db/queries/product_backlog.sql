@@ -1,22 +1,21 @@
--- Product backlog ordering
+-- Backlog ordering
 
 -- name: AddToProductBacklog :one
-INSERT INTO product_backlog (project_id, task_id, "order")
+INSERT INTO backlog (project_id, task_id, sort_order)
 VALUES ($1, $2, $3)
-RETURNING *;
+RETURNING project_id, task_id, sort_order;
 
 -- name: RemoveFromProductBacklog :exec
-DELETE FROM product_backlog
+DELETE FROM backlog
 WHERE project_id = $1 AND task_id = $2;
 
 -- name: GetProductBacklog :many
-SELECT *
-FROM product_backlog
+SELECT project_id, task_id, sort_order
+FROM backlog
 WHERE project_id = $1
-ORDER BY "order";
+ORDER BY sort_order;
 
 -- name: UpdateProductBacklogOrder :exec
-UPDATE product_backlog
-SET "order" = $3
+UPDATE backlog
+SET sort_order = $3
 WHERE project_id = $1 AND task_id = $2;
-

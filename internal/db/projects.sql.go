@@ -17,7 +17,7 @@ const createProject = `-- name: CreateProject :one
 
 INSERT INTO projects (key, name, description, project_type, owner_id, status)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, key, name, description, project_type, owner_id, status, created_at, updated_at
+RETURNING id, key, name, description, project_type, owner_id, status, created_at
 `
 
 type CreateProjectParams struct {
@@ -49,7 +49,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -65,7 +64,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id uuid.UUID) error {
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at, updated_at
+SELECT id, key, name, description, project_type, owner_id, status, created_at
 FROM projects
 WHERE id = $1
 `
@@ -82,13 +81,12 @@ func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, er
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getProjectByKey = `-- name: GetProjectByKey :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at, updated_at
+SELECT id, key, name, description, project_type, owner_id, status, created_at
 FROM projects
 WHERE key = $1
 `
@@ -105,18 +103,17 @@ func (q *Queries) GetProjectByKey(ctx context.Context, key string) (Project, err
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listUserProjects = `-- name: ListUserProjects :many
-SELECT DISTINCT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status, p.created_at, p.updated_at,
+SELECT DISTINCT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status, p.created_at,
        u.full_name AS owner_full_name, u.avatar_url AS owner_avatar_url, u.email AS owner_email
 FROM projects p
 JOIN users u ON u.id = p.owner_id
-LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
-WHERE (p.owner_id = $1 OR pm.user_id IS NOT NULL)
+LEFT JOIN members m ON m.project_id = p.id AND m.user_id = $1
+WHERE (p.owner_id = $1 OR m.user_id IS NOT NULL)
   AND ($2::text IS NULL OR p.status = $2)
   AND ($3::text IS NULL OR p.project_type = $3)
   AND ($4::text IS NULL OR $4::text = '' OR (
@@ -143,7 +140,6 @@ type ListUserProjectsRow struct {
 	OwnerID        uuid.UUID      `json:"owner_id"`
 	Status         string         `json:"status"`
 	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
 	OwnerFullName  string         `json:"owner_full_name"`
 	OwnerAvatarUrl sql.NullString `json:"owner_avatar_url"`
 	OwnerEmail     string         `json:"owner_email"`
@@ -172,7 +168,6 @@ func (q *Queries) ListUserProjects(ctx context.Context, arg ListUserProjectsPara
 			&i.OwnerID,
 			&i.Status,
 			&i.CreatedAt,
-			&i.UpdatedAt,
 			&i.OwnerFullName,
 			&i.OwnerAvatarUrl,
 			&i.OwnerEmail,
@@ -195,15 +190,16 @@ UPDATE projects
 SET name = COALESCE($1, name),
     description = COALESCE($2, description),
     status = COALESCE($3, status),
-    updated_at = NOW()
-WHERE id = $4
-RETURNING id, key, name, description, project_type, owner_id, status, created_at, updated_at
+    owner_id = COALESCE($4, owner_id)
+WHERE id = $5
+RETURNING id, key, name, description, project_type, owner_id, status, created_at
 `
 
 type UpdateProjectParams struct {
 	Name        sql.NullString `json:"name"`
 	Description sql.NullString `json:"description"`
 	Status      sql.NullString `json:"status"`
+	OwnerID     uuid.NullUUID  `json:"owner_id"`
 	ID          uuid.UUID      `json:"id"`
 }
 
@@ -212,6 +208,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.Name,
 		arg.Description,
 		arg.Status,
+		arg.OwnerID,
 		arg.ID,
 	)
 	var i Project
@@ -224,7 +221,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }

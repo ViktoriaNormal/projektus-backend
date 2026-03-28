@@ -3,22 +3,22 @@
 -- name: CreateTask :one
 INSERT INTO tasks (key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING *;
+RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at;
 
 -- name: GetTaskByID :one
-SELECT *
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
 FROM tasks
 WHERE id = $1;
 
 -- name: ListProjectTasks :many
-SELECT *
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
 FROM tasks
 WHERE project_id = $1
   AND deleted_at IS NULL
 ORDER BY created_at DESC;
 
 -- name: SearchTasks :many
-SELECT *
+SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
 FROM tasks
 WHERE ($1::uuid IS NULL OR project_id = $1)
   AND ($2::uuid IS NULL OR owner_id = $2)
@@ -34,16 +34,14 @@ SET name        = COALESCE(sqlc.narg('name'), name),
     deadline    = COALESCE(sqlc.narg('deadline'), deadline),
     executor_id = COALESCE(sqlc.narg('executor_id'), executor_id),
     column_id   = COALESCE(sqlc.narg('column_id'), column_id),
-    swimlane_id = COALESCE(sqlc.narg('swimlane_id'), swimlane_id),
-    updated_at  = NOW()
+    swimlane_id = COALESCE(sqlc.narg('swimlane_id'), swimlane_id)
 WHERE id = sqlc.arg('id')
-RETURNING *;
+RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at;
 
 -- name: SoftDeleteTask :exec
 UPDATE tasks
 SET deleted_at   = NOW(),
-    delete_reason = $2,
-    updated_at   = NOW()
+    delete_reason = $2
 WHERE id = $1;
 
 -- name: ListProjectTaskKeys :many
@@ -51,87 +49,43 @@ SELECT key
 FROM tasks
 WHERE project_id = $1;
 
--- name: UpdateTaskStoryPoints :exec
-UPDATE tasks
-SET story_points = $2
-WHERE id = $1;
-
--- name: ListTasksByBacklogType :many
-SELECT *
-FROM tasks
-WHERE project_id = $1
-  AND backlog_type = $2
-  AND deleted_at IS NULL
-ORDER BY created_at DESC;
-
-
--- Watchers
-
--- name: AddTaskWatcher :one
-INSERT INTO task_watchers (task_id, project_member_id)
-VALUES ($1, $2)
-ON CONFLICT (task_id, project_member_id) DO NOTHING
-RETURNING *;
-
--- name: RemoveTaskWatcher :exec
-DELETE FROM task_watchers
-WHERE id = $1;
-
--- name: ListTaskWatchers :many
-SELECT *
-FROM task_watchers
-WHERE task_id = $1;
-
 -- Dependencies
 
 -- name: AddTaskDependency :one
 INSERT INTO task_dependencies (task_id, depends_on_task_id, dependency_type)
 VALUES ($1, $2, $3)
-RETURNING *;
+RETURNING id, task_id, depends_on_task_id, dependency_type;
 
 -- name: RemoveTaskDependency :exec
 DELETE FROM task_dependencies
 WHERE id = $1;
 
 -- name: ListTaskDependencies :many
-SELECT *
+SELECT id, task_id, depends_on_task_id, dependency_type
 FROM task_dependencies
 WHERE task_id = $1;
 
 -- name: ListTaskDependants :many
-SELECT *
+SELECT id, task_id, depends_on_task_id, dependency_type
 FROM task_dependencies
 WHERE depends_on_task_id = $1;
 
--- Checklists
+-- Task field values
 
--- name: CreateChecklist :one
-INSERT INTO task_checklists (task_id, name)
-VALUES ($1, $2)
-RETURNING *;
+-- name: UpsertTaskFieldValue :exec
+INSERT INTO task_field_values (task_id, field_id, value_text, value_number, value_datetime, value_json)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (task_id, field_id) DO UPDATE
+SET value_text = EXCLUDED.value_text,
+    value_number = EXCLUDED.value_number,
+    value_datetime = EXCLUDED.value_datetime,
+    value_json = EXCLUDED.value_json;
 
--- name: ListTaskChecklists :many
-SELECT *
-FROM task_checklists
-WHERE task_id = $1
-ORDER BY created_at;
+-- name: GetTaskFieldValues :many
+SELECT task_id, field_id, value_text, value_number, value_datetime, value_json
+FROM task_field_values
+WHERE task_id = $1;
 
--- name: CreateChecklistItem :one
-INSERT INTO checklist_items (checklist_id, content, "order")
-VALUES ($1, $2, $3)
-RETURNING *;
-
--- name: ListChecklistItems :many
-SELECT *
-FROM checklist_items
-WHERE checklist_id = $1
-ORDER BY "order";
-
--- name: UpdateChecklistItemStatus :one
-UPDATE checklist_items
-SET is_checked = $2
-WHERE id = $1
-RETURNING *;
-
-
-
+-- name: DeleteTaskFieldValue :exec
+DELETE FROM task_field_values
+WHERE task_id = $1 AND field_id = $2;

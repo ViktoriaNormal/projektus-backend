@@ -86,6 +86,10 @@ func (h *ProjectMemberHandler) RemoveMember(c *gin.Context) {
 	}
 
 	if err := h.service.RemoveMember(c.Request.Context(), memberID); err != nil {
+		if err == domain.ErrLastProjectAdmin {
+			writeError(c, http.StatusBadRequest, "LAST_PROJECT_ADMIN", "Нельзя удалить последнего участника с ролью «Администратор проекта»")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить участника")
 		return
 	}

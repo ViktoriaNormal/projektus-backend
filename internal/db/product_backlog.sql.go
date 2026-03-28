@@ -13,54 +13,42 @@ import (
 
 const addToProductBacklog = `-- name: AddToProductBacklog :one
 
-INSERT INTO product_backlog (project_id, task_id, "order")
+INSERT INTO backlog (project_id, task_id, sort_order)
 VALUES ($1, $2, $3)
-RETURNING id, project_id, task_id, "order", added_at
+RETURNING project_id, task_id, sort_order
 `
 
 type AddToProductBacklogParams struct {
 	ProjectID uuid.UUID `json:"project_id"`
 	TaskID    uuid.UUID `json:"task_id"`
-	Order     int32     `json:"order"`
+	SortOrder int32     `json:"sort_order"`
 }
 
-// Product backlog ordering
-func (q *Queries) AddToProductBacklog(ctx context.Context, arg AddToProductBacklogParams) (ProductBacklog, error) {
-	row := q.db.QueryRowContext(ctx, addToProductBacklog, arg.ProjectID, arg.TaskID, arg.Order)
-	var i ProductBacklog
-	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.TaskID,
-		&i.Order,
-		&i.AddedAt,
-	)
+// Backlog ordering
+func (q *Queries) AddToProductBacklog(ctx context.Context, arg AddToProductBacklogParams) (Backlog, error) {
+	row := q.db.QueryRowContext(ctx, addToProductBacklog, arg.ProjectID, arg.TaskID, arg.SortOrder)
+	var i Backlog
+	err := row.Scan(&i.ProjectID, &i.TaskID, &i.SortOrder)
 	return i, err
 }
 
 const getProductBacklog = `-- name: GetProductBacklog :many
-SELECT id, project_id, task_id, "order", added_at
-FROM product_backlog
+SELECT project_id, task_id, sort_order
+FROM backlog
 WHERE project_id = $1
-ORDER BY "order"
+ORDER BY sort_order
 `
 
-func (q *Queries) GetProductBacklog(ctx context.Context, projectID uuid.UUID) ([]ProductBacklog, error) {
+func (q *Queries) GetProductBacklog(ctx context.Context, projectID uuid.UUID) ([]Backlog, error) {
 	rows, err := q.db.QueryContext(ctx, getProductBacklog, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProductBacklog{}
+	items := []Backlog{}
 	for rows.Next() {
-		var i ProductBacklog
-		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.TaskID,
-			&i.Order,
-			&i.AddedAt,
-		); err != nil {
+		var i Backlog
+		if err := rows.Scan(&i.ProjectID, &i.TaskID, &i.SortOrder); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -75,7 +63,7 @@ func (q *Queries) GetProductBacklog(ctx context.Context, projectID uuid.UUID) ([
 }
 
 const removeFromProductBacklog = `-- name: RemoveFromProductBacklog :exec
-DELETE FROM product_backlog
+DELETE FROM backlog
 WHERE project_id = $1 AND task_id = $2
 `
 
@@ -90,18 +78,18 @@ func (q *Queries) RemoveFromProductBacklog(ctx context.Context, arg RemoveFromPr
 }
 
 const updateProductBacklogOrder = `-- name: UpdateProductBacklogOrder :exec
-UPDATE product_backlog
-SET "order" = $3
+UPDATE backlog
+SET sort_order = $3
 WHERE project_id = $1 AND task_id = $2
 `
 
 type UpdateProductBacklogOrderParams struct {
 	ProjectID uuid.UUID `json:"project_id"`
 	TaskID    uuid.UUID `json:"task_id"`
-	Order     int32     `json:"order"`
+	SortOrder int32     `json:"sort_order"`
 }
 
 func (q *Queries) UpdateProductBacklogOrder(ctx context.Context, arg UpdateProductBacklogOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateProductBacklogOrder, arg.ProjectID, arg.TaskID, arg.Order)
+	_, err := q.db.ExecContext(ctx, updateProductBacklogOrder, arg.ProjectID, arg.TaskID, arg.SortOrder)
 	return err
 }
