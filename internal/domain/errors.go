@@ -38,5 +38,6 @@ var (
 	ErrLastProjectAdmin      = errors.New("cannot remove last project admin")
 	ErrTagAlreadyExists      = errors.New("tag already exists")
 	ErrInvalidFieldType      = errors.New("invalid field type for this context")
+	ErrScrumWipNotAllowed    = errors.New("swimlane WIP limits are not supported in Scrum")
 )
 

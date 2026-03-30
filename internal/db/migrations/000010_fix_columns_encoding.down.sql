@@ -1,0 +1,1 @@
+-- Down migration: no-op. Names are just re-applied in correct encoding.

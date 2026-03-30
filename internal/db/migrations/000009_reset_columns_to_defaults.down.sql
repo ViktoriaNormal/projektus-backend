@@ -1,0 +1,2 @@
+-- Down migration: no-op. Column data cannot be restored after reset.
+-- To undo, restore from a database backup.

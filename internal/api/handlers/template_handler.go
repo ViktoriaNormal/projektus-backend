@@ -540,6 +540,10 @@ func (h *TemplateHandler) CreateSwimlane(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
 			return
 		}
+		if err == domain.ErrScrumWipNotAllowed {
+			writeError(c, http.StatusBadRequest, "SCRUM_WIP_NOT_ALLOWED", "WIP-лимиты дорожек не поддерживаются в Scrum")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать дорожку")
 		return
 	}
@@ -594,6 +598,10 @@ func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")
+			return
+		}
+		if err == domain.ErrScrumWipNotAllowed {
+			writeError(c, http.StatusBadRequest, "SCRUM_WIP_NOT_ALLOWED", "WIP-лимиты дорожек не поддерживаются в Scrum")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить дорожку")

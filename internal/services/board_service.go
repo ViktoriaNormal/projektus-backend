@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"sort"
 
 	"github.com/google/uuid"
 
@@ -72,6 +74,19 @@ func (s *BoardService) CreateColumn(ctx context.Context, boardID uuid.UUID, name
 		return nil, domain.ErrInvalidInput
 	}
 
+	// Splice-insert: shift existing columns with order >= target by +1.
+	existing, err := s.repo.ListColumns(ctx, boardID.String())
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range existing {
+		if c.Order >= order {
+			if err := s.repo.UpdateColumnOrder(ctx, c.ID, c.Order+1); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	col := &domain.Column{
 		BoardID:    boardID.String(),
 		Name:       name,
@@ -79,11 +94,50 @@ func (s *BoardService) CreateColumn(ctx context.Context, boardID uuid.UUID, name
 		WipLimit:   wipLimit,
 		Order:      order,
 	}
-	return s.repo.CreateColumn(ctx, col)
+	created, err := s.repo.CreateColumn(ctx, col)
+	if err != nil {
+		return nil, err
+	}
+
+	// Recompact to ensure sequential 1,2,3,...
+	if err := s.recompactColumnOrders(ctx, boardID.String()); err != nil {
+		return nil, err
+	}
+
+	// Validate column order after creation.
+	columns, _ := s.repo.ListColumns(ctx, boardID.String())
+	if err := validateColumnOrderDomain(columns); err != nil {
+		_ = s.repo.DeleteColumn(ctx, created.ID)
+		_ = s.recompactColumnOrders(ctx, boardID.String())
+		return nil, err
+	}
+
+	// Re-read created column to get recompacted order.
+	created, _ = s.repo.GetColumnByID(ctx, created.ID)
+	return created, nil
 }
 
 func (s *BoardService) UpdateColumn(ctx context.Context, c *domain.Column) (*domain.Column, error) {
-	return s.repo.UpdateColumn(ctx, c)
+	// Save pre-update state for rollback.
+	before, err := s.repo.GetColumnByID(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	updated, err := s.repo.UpdateColumn(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate column order after update.
+	columns, _ := s.repo.ListColumns(ctx, c.BoardID)
+	if err := validateColumnOrderDomain(columns); err != nil {
+		// Rollback to pre-update state.
+		_, _ = s.repo.UpdateColumn(ctx, before)
+		return nil, err
+	}
+
+	return updated, nil
 }
 
 func (s *BoardService) DeleteColumn(ctx context.Context, id uuid.UUID) error {
@@ -153,6 +207,11 @@ func (s *BoardService) GetColumnByID(ctx context.Context, id uuid.UUID) (*domain
 }
 
 func (s *BoardService) DeleteColumnSafe(ctx context.Context, id uuid.UUID) error {
+	col, err := s.repo.GetColumnByID(ctx, id.String())
+	if err != nil {
+		return err
+	}
+
 	count, err := s.repo.CountTasksInColumn(ctx, id.String())
 	if err != nil {
 		return err
@@ -160,15 +219,59 @@ func (s *BoardService) DeleteColumnSafe(ctx context.Context, id uuid.UUID) error
 	if count > 0 {
 		return domain.ErrColumnHasTasks
 	}
-	return s.repo.DeleteColumn(ctx, id.String())
+
+	// Validate: board must keep at least one column of each required type.
+	columns, err := s.repo.ListColumns(ctx, col.BoardID)
+	if err != nil {
+		return err
+	}
+	if col.SystemType != nil {
+		if err := validateMinColumnTypes(columns, id.String()); err != nil {
+			return err
+		}
+	}
+
+	if err := s.repo.DeleteColumn(ctx, id.String()); err != nil {
+		return err
+	}
+
+	// Recompact orders after deletion.
+	return s.recompactColumnOrders(ctx, col.BoardID)
 }
 
 func (s *BoardService) ReorderColumns(ctx context.Context, boardID uuid.UUID, orders map[uuid.UUID]int16) error {
+	// Save pre-reorder state for rollback.
+	columns, err := s.repo.ListColumns(ctx, boardID.String())
+	if err != nil {
+		return err
+	}
+
+	// Check locked columns.
+	for _, col := range columns {
+		if col.IsLocked {
+			colID, _ := uuid.Parse(col.ID)
+			if newOrder, ok := orders[colID]; ok && newOrder != col.Order {
+				return fmt.Errorf("COLUMN_LOCKED: %w", domain.ErrColumnLocked)
+			}
+		}
+	}
+
 	for id, order := range orders {
 		if err := s.repo.UpdateColumnOrder(ctx, id.String(), order); err != nil {
 			return err
 		}
 	}
+
+	// Validate after reorder.
+	updated, _ := s.repo.ListColumns(ctx, boardID.String())
+	if err := validateColumnOrderDomain(updated); err != nil {
+		// Rollback.
+		for _, col := range columns {
+			_ = s.repo.UpdateColumnOrder(ctx, col.ID, col.Order)
+		}
+		return err
+	}
+
 	return nil
 }
 
@@ -300,4 +403,74 @@ func (s *BoardService) ReorderCustomFields(ctx context.Context, boardID uuid.UUI
 	return nil
 }
 
+// validateColumnOrderDomain ensures column ordering: all initial < all in_progress < all completed.
+func validateColumnOrderDomain(columns []domain.Column) error {
+	sorted := make([]domain.Column, len(columns))
+	copy(sorted, columns)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Order < sorted[j].Order })
 
+	typeOrder := map[domain.SystemStatusType]int{
+		domain.StatusInitial:    0,
+		domain.StatusInProgress: 1,
+		domain.StatusCompleted:  2,
+	}
+	maxSeen := -1
+	for _, col := range sorted {
+		if col.SystemType == nil {
+			continue
+		}
+		to, ok := typeOrder[*col.SystemType]
+		if !ok {
+			continue
+		}
+		if to < maxSeen {
+			return fmt.Errorf("INVALID_COLUMN_ORDER: %w", domain.ErrInvalidColumnOrder)
+		}
+		if to > maxSeen {
+			maxSeen = to
+		}
+	}
+	return nil
+}
+
+// recompactColumnOrders renumbers all columns for a board sequentially: 1, 2, 3, ...
+func (s *BoardService) recompactColumnOrders(ctx context.Context, boardID string) error {
+	columns, err := s.repo.ListColumns(ctx, boardID)
+	if err != nil {
+		return err
+	}
+	sort.Slice(columns, func(i, j int) bool { return columns[i].Order < columns[j].Order })
+	for i, col := range columns {
+		newOrder := int16(i + 1)
+		if col.Order != newOrder {
+			if err := s.repo.UpdateColumnOrder(ctx, col.ID, newOrder); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validateMinColumnTypes checks that removing a column won't leave the board without
+// at least one initial, one in_progress, and one completed column.
+func validateMinColumnTypes(columns []domain.Column, excludeID string) error {
+	counts := map[domain.SystemStatusType]int{
+		domain.StatusInitial:    0,
+		domain.StatusInProgress: 0,
+		domain.StatusCompleted:  0,
+	}
+	for _, col := range columns {
+		if col.ID == excludeID || col.SystemType == nil {
+			continue
+		}
+		if _, ok := counts[*col.SystemType]; ok {
+			counts[*col.SystemType]++
+		}
+	}
+	for st, cnt := range counts {
+		if cnt < 1 {
+			return fmt.Errorf("INVALID_COLUMN_ORDER: на доске должна быть хотя бы одна колонка типа %s: %w", st, domain.ErrInvalidColumnOrder)
+		}
+	}
+	return nil
+}

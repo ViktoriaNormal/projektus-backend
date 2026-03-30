@@ -1467,6 +1467,12 @@ paths:
     post:
       tags: [Columns]
       summary: Create column
+      description: |-
+        Создаёт колонку на указанной позиции `order` (splice-вставка):
+        все существующие колонки с `order >=` указанного сдвигаются на +1.
+
+        После вставки проверяется порядок типов колонок: `initial → in_progress → completed`.
+        При нарушении — 400 с кодом `INVALID_COLUMN_ORDER`.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
       requestBody:
@@ -1487,11 +1493,23 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/ColumnResponse'
+        '400':
+          description: Invalid column order or invalid systemType
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /boards/{board_id}/columns/reorder:
     patch:
       tags: [Columns]
       summary: Reorder columns
+      description: |-
+        Изменяет порядок колонок. Заблокированные колонки (например, «Бэклог спринта» в Scrum)
+        не могут быть перемещены — вернётся 400 с кодом `COLUMN_LOCKED`.
+
+        После перестановки проверяется порядок типов: `initial → in_progress → completed`.
+        При нарушении — 400 с кодом `INVALID_COLUMN_ORDER`, изменения откатываются.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
       requestBody:
@@ -1503,11 +1521,21 @@ paths:
       responses:
         '204':
           description: Reordered
+        '400':
+          description: Column locked or invalid column order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /boards/{board_id}/columns/{column_id}:
     patch:
       tags: [Columns]
       summary: Update column
+      description: |-
+        При изменении `system_type` проверяется порядок колонок: `initial → in_progress → completed`.
+        Заблокированные колонки нельзя переименовывать или менять `system_type`.
+        При нарушении порядка — 400 с кодом `INVALID_COLUMN_ORDER`, изменения откатываются.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
         - $ref: '#/components/parameters/ColumnIdPath'
@@ -1529,15 +1557,34 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/ColumnResponse'
+        '400':
+          description: Column locked or invalid column order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       tags: [Columns]
       summary: Delete column
+      description: |-
+        Удаляет колонку. После удаления порядок оставшихся колонок пересчитывается последовательно (1, 2, 3, ...).
+
+        **Ограничения:**
+        - Нельзя удалить заблокированную колонку (`COLUMN_LOCKED`)
+        - Нельзя удалить колонку, если в ней есть задачи (`COLUMN_HAS_TASKS`)
+        - На доске должна остаться хотя бы одна колонка каждого типа: `initial`, `in_progress`, `completed` (`INVALID_COLUMN_ORDER`)
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
         - $ref: '#/components/parameters/ColumnIdPath'
       responses:
         '204':
           description: Deleted
+        '400':
+          description: Column locked, has tasks, or would violate minimum type requirement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   # ─── Swimlanes ──────────────────────────────────────────────────────
   /boards/{board_id}/swimlanes:
@@ -1604,6 +1651,9 @@ paths:
     patch:
       tags: [Swimlanes]
       summary: Update swimlane
+      description: |-
+        Для Scrum-проектов установка `wip_limit` запрещена — вернётся 400
+        с кодом `SCRUM_WIP_NOT_ALLOWED`. Для Kanban — без ограничений.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
         - $ref: '#/components/parameters/SwimlaneIdPath'
@@ -1625,6 +1675,12 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/SwimlaneResponse'
+        '400':
+          description: WIP limits not supported for Scrum swimlanes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       tags: [Swimlanes]
       summary: Delete swimlane
@@ -2770,6 +2826,9 @@ paths:
     patch:
       tags: [AdminTemplates]
       summary: Reorder template columns
+      description: |-
+        Заблокированные колонки не могут быть перемещены (`COLUMN_LOCKED`).
+        После перестановки проверяется порядок: `initial → in_progress → completed` (`INVALID_COLUMN_ORDER`).
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -2782,11 +2841,20 @@ paths:
       responses:
         '204':
           description: Reordered
+        '400':
+          description: Column locked or invalid column order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/project-templates/{template_id}/boards/{board_id}/columns/{column_id}:
     patch:
       tags: [AdminTemplates]
       summary: Update template column
+      description: |-
+        Заблокированные колонки нельзя редактировать (`COLUMN_LOCKED`).
+        При изменении `system_type` проверяется порядок: `initial → in_progress → completed` (`INVALID_COLUMN_ORDER`).
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -2809,9 +2877,21 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/TemplateBoardColumnResponse'
+        '400':
+          description: Column locked or invalid column order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       tags: [AdminTemplates]
       summary: Delete template column
+      description: |-
+        Удаляет колонку шаблона. После удаления порядок пересчитывается последовательно (1, 2, 3, ...).
+
+        **Ограничения:**
+        - Нельзя удалить заблокированную колонку (`COLUMN_LOCKED`)
+        - На доске должна остаться хотя бы одна колонка каждого типа: `initial`, `in_progress`, `completed` (`INVALID_COLUMN_ORDER`)
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -2819,11 +2899,20 @@ paths:
       responses:
         '204':
           description: Deleted
+        '400':
+          description: Column locked or would violate minimum type requirement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/project-templates/{template_id}/boards/{board_id}/swimlanes:
     post:
       tags: [AdminTemplates]
       summary: Create template swimlane
+      description: |-
+        Для Scrum-шаблонов передача `wip_limit` запрещена — вернётся 400
+        с кодом `SCRUM_WIP_NOT_ALLOWED`.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -2845,6 +2934,12 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/TemplateBoardSwimlaneResponse'
+        '400':
+          description: WIP limits not supported for Scrum template swimlanes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/project-templates/{template_id}/boards/{board_id}/swimlanes/reorder:
     patch:
@@ -2867,6 +2962,9 @@ paths:
     patch:
       tags: [AdminTemplates]
       summary: Update template swimlane
+      description: |-
+        Для Scrum-шаблонов установка `wip_limit` запрещена — вернётся 400
+        с кодом `SCRUM_WIP_NOT_ALLOWED`.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -2889,6 +2987,12 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/TemplateBoardSwimlaneResponse'
+        '400':
+          description: WIP limits not supported for Scrum template swimlanes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       tags: [AdminTemplates]
       summary: Delete template swimlane

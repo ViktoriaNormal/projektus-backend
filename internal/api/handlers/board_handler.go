@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -235,6 +236,10 @@ func (h *BoardHandler) CreateColumn(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Недопустимое значение systemType для колонки")
 			return
 		}
+		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
+			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать колонку")
 		return
 	}
@@ -393,6 +398,10 @@ func (h *BoardHandler) UpdateColumn(c *gin.Context) {
 	}
 	updated, err := h.service.UpdateColumn(c.Request.Context(), col)
 	if err != nil {
+		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
+			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить колонку")
 		return
 	}
@@ -442,6 +451,14 @@ func (h *BoardHandler) ReorderColumns(c *gin.Context) {
 		orders[o.ColumnID] = int16(o.Order)
 	}
 	if err := h.service.ReorderColumns(c.Request.Context(), boardID, orders); err != nil {
+		if strings.Contains(err.Error(), "COLUMN_LOCKED") {
+			writeError(c, http.StatusBadRequest, "COLUMN_LOCKED", "Нельзя перемещать заблокированную колонку")
+			return
+		}
+		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
+			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок колонок")
 		return
 	}
@@ -467,6 +484,20 @@ func (h *BoardHandler) UpdateSwimlane(c *gin.Context) {
 		writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")
 		return
 	}
+
+	// Reject wipLimit for Scrum projects.
+	if req.WipLimit.Set && !req.WipLimit.Null {
+		board, err := h.service.GetBoard(c.Request.Context(), uuid.MustParse(sw.BoardID))
+		if err == nil && board.ProjectID != nil {
+			pid, _ := uuid.Parse(*board.ProjectID)
+			project, err := h.projectService.GetProject(c.Request.Context(), pid)
+			if err == nil && project.Type == domain.ProjectTypeScrum {
+				writeError(c, http.StatusBadRequest, "SCRUM_WIP_NOT_ALLOWED", "WIP-лимиты дорожек не поддерживаются в Scrum")
+				return
+			}
+		}
+	}
+
 	if req.Name != nil {
 		sw.Name = *req.Name
 	}

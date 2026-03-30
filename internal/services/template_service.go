@@ -331,6 +331,9 @@ func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID 
 		return domain.TemplateBoardColumn{}, err
 	}
 
+	// Recompact to ensure sequential 1,2,3,...
+	_ = s.recompactTemplateColumnOrders(ctx, boardID)
+
 	return mapDBColumnToDomain(col), nil
 }
 
@@ -409,19 +412,30 @@ func (s *TemplateService) DeleteColumn(ctx context.Context, templateID, boardID,
 		return fmt.Errorf("COLUMN_LOCKED: %w", domain.ErrColumnLocked)
 	}
 
+	// Check minimum type requirement before deleting.
+	columns, _ := s.repo.ListColumns(ctx, boardID)
+	if col.SystemType.Valid {
+		if err := validateMinColumnTypesDB(columns, columnID); err != nil {
+			return err
+		}
+	}
+
 	if err := s.repo.DeleteColumn(ctx, columnID); err != nil {
 		return err
 	}
 
 	// Validate remaining order
-	columns, _ := s.repo.ListColumns(ctx, boardID)
-	if err := validateColumnOrder(columns); err != nil {
+	remaining, _ := s.repo.ListColumns(ctx, boardID)
+	if err := validateColumnOrder(remaining); err != nil {
 		// Re-create the column
 		_, _ = s.repo.CreateColumn(ctx, db.CreateTemplateBoardColumnParams{
 			BoardID: boardID, Name: col.Name, SystemType: col.SystemType, WipLimit: col.WipLimit, SortOrder: col.SortOrder, IsLocked: col.IsLocked, Note: col.Note,
 		})
 		return err
 	}
+
+	// Recompact orders after deletion.
+	_ = s.recompactTemplateColumnOrders(ctx, boardID)
 
 	return nil
 }
@@ -473,6 +487,14 @@ func (s *TemplateService) CreateSwimlane(ctx context.Context, templateID, boardI
 		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
 	}
 
+	// Reject wipLimit for Scrum templates.
+	if wipLimit != nil {
+		tmpl, err := s.repo.GetByID(ctx, templateID)
+		if err == nil && tmpl.Type == domain.ProjectTypeScrum {
+			return domain.TemplateBoardSwimlane{}, domain.ErrScrumWipNotAllowed
+		}
+	}
+
 	wl := sql.NullInt16{}
 	if wipLimit != nil {
 		wl = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
@@ -496,6 +518,14 @@ func (s *TemplateService) UpdateSwimlane(ctx context.Context, templateID, boardI
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardSwimlane{}, domain.ErrNotFound
+	}
+
+	// Reject wipLimit for Scrum templates.
+	if wipLimit != nil {
+		tmpl, err := s.repo.GetByID(ctx, templateID)
+		if err == nil && tmpl.Type == domain.ProjectTypeScrum {
+			return domain.TemplateBoardSwimlane{}, domain.ErrScrumWipNotAllowed
+		}
 	}
 
 	existing, err := s.repo.GetSwimlaneByID(ctx, swimlaneID)
@@ -1164,6 +1194,44 @@ func validateColumnOrder(columns []db.Column) error {
 		}
 		if to > maxSeen {
 			maxSeen = to
+		}
+	}
+	return nil
+}
+
+// recompactTemplateColumnOrders renumbers all columns for a template board sequentially: 1, 2, 3, ...
+func (s *TemplateService) recompactTemplateColumnOrders(ctx context.Context, boardID uuid.UUID) error {
+	columns, err := s.repo.ListColumns(ctx, boardID)
+	if err != nil {
+		return err
+	}
+	sort.Slice(columns, func(i, j int) bool { return columns[i].SortOrder < columns[j].SortOrder })
+	for i, col := range columns {
+		newOrder := int16(i + 1)
+		if col.SortOrder != newOrder {
+			if err := s.repo.UpdateColumnOrder(ctx, col.ID, newOrder); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validateMinColumnTypesDB checks that removing a column won't leave the board without
+// at least one initial, one in_progress, and one completed column. Works with db.Column.
+func validateMinColumnTypesDB(columns []db.Column, excludeID uuid.UUID) error {
+	counts := map[string]int{"initial": 0, "in_progress": 0, "completed": 0}
+	for _, col := range columns {
+		if col.ID == excludeID || !col.SystemType.Valid {
+			continue
+		}
+		if _, ok := counts[col.SystemType.String]; ok {
+			counts[col.SystemType.String]++
+		}
+	}
+	for st, cnt := range counts {
+		if cnt < 1 {
+			return fmt.Errorf("INVALID_COLUMN_ORDER: на доске должна быть хотя бы одна колонка типа %s: %w", st, domain.ErrInvalidColumnOrder)
 		}
 	}
 	return nil
