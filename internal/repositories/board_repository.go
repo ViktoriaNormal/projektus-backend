@@ -18,6 +18,7 @@ type BoardRepository interface {
 	UpdateBoard(ctx context.Context, b *domain.Board) (*domain.Board, error)
 	DeleteBoard(ctx context.Context, id string) error
 	UpdateBoardOrder(ctx context.Context, id string, order int16) error
+	UnsetDefaultBoardByProjectID(ctx context.Context, projectID string) error
 
 	ListColumns(ctx context.Context, boardID string) ([]domain.Column, error)
 	GetColumnByID(ctx context.Context, id string) (*domain.Column, error)
@@ -48,7 +49,6 @@ type BoardRepository interface {
 	CreateCustomField(ctx context.Context, f *domain.BoardCustomField) (*domain.BoardCustomField, error)
 	UpdateCustomField(ctx context.Context, f *domain.BoardCustomField) (*domain.BoardCustomField, error)
 	DeleteCustomField(ctx context.Context, id string) error
-	UpdateCustomFieldOrder(ctx context.Context, id string, order int32) error
 
 }
 
@@ -147,6 +147,7 @@ func (r *boardRepository) UpdateBoard(ctx context.Context, b *domain.Board) (*do
 		params.EstimationUnit = sql.NullString{String: b.EstimationUnit, Valid: true}
 	}
 	params.SwimlaneGroupBy = sql.NullString{String: b.SwimlaneGroupBy, Valid: true}
+	params.IsDefault = sql.NullBool{Bool: b.IsDefault, Valid: true}
 
 	row, err := r.q.UpdateBoard(ctx, params)
 	if err != nil {
@@ -162,6 +163,14 @@ func (r *boardRepository) DeleteBoard(ctx context.Context, id string) error {
 		return err
 	}
 	return r.q.DeleteBoard(ctx, uid)
+}
+
+func (r *boardRepository) UnsetDefaultBoardByProjectID(ctx context.Context, projectID string) error {
+	pid, err := uuid.Parse(projectID)
+	if err != nil {
+		return err
+	}
+	return r.q.UnsetDefaultBoardByProjectID(ctx, uuid.NullUUID{UUID: pid, Valid: true})
 }
 
 func (r *boardRepository) ListColumns(ctx context.Context, boardID string) ([]domain.Column, error) {
@@ -495,7 +504,7 @@ func (r *boardRepository) ListCustomFields(ctx context.Context, boardID string) 
 		result[i] = domain.BoardCustomField{
 			ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
 			Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
-			IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+			IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 		}
 	}
 	return result, nil
@@ -516,7 +525,7 @@ func (r *boardRepository) GetCustomFieldByID(ctx context.Context, id string) (*d
 	f := domain.BoardCustomField{
 		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
 		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
-		IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+		IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 	}
 	return &f, nil
 }
@@ -533,7 +542,6 @@ func (r *boardRepository) CreateCustomField(ctx context.Context, f *domain.Board
 		FieldType:   f.FieldType,
 		IsSystem:    f.IsSystem,
 		IsRequired:  f.IsRequired,
-		SortOrder:   f.Order,
 		Options:     OptionsToJSON(f.Options),
 	})
 	if err != nil {
@@ -542,7 +550,7 @@ func (r *boardRepository) CreateCustomField(ctx context.Context, f *domain.Board
 	created := domain.BoardCustomField{
 		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
 		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
-		IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+		IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 	}
 	return &created, nil
 }
@@ -564,7 +572,7 @@ func (r *boardRepository) UpdateCustomField(ctx context.Context, f *domain.Board
 	updated := domain.BoardCustomField{
 		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
 		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
-		IsRequired: row.IsRequired, Order: row.SortOrder, Options: JSONToOptions(row.Options),
+		IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 	}
 	return &updated, nil
 }
@@ -575,14 +583,6 @@ func (r *boardRepository) DeleteCustomField(ctx context.Context, id string) erro
 		return err
 	}
 	return r.q.DeleteBoardCustomFieldByID(ctx, uid)
-}
-
-func (r *boardRepository) UpdateCustomFieldOrder(ctx context.Context, id string, order int32) error {
-	uid, err := uuid.Parse(id)
-	if err != nil {
-		return err
-	}
-	return r.q.UpdateBoardCustomFieldOrder(ctx, db.UpdateBoardCustomFieldOrderParams{ID: uid, SortOrder: order})
 }
 
 func mapBoardRowToDomain(id uuid.UUID, projectID, templateID uuid.NullUUID, name string, desc sql.NullString, isDefault bool, sortOrder int16, priorityType, estimationUnit, swimlaneGroupBy string) domain.Board {

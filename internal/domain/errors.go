@@ -39,5 +39,6 @@ var (
 	ErrTagAlreadyExists      = errors.New("tag already exists")
 	ErrInvalidFieldType      = errors.New("invalid field type for this context")
 	ErrScrumWipNotAllowed    = errors.New("swimlane WIP limits are not supported in Scrum")
+	ErrCompletedColumnWip   = errors.New("WIP limit cannot be set for completed columns")
 )
 

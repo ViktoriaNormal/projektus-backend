@@ -144,9 +144,9 @@ func (q *Queries) CreateTemplateBoardColumn(ctx context.Context, arg CreateTempl
 }
 
 const createTemplateBoardField = `-- name: CreateTemplateBoardField :one
-INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, sort_order, options)
-VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, options)
+VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7)
+RETURNING id, board_id, name, description, field_type, is_system, is_required, options
 `
 
 type CreateTemplateBoardFieldParams struct {
@@ -156,7 +156,6 @@ type CreateTemplateBoardFieldParams struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -168,7 +167,6 @@ type CreateTemplateBoardFieldRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -180,7 +178,6 @@ func (q *Queries) CreateTemplateBoardField(ctx context.Context, arg CreateTempla
 		arg.FieldType,
 		arg.IsSystem,
 		arg.IsRequired,
-		arg.SortOrder,
 		arg.Options,
 	)
 	var i CreateTemplateBoardFieldRow
@@ -192,7 +189,6 @@ func (q *Queries) CreateTemplateBoardField(ctx context.Context, arg CreateTempla
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
@@ -408,7 +404,7 @@ func (q *Queries) GetTemplateBoardColumnByID(ctx context.Context, id uuid.UUID) 
 }
 
 const getTemplateBoardFieldByID = `-- name: GetTemplateBoardFieldByID :one
-SELECT id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, board_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE id = $1
 `
@@ -421,7 +417,6 @@ type GetTemplateBoardFieldByIDRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -436,7 +431,6 @@ func (q *Queries) GetTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) (
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
@@ -561,10 +555,9 @@ func (q *Queries) ListTemplateBoardColumns(ctx context.Context, boardID uuid.UUI
 }
 
 const listTemplateBoardCustomFields = `-- name: ListTemplateBoardCustomFields :many
-SELECT id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, board_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE board_id = $1 AND kind = 'board_field' AND is_system = false
-ORDER BY sort_order ASC
 `
 
 type ListTemplateBoardCustomFieldsRow struct {
@@ -575,7 +568,6 @@ type ListTemplateBoardCustomFieldsRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -596,7 +588,6 @@ func (q *Queries) ListTemplateBoardCustomFields(ctx context.Context, boardID uui
 			&i.FieldType,
 			&i.IsSystem,
 			&i.IsRequired,
-			&i.SortOrder,
 			&i.Options,
 		); err != nil {
 			return nil, err
@@ -614,10 +605,9 @@ func (q *Queries) ListTemplateBoardCustomFields(ctx context.Context, boardID uui
 
 const listTemplateBoardFields = `-- name: ListTemplateBoardFields :many
 
-SELECT id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, board_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE board_id = $1 AND kind = 'board_field'
-ORDER BY sort_order ASC
 `
 
 type ListTemplateBoardFieldsRow struct {
@@ -628,7 +618,6 @@ type ListTemplateBoardFieldsRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -650,7 +639,6 @@ func (q *Queries) ListTemplateBoardFields(ctx context.Context, boardID uuid.Null
 			&i.FieldType,
 			&i.IsSystem,
 			&i.IsRequired,
-			&i.SortOrder,
 			&i.Options,
 		); err != nil {
 			return nil, err
@@ -904,7 +892,7 @@ const updateTemplateBoardField = `-- name: UpdateTemplateBoardField :one
 UPDATE fields
 SET name = $2, is_required = $3, options = $4
 WHERE id = $1
-RETURNING id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+RETURNING id, board_id, name, description, field_type, is_system, is_required, options
 `
 
 type UpdateTemplateBoardFieldParams struct {
@@ -922,7 +910,6 @@ type UpdateTemplateBoardFieldRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -942,24 +929,9 @@ func (q *Queries) UpdateTemplateBoardField(ctx context.Context, arg UpdateTempla
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
-}
-
-const updateTemplateBoardFieldOrder = `-- name: UpdateTemplateBoardFieldOrder :exec
-UPDATE fields SET sort_order = $2 WHERE id = $1
-`
-
-type UpdateTemplateBoardFieldOrderParams struct {
-	ID        uuid.UUID `json:"id"`
-	SortOrder int32     `json:"sort_order"`
-}
-
-func (q *Queries) UpdateTemplateBoardFieldOrder(ctx context.Context, arg UpdateTemplateBoardFieldOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateTemplateBoardFieldOrder, arg.ID, arg.SortOrder)
-	return err
 }
 
 const updateTemplateBoardOrder = `-- name: UpdateTemplateBoardOrder :exec

@@ -57,7 +57,6 @@ type TemplateRepository interface {
 	CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error)
 	UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error)
 	DeleteField(ctx context.Context, id uuid.UUID) error
-	UpdateFieldOrder(ctx context.Context, id uuid.UUID, order int32) error
 
 	// Project params
 	ListProjectParams(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateProjectParamsRow, error)
@@ -65,7 +64,6 @@ type TemplateRepository interface {
 	CreateProjectParam(ctx context.Context, params db.CreateTemplateProjectParamParams) (db.ListTemplateProjectParamsRow, error)
 	UpdateProjectParam(ctx context.Context, params db.UpdateTemplateProjectParamParams) (db.ListTemplateProjectParamsRow, error)
 	DeleteProjectParam(ctx context.Context, id uuid.UUID) error
-	UpdateProjectParamOrder(ctx context.Context, id uuid.UUID, order int32) error
 
 	// Roles
 	ListRoles(ctx context.Context, templateID uuid.UUID) ([]db.ListTemplateRolesRow, error)
@@ -310,10 +308,10 @@ func (r *templateRepository) CreateField(ctx context.Context, params db.CreateTe
 		ID:         row.ID,
 		BoardID:    row.BoardID,
 		Name:       row.Name,
+		Description: row.Description,
 		FieldType:  row.FieldType,
 		IsSystem:   row.IsSystem,
 		IsRequired: row.IsRequired,
-		SortOrder:  row.SortOrder,
 		Options:    row.Options,
 	}, nil
 }
@@ -327,20 +325,16 @@ func (r *templateRepository) UpdateField(ctx context.Context, params db.UpdateTe
 		ID:         row.ID,
 		BoardID:    row.BoardID,
 		Name:       row.Name,
+		Description: row.Description,
 		FieldType:  row.FieldType,
 		IsSystem:   row.IsSystem,
 		IsRequired: row.IsRequired,
-		SortOrder:  row.SortOrder,
 		Options:    row.Options,
 	}, nil
 }
 
 func (r *templateRepository) DeleteField(ctx context.Context, id uuid.UUID) error {
 	return r.q.DeleteTemplateBoardFieldByID(ctx, id)
-}
-
-func (r *templateRepository) UpdateFieldOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateBoardFieldOrder(ctx, db.UpdateTemplateBoardFieldOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Helpers ---
@@ -417,7 +411,6 @@ func (r *templateRepository) CreateProjectParam(ctx context.Context, params db.C
 		FieldType:   row.FieldType,
 		IsSystem:    row.IsSystem,
 		IsRequired:  row.IsRequired,
-		SortOrder:   row.SortOrder,
 		Options:     row.Options,
 	}, nil
 }
@@ -435,17 +428,12 @@ func (r *templateRepository) UpdateProjectParam(ctx context.Context, params db.U
 		FieldType:   row.FieldType,
 		IsSystem:    row.IsSystem,
 		IsRequired:  row.IsRequired,
-		SortOrder:   row.SortOrder,
 		Options:     row.Options,
 	}, nil
 }
 
 func (r *templateRepository) DeleteProjectParam(ctx context.Context, id uuid.UUID) error {
 	return r.q.DeleteTemplateProjectParamByID(ctx, id)
-}
-
-func (r *templateRepository) UpdateProjectParamOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateTemplateProjectParamOrder(ctx, db.UpdateTemplateProjectParamOrderParams{ID: id, SortOrder: order})
 }
 
 // --- Roles ---

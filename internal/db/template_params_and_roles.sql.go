@@ -25,9 +25,9 @@ func (q *Queries) CountTemplateRolesByTemplateID(ctx context.Context, templateID
 }
 
 const createTemplateProjectParam = `-- name: CreateTemplateProjectParam :one
-INSERT INTO fields (kind, template_id, name, description, field_type, is_required, sort_order, options)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7)
-RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+INSERT INTO fields (kind, template_id, name, description, field_type, is_required, options)
+VALUES ('project_param', $1, $2, $3, $4, $5, $6)
+RETURNING id, template_id, name, description, field_type, is_system, is_required, options
 `
 
 type CreateTemplateProjectParamParams struct {
@@ -36,7 +36,6 @@ type CreateTemplateProjectParamParams struct {
 	Description string                `json:"description"`
 	FieldType   string                `json:"field_type"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -48,7 +47,6 @@ type CreateTemplateProjectParamRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -59,7 +57,6 @@ func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemp
 		arg.Description,
 		arg.FieldType,
 		arg.IsRequired,
-		arg.SortOrder,
 		arg.Options,
 	)
 	var i CreateTemplateProjectParamRow
@@ -71,7 +68,6 @@ func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemp
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
@@ -138,7 +134,7 @@ func (q *Queries) DeleteTemplateRolePermissionsByRoleID(ctx context.Context, rol
 }
 
 const getTemplateProjectParamByID = `-- name: GetTemplateProjectParamByID :one
-SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, template_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE id = $1 AND kind = 'project_param'
 `
@@ -151,7 +147,6 @@ type GetTemplateProjectParamByIDRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -166,7 +161,6 @@ func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID)
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
@@ -201,10 +195,9 @@ func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTem
 
 const listTemplateProjectParams = `-- name: ListTemplateProjectParams :many
 
-SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, template_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE template_id = $1 AND kind = 'project_param'
-ORDER BY sort_order ASC
 `
 
 type ListTemplateProjectParamsRow struct {
@@ -215,7 +208,6 @@ type ListTemplateProjectParamsRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -237,7 +229,6 @@ func (q *Queries) ListTemplateProjectParams(ctx context.Context, templateID uuid
 			&i.FieldType,
 			&i.IsSystem,
 			&i.IsRequired,
-			&i.SortOrder,
 			&i.Options,
 		); err != nil {
 			return nil, err
@@ -333,7 +324,7 @@ const updateTemplateProjectParam = `-- name: UpdateTemplateProjectParam :one
 UPDATE fields
 SET name = $2, is_required = $3, options = $4
 WHERE id = $1 AND kind = 'project_param'
-RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+RETURNING id, template_id, name, description, field_type, is_system, is_required, options
 `
 
 type UpdateTemplateProjectParamParams struct {
@@ -351,7 +342,6 @@ type UpdateTemplateProjectParamRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -371,24 +361,9 @@ func (q *Queries) UpdateTemplateProjectParam(ctx context.Context, arg UpdateTemp
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
-}
-
-const updateTemplateProjectParamOrder = `-- name: UpdateTemplateProjectParamOrder :exec
-UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'project_param'
-`
-
-type UpdateTemplateProjectParamOrderParams struct {
-	ID        uuid.UUID `json:"id"`
-	SortOrder int32     `json:"sort_order"`
-}
-
-func (q *Queries) UpdateTemplateProjectParamOrder(ctx context.Context, arg UpdateTemplateProjectParamOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateTemplateProjectParamOrder, arg.ID, arg.SortOrder)
-	return err
 }
 
 const updateTemplateRole = `-- name: UpdateTemplateRole :one

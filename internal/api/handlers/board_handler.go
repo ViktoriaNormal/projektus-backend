@@ -151,6 +151,9 @@ func (h *BoardHandler) UpdateBoard(c *gin.Context) {
 	if req.Description.Set {
 		board.Description = req.Description.Ptr()
 	}
+	if req.IsDefault != nil {
+		board.IsDefault = *req.IsDefault
+	}
 	if req.Order != nil {
 		board.Order = int16(*req.Order)
 	}
@@ -234,6 +237,10 @@ func (h *BoardHandler) CreateColumn(c *gin.Context) {
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Недопустимое значение systemType для колонки")
+			return
+		}
+		if err == domain.ErrCompletedColumnWip {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
 			return
 		}
 		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
@@ -400,6 +407,10 @@ func (h *BoardHandler) UpdateColumn(c *gin.Context) {
 	if err != nil {
 		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
+			return
+		}
+		if err == domain.ErrCompletedColumnWip {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить колонку")
@@ -728,28 +739,6 @@ func (h *BoardHandler) DeleteCustomField(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *BoardHandler) ReorderCustomFields(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
-		return
-	}
-	var req dto.ReorderCustomFieldsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
-		return
-	}
-	orders := make(map[uuid.UUID]int32)
-	for _, o := range req.Orders {
-		orders[o.FieldID] = o.Order
-	}
-	if err := h.service.ReorderCustomFields(c.Request.Context(), boardID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок полей")
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 // --- DTO mappers ---
 
 func mapBoardToDTO(b *domain.Board) dto.BoardResponse {
@@ -788,7 +777,6 @@ func mapCustomFieldToDTO(f domain.BoardCustomField) dto.BoardCustomFieldResponse
 		FieldType:   f.FieldType,
 		IsSystem:    f.IsSystem,
 		IsRequired:  f.IsRequired,
-		Order:       f.Order,
 		Options:     opts,
 	}
 }

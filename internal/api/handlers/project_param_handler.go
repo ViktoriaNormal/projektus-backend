@@ -131,28 +131,6 @@ func (h *ProjectParamHandler) DeleteParam(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *ProjectParamHandler) ReorderParams(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
-		return
-	}
-	var req dto.ReorderProjectParamsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
-		return
-	}
-	orders := make(map[uuid.UUID]int32)
-	for _, o := range req.Orders {
-		orders[o.ParamID] = o.Order
-	}
-	if err := h.service.ReorderParams(c.Request.Context(), projectID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок параметров")
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 func mapProjectParamToDTO(p domain.ProjectParam) dto.ProjectParamResponse {
 	opts := p.Options
 	if opts == nil {
@@ -165,7 +143,6 @@ func mapProjectParamToDTO(p domain.ProjectParam) dto.ProjectParamResponse {
 		FieldType:   p.FieldType,
 		IsSystem:    p.IsSystem,
 		IsRequired:  p.IsRequired,
-		Order:       p.Order,
 		Options:     opts,
 		Value:       p.Value,
 	}

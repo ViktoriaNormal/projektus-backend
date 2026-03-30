@@ -524,6 +524,15 @@ func (q *Queries) ListProjectBoards(ctx context.Context, projectID uuid.NullUUID
 	return items, nil
 }
 
+const unsetDefaultBoardByProjectID = `-- name: UnsetDefaultBoardByProjectID :exec
+UPDATE boards SET is_default = false WHERE project_id = $1 AND is_default = true
+`
+
+func (q *Queries) UnsetDefaultBoardByProjectID(ctx context.Context, projectID uuid.NullUUID) error {
+	_, err := q.db.ExecContext(ctx, unsetDefaultBoardByProjectID, projectID)
+	return err
+}
+
 const updateBoard = `-- name: UpdateBoard :one
 UPDATE boards
 SET name        = COALESCE($1, name),
@@ -531,8 +540,9 @@ SET name        = COALESCE($1, name),
     sort_order  = COALESCE($3, sort_order),
     priority_type    = COALESCE($4, priority_type),
     estimation_unit  = COALESCE($5, estimation_unit),
-    swimlane_group_by = COALESCE($6, swimlane_group_by)
-WHERE id = $7
+    swimlane_group_by = COALESCE($6, swimlane_group_by),
+    is_default = COALESCE($7, is_default)
+WHERE id = $8
 RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
 `
 
@@ -543,6 +553,7 @@ type UpdateBoardParams struct {
 	PriorityType    sql.NullString `json:"priority_type"`
 	EstimationUnit  sql.NullString `json:"estimation_unit"`
 	SwimlaneGroupBy sql.NullString `json:"swimlane_group_by"`
+	IsDefault       sql.NullBool   `json:"is_default"`
 	ID              uuid.UUID      `json:"id"`
 }
 
@@ -567,6 +578,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Updat
 		arg.PriorityType,
 		arg.EstimationUnit,
 		arg.SwimlaneGroupBy,
+		arg.IsDefault,
 		arg.ID,
 	)
 	var i UpdateBoardRow

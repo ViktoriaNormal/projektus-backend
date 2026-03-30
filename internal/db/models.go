@@ -58,7 +58,6 @@ type Field struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 	Value       sql.NullString        `json:"value"`
 }

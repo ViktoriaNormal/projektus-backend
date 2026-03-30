@@ -192,7 +192,6 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 				FieldType:   cf.FieldType,
 				IsSystem:    cf.IsSystem,
 				IsRequired:  cf.IsRequired,
-				Order:       cf.Order,
 				Options:     cf.Options,
 			})
 			if err == nil && newField != nil {
@@ -219,7 +218,6 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 			FieldType:   tp.FieldType,
 			IsSystem:    tp.IsSystem,
 			IsRequired:  tp.IsRequired,
-			SortOrder:   tp.Order,
 			Options:     repositories.OptionsToJSON(tp.Options),
 			Value:       sql.NullString{},
 		})

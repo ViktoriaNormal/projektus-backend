@@ -13,9 +13,9 @@ import (
 )
 
 const createBoardCustomField = `-- name: CreateBoardCustomField :one
-INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, sort_order, options)
-VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, options)
+VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7)
+RETURNING id, board_id, name, description, field_type, is_system, is_required, options
 `
 
 type CreateBoardCustomFieldParams struct {
@@ -25,7 +25,6 @@ type CreateBoardCustomFieldParams struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -37,7 +36,6 @@ type CreateBoardCustomFieldRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -49,7 +47,6 @@ func (q *Queries) CreateBoardCustomField(ctx context.Context, arg CreateBoardCus
 		arg.FieldType,
 		arg.IsSystem,
 		arg.IsRequired,
-		arg.SortOrder,
 		arg.Options,
 	)
 	var i CreateBoardCustomFieldRow
@@ -61,7 +58,6 @@ func (q *Queries) CreateBoardCustomField(ctx context.Context, arg CreateBoardCus
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
@@ -77,7 +73,7 @@ func (q *Queries) DeleteBoardCustomFieldByID(ctx context.Context, id uuid.UUID) 
 }
 
 const getBoardCustomFieldByID = `-- name: GetBoardCustomFieldByID :one
-SELECT id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, board_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE id = $1 AND kind = 'board_field'
 `
@@ -90,7 +86,6 @@ type GetBoardCustomFieldByIDRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -105,7 +100,6 @@ func (q *Queries) GetBoardCustomFieldByID(ctx context.Context, id uuid.UUID) (Ge
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
@@ -113,10 +107,9 @@ func (q *Queries) GetBoardCustomFieldByID(ctx context.Context, id uuid.UUID) (Ge
 
 const listBoardCustomFields = `-- name: ListBoardCustomFields :many
 
-SELECT id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, board_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE board_id = $1 AND kind = 'board_field'
-ORDER BY sort_order ASC
 `
 
 type ListBoardCustomFieldsRow struct {
@@ -127,7 +120,6 @@ type ListBoardCustomFieldsRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -149,7 +141,6 @@ func (q *Queries) ListBoardCustomFields(ctx context.Context, boardID uuid.NullUU
 			&i.FieldType,
 			&i.IsSystem,
 			&i.IsRequired,
-			&i.SortOrder,
 			&i.Options,
 		); err != nil {
 			return nil, err
@@ -169,7 +160,7 @@ const updateBoardCustomField = `-- name: UpdateBoardCustomField :one
 UPDATE fields
 SET name = $2, is_required = $3, options = $4
 WHERE id = $1 AND kind = 'board_field'
-RETURNING id, board_id, name, description, field_type, is_system, is_required, sort_order, options
+RETURNING id, board_id, name, description, field_type, is_system, is_required, options
 `
 
 type UpdateBoardCustomFieldParams struct {
@@ -187,7 +178,6 @@ type UpdateBoardCustomFieldRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 }
 
@@ -207,22 +197,7 @@ func (q *Queries) UpdateBoardCustomField(ctx context.Context, arg UpdateBoardCus
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 	)
 	return i, err
-}
-
-const updateBoardCustomFieldOrder = `-- name: UpdateBoardCustomFieldOrder :exec
-UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'board_field'
-`
-
-type UpdateBoardCustomFieldOrderParams struct {
-	ID        uuid.UUID `json:"id"`
-	SortOrder int32     `json:"sort_order"`
-}
-
-func (q *Queries) UpdateBoardCustomFieldOrder(ctx context.Context, arg UpdateBoardCustomFieldOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateBoardCustomFieldOrder, arg.ID, arg.SortOrder)
-	return err
 }

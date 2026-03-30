@@ -9,7 +9,6 @@ type ProjectParamResponse struct {
 	FieldType   string    `json:"field_type"`
 	IsSystem    bool      `json:"is_system"`
 	IsRequired  bool      `json:"is_required"`
-	Order       int32     `json:"order"`
 	Options     []string  `json:"options"`
 	Value       *string   `json:"value,omitempty"`
 }
@@ -31,11 +30,3 @@ type UpdateProjectParamRequest struct {
 	Value       NullableField[string] `json:"value"`
 }
 
-type ProjectParamOrderItem struct {
-	ParamID uuid.UUID `json:"param_id"`
-	Order   int32     `json:"order"`
-}
-
-type ReorderProjectParamsRequest struct {
-	Orders []ProjectParamOrderItem `json:"orders" binding:"required"`
-}

@@ -300,6 +300,11 @@ func (s *TemplateService) CreateColumn(ctx context.Context, templateID, boardID 
 		return domain.TemplateBoardColumn{}, domain.ErrNotFound
 	}
 
+	// Completed columns cannot have WIP limits.
+	if systemType == "completed" && wipLimit != nil {
+		return domain.TemplateBoardColumn{}, domain.ErrCompletedColumnWip
+	}
+
 	wl := sql.NullInt16{}
 	if wipLimit != nil {
 		wl = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
@@ -360,8 +365,20 @@ func (s *TemplateService) UpdateColumn(ctx context.Context, templateID, boardID,
 	if systemType != nil {
 		finalSystemType = sql.NullString{String: *systemType, Valid: *systemType != ""}
 	}
+	// Completed columns cannot have WIP limits; reject explicit set.
+	effectiveSystemType := col.SystemType.String
+	if systemType != nil {
+		effectiveSystemType = *systemType
+	}
+	if effectiveSystemType == "completed" && wipLimit != nil {
+		return domain.TemplateBoardColumn{}, domain.ErrCompletedColumnWip
+	}
+
 	finalWipLimit := col.WipLimit
-	if clearWipLimit {
+	// When changing to completed, auto-clear WIP limit.
+	if systemType != nil && *systemType == "completed" {
+		finalWipLimit = sql.NullInt16{Valid: false}
+	} else if clearWipLimit {
 		finalWipLimit = sql.NullInt16{Valid: false}
 	} else if wipLimit != nil {
 		finalWipLimit = sql.NullInt16{Int16: int16(*wipLimit), Valid: true}
@@ -577,7 +594,7 @@ func (s *TemplateService) ReorderSwimlanes(ctx context.Context, templateID, boar
 
 // --- Custom Fields ---
 
-func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boardID uuid.UUID, name, fieldType string, isRequired bool, order int32, options []string) (domain.TemplateBoardCustomField, error) {
+func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boardID uuid.UUID, name, fieldType string, isRequired bool, options []string) (domain.TemplateBoardCustomField, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardCustomField{}, domain.ErrNotFound
@@ -608,7 +625,6 @@ func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boa
 		FieldType:  fieldType,
 		IsSystem:   false,
 		IsRequired: isRequired,
-		SortOrder:  order,
 		Options:    repositories.OptionsToJSON(options),
 	})
 	if err != nil {
@@ -684,22 +700,9 @@ func (s *TemplateService) DeleteCustomField(ctx context.Context, templateID, boa
 	return s.repo.DeleteField(ctx, fieldID)
 }
 
-func (s *TemplateService) ReorderCustomFields(ctx context.Context, templateID, boardID uuid.UUID, orders map[uuid.UUID]int32) error {
-	board, err := s.repo.GetBoardByID(ctx, boardID)
-	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
-		return domain.ErrNotFound
-	}
-	for id, order := range orders {
-		if err := s.repo.UpdateFieldOrder(ctx, id, order); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // --- Project Params ---
 
-func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uuid.UUID, name, fieldType string, isRequired bool, order int32, options []string) (domain.TemplateProjectParam, error) {
+func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uuid.UUID, name, fieldType string, isRequired bool, options []string) (domain.TemplateProjectParam, error) {
 	_, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
@@ -719,12 +722,12 @@ func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uui
 	}
 
 	p, err := s.repo.CreateProjectParam(ctx, db.CreateTemplateProjectParamParams{
-		TemplateID: uuid.NullUUID{UUID: templateID, Valid: true}, Name: name, FieldType: fieldType, IsRequired: isRequired, SortOrder: order, Options: repositories.OptionsToJSON(options),
+		TemplateID: uuid.NullUUID{UUID: templateID, Valid: true}, Name: name, Description: "", FieldType: fieldType, IsRequired: isRequired, Options: repositories.OptionsToJSON(options),
 	})
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
 	}
-	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.SortOrder, Options: repositories.JSONToOptions(p.Options)}, nil
+	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Options: repositories.JSONToOptions(p.Options)}, nil
 }
 
 func (s *TemplateService) UpdateProjectParam(ctx context.Context, templateID, paramID uuid.UUID, name *string, isRequired *bool, options []string) (domain.TemplateProjectParam, error) {
@@ -751,7 +754,7 @@ func (s *TemplateService) UpdateProjectParam(ctx context.Context, templateID, pa
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
 	}
-	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Order: p.SortOrder, Options: repositories.JSONToOptions(p.Options)}, nil
+	return domain.TemplateProjectParam{ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, FieldType: p.FieldType, IsRequired: p.IsRequired, Options: repositories.JSONToOptions(p.Options)}, nil
 }
 
 func (s *TemplateService) DeleteProjectParam(ctx context.Context, templateID, paramID uuid.UUID) error {
@@ -760,15 +763,6 @@ func (s *TemplateService) DeleteProjectParam(ctx context.Context, templateID, pa
 		return domain.ErrNotFound
 	}
 	return s.repo.DeleteProjectParam(ctx, paramID)
-}
-
-func (s *TemplateService) ReorderProjectParams(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
-	for id, order := range orders {
-		if err := s.repo.UpdateProjectParamOrder(ctx, id, order); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // --- Roles ---
@@ -879,7 +873,7 @@ func (s *TemplateService) loadProjectParams(ctx context.Context, templateID uuid
 		result = append(result, domain.TemplateProjectParam{
 			ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, Description: p.Description,
 			FieldType: p.FieldType, IsSystem: p.IsSystem, IsRequired: p.IsRequired,
-			Order: p.SortOrder, Options: repositories.JSONToOptions(p.Options),
+			Options: repositories.JSONToOptions(p.Options),
 		})
 	}
 	return result, nil
@@ -1057,7 +1051,6 @@ func (s *TemplateService) createSystemFields(ctx context.Context, boardID uuid.U
 	}
 
 	fields := make([]domain.TemplateBoardCustomField, 0, len(repositories.DefaultBoardFields))
-	order := int32(0)
 	for _, def := range repositories.DefaultBoardFields {
 		// Фильтруем по типу проекта
 		available := false
@@ -1086,7 +1079,6 @@ func (s *TemplateService) createSystemFields(ctx context.Context, boardID uuid.U
 			}
 		}
 
-		order++
 		row, err := s.repo.CreateField(ctx, db.CreateTemplateBoardFieldParams{
 			BoardID:     uuid.NullUUID{UUID: boardID, Valid: true},
 			Name:        def.Name,
@@ -1094,7 +1086,6 @@ func (s *TemplateService) createSystemFields(ctx context.Context, boardID uuid.U
 			FieldType:   def.FieldType,
 			IsSystem:    true,
 			IsRequired:  def.IsRequired,
-			SortOrder:   order,
 			Options:     repositories.OptionsToJSON(options),
 		})
 		if err != nil {
@@ -1172,7 +1163,7 @@ func mapDBFieldToDomain(f db.ListTemplateBoardFieldsRow) domain.TemplateBoardCus
 	return domain.TemplateBoardCustomField{
 		ID: f.ID, BoardID: f.BoardID.UUID, Name: f.Name, Description: f.Description,
 		FieldType: f.FieldType, IsSystem: f.IsSystem, IsRequired: f.IsRequired,
-		Order: f.SortOrder, Options: repositories.JSONToOptions(f.Options),
+		Options: repositories.JSONToOptions(f.Options),
 	}
 }
 

@@ -979,22 +979,6 @@ paths:
                       data:
                         $ref: '#/components/schemas/ProjectParamResponse'
 
-  /projects/{project_id}/params/reorder:
-    patch:
-      tags: [ProjectParams]
-      summary: Reorder project params
-      parameters:
-        - $ref: '#/components/parameters/ProjectIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReorderProjectParamsRequest'
-      responses:
-        '204':
-          description: Reordered
-
   /projects/{project_id}/params/{param_id}:
     patch:
       tags: [ProjectParams]
@@ -1473,6 +1457,8 @@ paths:
 
         После вставки проверяется порядок типов колонок: `initial → in_progress → completed`.
         При нарушении — 400 с кодом `INVALID_COLUMN_ORDER`.
+
+        Для колонок с `system_type = completed` установка `wip_limit` запрещена — 400.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
       requestBody:
@@ -1536,6 +1522,9 @@ paths:
         При изменении `system_type` проверяется порядок колонок: `initial → in_progress → completed`.
         Заблокированные колонки нельзя переименовывать или менять `system_type`.
         При нарушении порядка — 400 с кодом `INVALID_COLUMN_ORDER`, изменения откатываются.
+
+        Для колонок с `system_type = completed` установка `wip_limit` запрещена — 400.
+        При смене `system_type` на `completed` WIP-лимит автоматически сбрасывается в null.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
         - $ref: '#/components/parameters/ColumnIdPath'
@@ -1845,22 +1834,6 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/BoardCustomFieldResponse'
-
-  /boards/{board_id}/fields/reorder:
-    patch:
-      tags: [BoardFields]
-      summary: Reorder fields
-      parameters:
-        - $ref: '#/components/parameters/BoardIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReorderCustomFieldsRequest'
-      responses:
-        '204':
-          description: Reordered
 
   /boards/{board_id}/fields/{field_id}:
     patch:
@@ -2800,6 +2773,8 @@ paths:
 
         Column order validation (`initial → in_progress → completed`) is **not**
         enforced on create — only on reorder and system_type update.
+
+        Для колонок с `system_type = completed` установка `wip_limit` запрещена — 400.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -2855,6 +2830,9 @@ paths:
       description: |-
         Заблокированные колонки нельзя редактировать (`COLUMN_LOCKED`).
         При изменении `system_type` проверяется порядок: `initial → in_progress → completed` (`INVALID_COLUMN_ORDER`).
+
+        Для колонок с `system_type = completed` установка `wip_limit` запрещена — 400.
+        При смене `system_type` на `completed` WIP-лимит автоматически сбрасывается в null.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -3037,23 +3015,6 @@ paths:
         '409':
           description: Field with this name already exists (DUPLICATE_NAME)
 
-  /admin/project-templates/{template_id}/boards/{board_id}/fields/reorder:
-    patch:
-      tags: [AdminTemplates]
-      summary: Reorder template custom fields
-      parameters:
-        - $ref: '#/components/parameters/TemplateIdPath'
-        - $ref: '#/components/parameters/BoardIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReorderFieldsRequest'
-      responses:
-        '204':
-          description: Reordered
-
   /admin/project-templates/{template_id}/boards/{board_id}/fields/{field_id}:
     patch:
       tags: [AdminTemplates]
@@ -3132,22 +3093,6 @@ paths:
                         $ref: '#/components/schemas/TemplateProjectParamResponse'
         '409':
           description: Param with this name already exists (DUPLICATE_NAME)
-
-  /admin/project-templates/{template_id}/project-params/reorder:
-    patch:
-      tags: [AdminTemplates]
-      summary: Reorder template project params
-      parameters:
-        - $ref: '#/components/parameters/TemplateIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReorderParamsRequest'
-      responses:
-        '204':
-          description: Reordered
 
   /admin/project-templates/{template_id}/project-params/{param_id}:
     patch:
@@ -3866,7 +3811,6 @@ components:
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_system: { type: boolean }
         is_required: { type: boolean }
-        order: { type: integer }
         options:
           type: array
           items: { type: string }
@@ -3918,19 +3862,6 @@ components:
           items: { type: string }
         value: { type: string, nullable: true }
 
-    ReorderProjectParamsRequest:
-      type: object
-      required: [orders]
-      properties:
-        orders:
-          type: array
-          items:
-            type: object
-            required: [param_id, order]
-            properties:
-              param_id: { type: string, format: uuid }
-              order: { type: integer }
-
     # ── Boards ──
     BoardResponse:
       type: object
@@ -3959,9 +3890,13 @@ components:
 
     UpdateBoardRequest:
       type: object
+      description: |-
+        При установке `is_default: true` предыдущая доска по умолчанию в этом проекте
+        автоматически теряет флаг `is_default`.
       properties:
         name: { type: string }
         description: { type: string, nullable: true }
+        is_default: { type: boolean }
         order: { type: integer }
         priority_type: { type: string }
         estimation_unit: { type: string }
@@ -4091,7 +4026,6 @@ components:
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
         is_system: { type: boolean }
         is_required: { type: boolean }
-        order: { type: integer }
         options:
           type: array
           items: { type: string }
@@ -4117,19 +4051,6 @@ components:
         options:
           type: array
           items: { type: string }
-
-    ReorderCustomFieldsRequest:
-      type: object
-      required: [orders]
-      properties:
-        orders:
-          type: array
-          items:
-            type: object
-            required: [field_id, order]
-            properties:
-              field_id: { type: string, format: uuid }
-              order: { type: integer }
 
     # ── Tasks ──
     TaskResponse:
@@ -4435,7 +4356,6 @@ components:
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
         is_system: { type: boolean }
         is_required: { type: boolean }
-        order: { type: integer }
         options:
           type: array
           items: { type: string }
@@ -4449,7 +4369,6 @@ components:
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_system: { type: boolean }
         is_required: { type: boolean }
-        order: { type: integer }
         options:
           type: array
           items: { type: string }
@@ -4558,7 +4477,6 @@ components:
         name: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_required: { type: boolean }
-        order: { type: integer }
         options:
           type: array
           items: { type: string }
@@ -4579,7 +4497,6 @@ components:
         name: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
         is_required: { type: boolean }
-        order: { type: integer }
         options:
           type: array
           items: { type: string }
@@ -4617,32 +4534,6 @@ components:
             required: [swimlane_id, order]
             properties:
               swimlane_id: { type: string, format: uuid }
-              order: { type: integer }
-
-    ReorderFieldsRequest:
-      type: object
-      required: [orders]
-      properties:
-        orders:
-          type: array
-          items:
-            type: object
-            required: [field_id, order]
-            properties:
-              field_id: { type: string, format: uuid }
-              order: { type: integer }
-
-    ReorderParamsRequest:
-      type: object
-      required: [orders]
-      properties:
-        orders:
-          type: array
-          items:
-            type: object
-            required: [param_id, order]
-            properties:
-              param_id: { type: string, format: uuid }
               order: { type: integer }
 
     CreateTemplateRoleRequest:

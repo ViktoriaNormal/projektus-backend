@@ -18,7 +18,6 @@ type ProjectParamRepository interface {
 	Create(ctx context.Context, params db.CreateProjectParamParams) (*domain.ProjectParam, error)
 	Update(ctx context.Context, params db.UpdateProjectParamParams) (*domain.ProjectParam, error)
 	Delete(ctx context.Context, id uuid.UUID) error
-	UpdateOrder(ctx context.Context, id uuid.UUID, order int32) error
 }
 
 type projectParamRepository struct {
@@ -36,7 +35,7 @@ func (r *projectParamRepository) List(ctx context.Context, projectID uuid.UUID) 
 	}
 	result := make([]domain.ProjectParam, len(rows))
 	for i, row := range rows {
-		result[i] = mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.SortOrder, row.Options, row.Value)
+		result[i] = mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
 	}
 	return result, nil
 }
@@ -49,7 +48,7 @@ func (r *projectParamRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 		}
 		return nil, err
 	}
-	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.SortOrder, row.Options, row.Value)
+	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
@@ -58,7 +57,7 @@ func (r *projectParamRepository) Create(ctx context.Context, params db.CreatePro
 	if err != nil {
 		return nil, err
 	}
-	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.SortOrder, row.Options, row.Value)
+	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
@@ -70,7 +69,7 @@ func (r *projectParamRepository) Update(ctx context.Context, params db.UpdatePro
 		}
 		return nil, err
 	}
-	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.SortOrder, row.Options, row.Value)
+	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
@@ -78,11 +77,7 @@ func (r *projectParamRepository) Delete(ctx context.Context, id uuid.UUID) error
 	return r.q.DeleteProjectParamByID(ctx, id)
 }
 
-func (r *projectParamRepository) UpdateOrder(ctx context.Context, id uuid.UUID, order int32) error {
-	return r.q.UpdateProjectParamOrder(ctx, db.UpdateProjectParamOrderParams{ID: id, SortOrder: order})
-}
-
-func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, description, fieldType string, isSystem, isRequired bool, order int32, options pqtype.NullRawMessage, value sql.NullString) domain.ProjectParam {
+func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, description, fieldType string, isSystem, isRequired bool, options pqtype.NullRawMessage, value sql.NullString) domain.ProjectParam {
 	var val *string
 	if value.Valid {
 		v := value.String
@@ -100,7 +95,6 @@ func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, description
 		FieldType:   fieldType,
 		IsSystem:    isSystem,
 		IsRequired:  isRequired,
-		Order:       order,
 		Options:     JSONToOptions(options),
 		Value:       val,
 	}

@@ -23,7 +23,8 @@ SET name        = COALESCE(sqlc.narg('name'), name),
     sort_order  = COALESCE(sqlc.narg('sort_order'), sort_order),
     priority_type    = COALESCE(sqlc.narg('priority_type'), priority_type),
     estimation_unit  = COALESCE(sqlc.narg('estimation_unit'), estimation_unit),
-    swimlane_group_by = COALESCE(sqlc.narg('swimlane_group_by'), swimlane_group_by)
+    swimlane_group_by = COALESCE(sqlc.narg('swimlane_group_by'), swimlane_group_by),
+    is_default = COALESCE(sqlc.narg('is_default'), is_default)
 WHERE id = sqlc.arg('id')
 RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default;
 
@@ -33,6 +34,9 @@ WHERE id = $1;
 
 -- name: UpdateBoardOrder :exec
 UPDATE boards SET sort_order = $2 WHERE id = $1;
+
+-- name: UnsetDefaultBoardByProjectID :exec
+UPDATE boards SET is_default = false WHERE project_id = $1 AND is_default = true;
 
 -- Columns
 

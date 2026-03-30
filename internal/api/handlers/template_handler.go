@@ -362,6 +362,10 @@ func (h *TemplateHandler) CreateColumn(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
 			return
 		}
+		if err == domain.ErrCompletedColumnWip {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать колонку")
 		return
 	}
@@ -426,6 +430,10 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 		}
 		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
+			return
+		}
+		if err == domain.ErrCompletedColumnWip {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить колонку")
@@ -693,7 +701,7 @@ func (h *TemplateHandler) CreateCustomField(c *gin.Context) {
 		return
 	}
 
-	field, err := h.service.CreateCustomField(c.Request.Context(), templateID, boardID, req.Name, req.FieldType, req.IsRequired, req.Order, req.Options)
+	field, err := h.service.CreateCustomField(c.Request.Context(), templateID, boardID, req.Name, req.FieldType, req.IsRequired, req.Options)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
@@ -790,40 +798,6 @@ func (h *TemplateHandler) DeleteCustomField(c *gin.Context) {
 	writeSuccess(c, nil)
 }
 
-// PATCH /v1/admin/project-templates/:templateId/boards/:boardId/custom-fields/reorder
-func (h *TemplateHandler) ReorderCustomFields(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
-		return
-	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
-		return
-	}
-
-	var req dto.ReorderFieldsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
-		return
-	}
-
-	orders := make(map[uuid.UUID]int32)
-	for _, o := range req.Orders {
-		orders[o.FieldID] = o.Order
-	}
-
-	if err := h.service.ReorderCustomFields(c.Request.Context(), templateID, boardID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок полей")
-		return
-	}
-
-	writeSuccess(c, nil)
-}
-
-// --- Response mapping helpers ---
-
 // --- Project Params handlers ---
 
 func (h *TemplateHandler) CreateProjectParam(c *gin.Context) {
@@ -837,7 +811,7 @@ func (h *TemplateHandler) CreateProjectParam(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
-	p, err := h.service.CreateProjectParam(c.Request.Context(), templateID, req.Name, req.FieldType, req.IsRequired, req.Order, req.Options)
+	p, err := h.service.CreateProjectParam(c.Request.Context(), templateID, req.Name, req.FieldType, req.IsRequired, req.Options)
 	if err != nil {
 		if err == domain.ErrInvalidFieldType {
 			writeError(c, http.StatusBadRequest, "INVALID_FIELD_TYPE", "Тип поля недопустим для параметров проекта")
@@ -902,28 +876,6 @@ func (h *TemplateHandler) DeleteProjectParam(c *gin.Context) {
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить параметр")
-		return
-	}
-	writeSuccess(c, nil)
-}
-
-func (h *TemplateHandler) ReorderProjectParams(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
-		return
-	}
-	var req dto.ReorderParamsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
-		return
-	}
-	orders := make(map[uuid.UUID]int32)
-	for _, o := range req.Orders {
-		orders[o.ParamID] = o.Order
-	}
-	if err := h.service.ReorderProjectParams(c.Request.Context(), templateID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок")
 		return
 	}
 	writeSuccess(c, nil)
@@ -1060,7 +1012,7 @@ func mapTemplateToResponse(tmpl *domain.ProjectTemplate, data services.TemplateF
 func mapProjectParamToResponse(p domain.TemplateProjectParam) dto.TemplateProjectParamResponse {
 	return dto.TemplateProjectParamResponse{
 		ID: p.ID, Name: p.Name, Description: p.Description, FieldType: p.FieldType,
-		IsSystem: p.IsSystem, IsRequired: p.IsRequired, Order: p.Order, Options: p.Options,
+		IsSystem: p.IsSystem, IsRequired: p.IsRequired, Options: p.Options,
 	}
 }
 
@@ -1141,7 +1093,6 @@ func mapCustomFieldToResponse(f domain.TemplateBoardCustomField) dto.TemplateBoa
 		FieldType:   f.FieldType,
 		IsSystem:    f.IsSystem,
 		IsRequired:  f.IsRequired,
-		Order:       f.Order,
 		Options:     f.Options,
 	}
 }

@@ -1,32 +1,28 @@
 -- Template project params (in unified `fields` table, kind='project_param')
 
 -- name: ListTemplateProjectParams :many
-SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, template_id, name, description, field_type, is_system, is_required, options
 FROM fields
-WHERE template_id = $1 AND kind = 'project_param'
-ORDER BY sort_order ASC;
+WHERE template_id = $1 AND kind = 'project_param';
 
 -- name: GetTemplateProjectParamByID :one
-SELECT id, template_id, name, description, field_type, is_system, is_required, sort_order, options
+SELECT id, template_id, name, description, field_type, is_system, is_required, options
 FROM fields
 WHERE id = $1 AND kind = 'project_param';
 
 -- name: CreateTemplateProjectParam :one
-INSERT INTO fields (kind, template_id, name, description, field_type, is_required, sort_order, options)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7)
-RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options;
+INSERT INTO fields (kind, template_id, name, description, field_type, is_required, options)
+VALUES ('project_param', $1, $2, $3, $4, $5, $6)
+RETURNING id, template_id, name, description, field_type, is_system, is_required, options;
 
 -- name: UpdateTemplateProjectParam :one
 UPDATE fields
 SET name = $2, is_required = $3, options = $4
 WHERE id = $1 AND kind = 'project_param'
-RETURNING id, template_id, name, description, field_type, is_system, is_required, sort_order, options;
+RETURNING id, template_id, name, description, field_type, is_system, is_required, options;
 
 -- name: DeleteTemplateProjectParamByID :exec
 DELETE FROM fields WHERE id = $1 AND kind = 'project_param';
-
--- name: UpdateTemplateProjectParamOrder :exec
-UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'project_param';
 
 -- Template roles (in unified roles table, scope='template')
 

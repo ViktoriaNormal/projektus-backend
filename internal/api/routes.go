@@ -100,7 +100,6 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			// Project params
 			projects.GET("/:projectId/params", projectParamHandler.ListParams)
 			projects.POST("/:projectId/params", projectParamHandler.CreateParam)
-			projects.PATCH("/:projectId/params/reorder", projectParamHandler.ReorderParams)
 			projects.PATCH("/:projectId/params/:paramId", projectParamHandler.UpdateParam)
 			projects.DELETE("/:projectId/params/:paramId", projectParamHandler.DeleteParam)
 
@@ -161,7 +160,6 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			// Custom fields
 			boards.GET("/:boardId/fields", boardHandler.ListCustomFields)
 			boards.POST("/:boardId/fields", boardHandler.CreateCustomField)
-			boards.PATCH("/:boardId/fields/reorder", boardHandler.ReorderCustomFields)
 			boards.PATCH("/:boardId/fields/:fieldId", boardHandler.UpdateCustomField)
 			boards.DELETE("/:boardId/fields/:fieldId", boardHandler.DeleteCustomField)
 
@@ -260,13 +258,11 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 				// Custom fields
 				templates.POST("/:templateId/boards/:boardId/fields", templateHandler.CreateCustomField)
-				templates.PATCH("/:templateId/boards/:boardId/fields/reorder", templateHandler.ReorderCustomFields)
 				templates.PATCH("/:templateId/boards/:boardId/fields/:fieldId", templateHandler.UpdateCustomField)
 				templates.DELETE("/:templateId/boards/:boardId/fields/:fieldId", templateHandler.DeleteCustomField)
 
 				// Project params
 				templates.POST("/:templateId/project-params", templateHandler.CreateProjectParam)
-				templates.PATCH("/:templateId/project-params/reorder", templateHandler.ReorderProjectParams)
 				templates.PATCH("/:templateId/project-params/:paramId", templateHandler.UpdateProjectParam)
 				templates.DELETE("/:templateId/project-params/:paramId", templateHandler.DeleteProjectParam)
 

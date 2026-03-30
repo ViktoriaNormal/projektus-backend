@@ -52,6 +52,9 @@ func (s *BoardService) GetBoard(ctx context.Context, id uuid.UUID) (*domain.Boar
 }
 
 func (s *BoardService) UpdateBoard(ctx context.Context, b *domain.Board) (*domain.Board, error) {
+	if b.IsDefault && b.ProjectID != nil {
+		_ = s.repo.UnsetDefaultBoardByProjectID(ctx, *b.ProjectID)
+	}
 	return s.repo.UpdateBoard(ctx, b)
 }
 
@@ -72,6 +75,11 @@ func (s *BoardService) CreateColumn(ctx context.Context, boardID uuid.UUID, name
 		// ok
 	default:
 		return nil, domain.ErrInvalidInput
+	}
+
+	// Completed columns cannot have WIP limits.
+	if *systemType == domain.StatusCompleted && wipLimit != nil {
+		return nil, domain.ErrCompletedColumnWip
 	}
 
 	// Splice-insert: shift existing columns with order >= target by +1.
@@ -118,6 +126,15 @@ func (s *BoardService) CreateColumn(ctx context.Context, boardID uuid.UUID, name
 }
 
 func (s *BoardService) UpdateColumn(ctx context.Context, c *domain.Column) (*domain.Column, error) {
+	// Completed columns cannot have WIP limits.
+	if c.SystemType != nil && *c.SystemType == domain.StatusCompleted && c.WipLimit != nil {
+		return nil, domain.ErrCompletedColumnWip
+	}
+	// When changing to completed, auto-clear WIP limit.
+	if c.SystemType != nil && *c.SystemType == domain.StatusCompleted {
+		c.WipLimit = nil
+	}
+
 	// Save pre-update state for rollback.
 	before, err := s.repo.GetColumnByID(ctx, c.ID)
 	if err != nil {
@@ -319,15 +336,12 @@ func (s *BoardService) ListCustomFields(ctx context.Context, boardID uuid.UUID) 
 }
 
 func (s *BoardService) CreateCustomField(ctx context.Context, boardID uuid.UUID, name, fieldType string, isRequired bool, options []string) (*domain.BoardCustomField, error) {
-	existing, _ := s.repo.ListCustomFields(ctx, boardID.String())
-	order := int32(len(existing) + 1)
 	f := &domain.BoardCustomField{
 		BoardID:    boardID.String(),
 		Name:       name,
 		FieldType:  fieldType,
 		IsSystem:   false,
 		IsRequired: isRequired,
-		Order:      order,
 		Options:    options,
 	}
 	return s.repo.CreateCustomField(ctx, f)
@@ -392,15 +406,6 @@ func (s *BoardService) DeleteCustomField(ctx context.Context, boardID, fieldID u
 		return domain.ErrSystemField
 	}
 	return s.repo.DeleteCustomField(ctx, fieldID.String())
-}
-
-func (s *BoardService) ReorderCustomFields(ctx context.Context, boardID uuid.UUID, orders map[uuid.UUID]int32) error {
-	for id, order := range orders {
-		if err := s.repo.UpdateCustomFieldOrder(ctx, id.String(), order); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // validateColumnOrderDomain ensures column ordering: all initial < all in_progress < all completed.

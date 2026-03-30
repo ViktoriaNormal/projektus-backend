@@ -27,6 +27,7 @@ type CreateBoardRequest struct {
 type UpdateBoardRequest struct {
 	Name            *string               `json:"name,omitempty"`
 	Description     NullableField[string] `json:"description"`
+	IsDefault       *bool                 `json:"is_default,omitempty"`
 	Order           *int32                `json:"order,omitempty"`
 	PriorityType    *string               `json:"priority_type,omitempty"`
 	EstimationUnit  *string               `json:"estimation_unit,omitempty"`
@@ -131,7 +132,6 @@ type BoardCustomFieldResponse struct {
 	FieldType   string    `json:"field_type"`
 	IsSystem    bool      `json:"is_system"`
 	IsRequired  bool      `json:"is_required"`
-	Order       int32     `json:"order"`
 	Options     []string  `json:"options"`
 }
 
@@ -150,11 +150,3 @@ type UpdateBoardCustomFieldRequest struct {
 	Options     []string              `json:"options,omitempty"`
 }
 
-type CustomFieldReorderItem struct {
-	FieldID uuid.UUID `json:"field_id"`
-	Order   int32     `json:"order"`
-}
-
-type ReorderCustomFieldsRequest struct {
-	Orders []CustomFieldReorderItem `json:"orders" binding:"required"`
-}

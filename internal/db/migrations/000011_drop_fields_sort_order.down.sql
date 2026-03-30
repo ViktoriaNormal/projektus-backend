@@ -1,0 +1,1 @@
+ALTER TABLE fields ADD COLUMN sort_order INT DEFAULT 0 NOT NULL;

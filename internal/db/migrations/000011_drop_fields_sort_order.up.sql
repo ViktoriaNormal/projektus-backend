@@ -1,0 +1,1 @@
+ALTER TABLE fields DROP COLUMN IF EXISTS sort_order;

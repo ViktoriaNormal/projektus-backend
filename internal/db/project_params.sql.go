@@ -14,9 +14,9 @@ import (
 )
 
 const createProjectParam = `-- name: CreateProjectParam :one
-INSERT INTO fields (kind, project_id, name, description, field_type, is_system, is_required, sort_order, options, value)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, project_id, name, description, field_type, is_system, is_required, sort_order, options, value
+INSERT INTO fields (kind, project_id, name, description, field_type, is_system, is_required, options, value)
+VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, project_id, name, description, field_type, is_system, is_required, options, value
 `
 
 type CreateProjectParamParams struct {
@@ -26,7 +26,6 @@ type CreateProjectParamParams struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 	Value       sql.NullString        `json:"value"`
 }
@@ -39,7 +38,6 @@ type CreateProjectParamRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 	Value       sql.NullString        `json:"value"`
 }
@@ -52,7 +50,6 @@ func (q *Queries) CreateProjectParam(ctx context.Context, arg CreateProjectParam
 		arg.FieldType,
 		arg.IsSystem,
 		arg.IsRequired,
-		arg.SortOrder,
 		arg.Options,
 		arg.Value,
 	)
@@ -65,7 +62,6 @@ func (q *Queries) CreateProjectParam(ctx context.Context, arg CreateProjectParam
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 		&i.Value,
 	)
@@ -82,7 +78,7 @@ func (q *Queries) DeleteProjectParamByID(ctx context.Context, id uuid.UUID) erro
 }
 
 const getProjectParamByID = `-- name: GetProjectParamByID :one
-SELECT id, project_id, name, description, field_type, is_system, is_required, sort_order, options, value
+SELECT id, project_id, name, description, field_type, is_system, is_required, options, value
 FROM fields
 WHERE id = $1 AND kind = 'project_param'
 `
@@ -95,7 +91,6 @@ type GetProjectParamByIDRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 	Value       sql.NullString        `json:"value"`
 }
@@ -111,7 +106,6 @@ func (q *Queries) GetProjectParamByID(ctx context.Context, id uuid.UUID) (GetPro
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 		&i.Value,
 	)
@@ -120,10 +114,9 @@ func (q *Queries) GetProjectParamByID(ctx context.Context, id uuid.UUID) (GetPro
 
 const listProjectParams = `-- name: ListProjectParams :many
 
-SELECT id, project_id, name, description, field_type, is_system, is_required, sort_order, options, value
+SELECT id, project_id, name, description, field_type, is_system, is_required, options, value
 FROM fields
 WHERE project_id = $1 AND kind = 'project_param'
-ORDER BY sort_order ASC
 `
 
 type ListProjectParamsRow struct {
@@ -134,7 +127,6 @@ type ListProjectParamsRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 	Value       sql.NullString        `json:"value"`
 }
@@ -157,7 +149,6 @@ func (q *Queries) ListProjectParams(ctx context.Context, projectID uuid.NullUUID
 			&i.FieldType,
 			&i.IsSystem,
 			&i.IsRequired,
-			&i.SortOrder,
 			&i.Options,
 			&i.Value,
 		); err != nil {
@@ -181,7 +172,7 @@ SET name = COALESCE($1, name),
     options = COALESCE($3, options),
     value = $4
 WHERE id = $5 AND kind = 'project_param'
-RETURNING id, project_id, name, description, field_type, is_system, is_required, sort_order, options, value
+RETURNING id, project_id, name, description, field_type, is_system, is_required, options, value
 `
 
 type UpdateProjectParamParams struct {
@@ -200,7 +191,6 @@ type UpdateProjectParamRow struct {
 	FieldType   string                `json:"field_type"`
 	IsSystem    bool                  `json:"is_system"`
 	IsRequired  bool                  `json:"is_required"`
-	SortOrder   int32                 `json:"sort_order"`
 	Options     pqtype.NullRawMessage `json:"options"`
 	Value       sql.NullString        `json:"value"`
 }
@@ -222,23 +212,8 @@ func (q *Queries) UpdateProjectParam(ctx context.Context, arg UpdateProjectParam
 		&i.FieldType,
 		&i.IsSystem,
 		&i.IsRequired,
-		&i.SortOrder,
 		&i.Options,
 		&i.Value,
 	)
 	return i, err
-}
-
-const updateProjectParamOrder = `-- name: UpdateProjectParamOrder :exec
-UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'project_param'
-`
-
-type UpdateProjectParamOrderParams struct {
-	ID        uuid.UUID `json:"id"`
-	SortOrder int32     `json:"sort_order"`
-}
-
-func (q *Queries) UpdateProjectParamOrder(ctx context.Context, arg UpdateProjectParamOrderParams) error {
-	_, err := q.db.ExecContext(ctx, updateProjectParamOrder, arg.ID, arg.SortOrder)
-	return err
 }

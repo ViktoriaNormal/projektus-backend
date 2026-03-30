@@ -29,9 +29,6 @@ func (s *ProjectParamService) ListParams(ctx context.Context, projectID uuid.UUI
 }
 
 func (s *ProjectParamService) CreateParam(ctx context.Context, projectID uuid.UUID, name, fieldType string, isRequired bool, options []string, value *string) (*domain.ProjectParam, error) {
-	existing, _ := s.repo.List(ctx, projectID)
-	order := int32(len(existing) + 1)
-
 	// Validate value against fieldType if provided.
 	if value != nil && *value != "" {
 		if err := s.validateParamValue(ctx, name, fieldType, *value, options); err != nil {
@@ -55,7 +52,6 @@ func (s *ProjectParamService) CreateParam(ctx context.Context, projectID uuid.UU
 		FieldType:  fieldType,
 		IsSystem:   false,
 		IsRequired: isRequired,
-		SortOrder:  order,
 		Options:    opts,
 		Value:      val,
 	})
@@ -144,15 +140,6 @@ func (s *ProjectParamService) DeleteParam(ctx context.Context, projectID uuid.UU
 		return domain.ErrSystemParam
 	}
 	return s.repo.Delete(ctx, paramID)
-}
-
-func (s *ProjectParamService) ReorderParams(ctx context.Context, projectID uuid.UUID, orders map[uuid.UUID]int32) error {
-	for id, order := range orders {
-		if err := s.repo.UpdateOrder(ctx, id, order); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // validateParamValue checks that value conforms to fieldType rules.

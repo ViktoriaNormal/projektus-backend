@@ -31,7 +31,6 @@ type TemplateProjectParamResponse struct {
 	FieldType   string    `json:"field_type"`
 	IsSystem    bool      `json:"is_system"`
 	IsRequired  bool      `json:"is_required"`
-	Order       int32     `json:"order"`
 	Options     []string  `json:"options"`
 }
 
@@ -87,7 +86,6 @@ type TemplateBoardCustomFieldResponse struct {
 	FieldType   string    `json:"field_type"`
 	IsSystem    bool      `json:"is_system"`
 	IsRequired  bool      `json:"is_required"`
-	Order       int32     `json:"order"`
 	Options     []string  `json:"options"`
 }
 
@@ -142,21 +140,12 @@ type SwimlaneOrderItem struct {
 	Order      int32     `json:"order"`
 }
 
-type FieldOrderItem struct {
-	FieldID uuid.UUID `json:"field_id"`
-	Order   int32     `json:"order"`
-}
-
 type ReorderColumnsRequest struct {
 	Orders []ColumnOrderItem `json:"orders" binding:"required"`
 }
 
 type ReorderSwimlanesRequest struct {
 	Orders []SwimlaneOrderItem `json:"orders" binding:"required"`
-}
-
-type ReorderFieldsRequest struct {
-	Orders []FieldOrderItem `json:"orders" binding:"required"`
 }
 
 type CreateTemplateBoardColumnRequest struct {
@@ -189,7 +178,6 @@ type CreateTemplateBoardCustomFieldRequest struct {
 	Name       string   `json:"name" binding:"required"`
 	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list sprint sprint_list"`
 	IsRequired bool     `json:"is_required"`
-	Order      int32    `json:"order"`
 	Options    []string `json:"options"`
 }
 
@@ -205,7 +193,6 @@ type CreateTemplateProjectParamRequest struct {
 	Name       string   `json:"name" binding:"required"`
 	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list"`
 	IsRequired bool     `json:"is_required"`
-	Order      int32    `json:"order"`
 	Options    []string `json:"options"`
 }
 
@@ -213,15 +200,6 @@ type UpdateTemplateProjectParamRequest struct {
 	Name       *string  `json:"name"`
 	IsRequired *bool    `json:"is_required"`
 	Options    []string `json:"options"`
-}
-
-type ParamOrderItem struct {
-	ParamID uuid.UUID `json:"param_id"`
-	Order   int32     `json:"order"`
-}
-
-type ReorderParamsRequest struct {
-	Orders []ParamOrderItem `json:"orders" binding:"required"`
 }
 
 // --- Roles ---
