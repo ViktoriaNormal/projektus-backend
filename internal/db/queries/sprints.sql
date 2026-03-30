@@ -19,7 +19,7 @@ ORDER BY start_date DESC;
 -- name: UpdateSprint :one
 UPDATE sprints
 SET name       = COALESCE(sqlc.narg('name'), name),
-    goal       = COALESCE(sqlc.narg('goal'), goal),
+    goal       = sqlc.narg('goal'),
     start_date = COALESCE(sqlc.narg('start_date'), start_date),
     end_date   = COALESCE(sqlc.narg('end_date'), end_date),
     status     = COALESCE(sqlc.narg('status'), status),

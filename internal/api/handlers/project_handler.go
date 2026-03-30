@@ -44,7 +44,7 @@ func (h *ProjectHandler) GetReferences(c *gin.Context) {
 	}
 	for _, ft := range refs.FieldTypes {
 		resp.FieldTypes = append(resp.FieldTypes, dto.ReferenceFieldType{
-			Key: ft.Key, Name: ft.Name, AvailableFor: ft.AvailableFor,
+			Key: ft.Key, Name: ft.Name, AvailableFor: ft.AvailableFor, AllowedScopes: ft.AllowedScopes,
 		})
 	}
 	for _, eu := range refs.EstimationUnits {
@@ -192,8 +192,8 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	if req.Name != nil {
 		p.Name = *req.Name
 	}
-	if req.Description != nil {
-		p.Description = req.Description
+	if req.Description.Set {
+		p.Description = req.Description.Ptr()
 	}
 	if req.Status != nil {
 		p.Status = domain.ProjectStatus(*req.Status)

@@ -7,6 +7,7 @@ type BoardResponse struct {
 	ProjectID       *uuid.UUID `json:"project_id,omitempty"`
 	Name            string     `json:"name"`
 	Description     *string    `json:"description,omitempty"`
+	IsDefault       bool       `json:"is_default"`
 	Order           int32      `json:"order"`
 	PriorityType    string     `json:"priority_type"`
 	EstimationUnit  string     `json:"estimation_unit"`
@@ -24,12 +25,12 @@ type CreateBoardRequest struct {
 }
 
 type UpdateBoardRequest struct {
-	Name            *string `json:"name,omitempty"`
-	Description     *string `json:"description,omitempty"`
-	Order           *int32  `json:"order,omitempty"`
-	PriorityType    *string `json:"priority_type,omitempty"`
-	EstimationUnit  *string `json:"estimation_unit,omitempty"`
-	SwimlaneGroupBy *string `json:"swimlane_group_by,omitempty"`
+	Name            *string               `json:"name,omitempty"`
+	Description     NullableField[string] `json:"description"`
+	Order           *int32                `json:"order,omitempty"`
+	PriorityType    *string               `json:"priority_type,omitempty"`
+	EstimationUnit  *string               `json:"estimation_unit,omitempty"`
+	SwimlaneGroupBy *string               `json:"swimlane_group_by,omitempty"`
 }
 
 type ColumnResponse struct {
@@ -50,10 +51,10 @@ type CreateColumnRequest struct {
 }
 
 type UpdateColumnRequest struct {
-	Name       *string `json:"name,omitempty"`
-	SystemType *string `json:"system_type,omitempty"`
-	WipLimit   *int32  `json:"wip_limit,omitempty"`
-	Order      *int32  `json:"order,omitempty"`
+	Name       *string               `json:"name,omitempty"`
+	SystemType NullableField[string] `json:"system_type"`
+	WipLimit   NullableField[int32]  `json:"wip_limit"`
+	Order      *int32                `json:"order,omitempty"`
 }
 
 type SwimlaneResponse struct {
@@ -71,9 +72,9 @@ type CreateSwimlaneRequest struct {
 }
 
 type UpdateSwimlaneRequest struct {
-	Name     *string `json:"name,omitempty"`
-	WipLimit *int32  `json:"wip_limit,omitempty"`
-	Order    *int32  `json:"order,omitempty"`
+	Name     *string              `json:"name,omitempty"`
+	WipLimit NullableField[int32] `json:"wip_limit"`
+	Order    *int32               `json:"order,omitempty"`
 }
 
 type NoteResponse struct {
@@ -143,10 +144,10 @@ type CreateBoardCustomFieldRequest struct {
 }
 
 type UpdateBoardCustomFieldRequest struct {
-	Name        *string  `json:"name,omitempty"`
-	Description *string  `json:"description,omitempty"`
-	IsRequired  *bool    `json:"is_required,omitempty"`
-	Options     []string `json:"options,omitempty"`
+	Name        *string               `json:"name,omitempty"`
+	Description NullableField[string] `json:"description"`
+	IsRequired  *bool                 `json:"is_required,omitempty"`
+	Options     []string              `json:"options,omitempty"`
 }
 
 type CustomFieldReorderItem struct {

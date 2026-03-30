@@ -289,7 +289,6 @@ const listTemplateRoles = `-- name: ListTemplateRoles :many
 SELECT id, template_id, name, description, is_admin
 FROM roles
 WHERE template_id = $1
-ORDER BY name
 `
 
 type ListTemplateRolesRow struct {

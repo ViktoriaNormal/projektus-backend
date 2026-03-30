@@ -3,8 +3,7 @@
 -- name: ListSystemRoles :many
 SELECT id, name, description, scope, is_admin
 FROM roles
-WHERE scope = 'system'
-ORDER BY name;
+WHERE scope = 'system';
 
 -- name: GetRoleByID :one
 SELECT id, name, description, scope, is_admin
@@ -28,8 +27,7 @@ DELETE FROM roles WHERE id = $1;
 -- name: ListProjectRoles :many
 SELECT id, name, description, scope, project_id
 FROM roles
-WHERE scope = 'project' AND project_id = $1
-ORDER BY name;
+WHERE scope = 'project' AND project_id = $1;
 
 -- name: CreateProjectRole :one
 INSERT INTO roles (name, description, scope, project_id)

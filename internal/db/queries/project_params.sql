@@ -21,7 +21,7 @@ UPDATE fields
 SET name = COALESCE(sqlc.narg('name'), name),
     is_required = COALESCE(sqlc.narg('is_required'), is_required),
     options = COALESCE(sqlc.narg('options'), options),
-    value = COALESCE(sqlc.narg('value'), value)
+    value = sqlc.narg('value')
 WHERE id = sqlc.arg('id') AND kind = 'project_param'
 RETURNING id, project_id, name, description, field_type, is_system, is_required, sort_order, options, value;
 

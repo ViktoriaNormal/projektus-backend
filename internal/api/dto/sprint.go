@@ -11,11 +11,11 @@ type CreateSprintRequest struct {
 }
 
 type UpdateSprintRequest struct {
-	Name          *string `json:"name"`
-	Goal          *string `json:"goal"`
-	StartDate     *string `json:"start_date"`
-	DurationWeeks *int    `json:"duration_weeks" binding:"omitempty,oneof=1 2 3 4"`
-	DurationDays  *int    `json:"duration_days" binding:"omitempty,min=1,max=28"`
+	Name          *string               `json:"name"`
+	Goal          NullableField[string] `json:"goal"`
+	StartDate     *string               `json:"start_date"`
+	DurationWeeks *int                  `json:"duration_weeks" binding:"omitempty,oneof=1 2 3 4"`
+	DurationDays  *int                  `json:"duration_days" binding:"omitempty,min=1,max=28"`
 }
 
 type SprintResponse struct {

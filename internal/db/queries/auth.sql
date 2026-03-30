@@ -41,6 +41,23 @@ WHERE ip_address = $1
   AND success = FALSE
   AND attempted_at >= $2;
 
+-- Blocked users (temporary block via users.blocked_until)
+
+-- name: GetUserBlockedUntil :one
+SELECT blocked_until
+FROM users
+WHERE id = $1;
+
+-- name: SetUserBlockedUntil :exec
+UPDATE users
+SET blocked_until = $2, is_active = false
+WHERE id = $1;
+
+-- name: ClearExpiredUserBlocks :exec
+UPDATE users
+SET blocked_until = NULL, is_active = true
+WHERE blocked_until IS NOT NULL AND blocked_until <= NOW();
+
 -- Blocked IPs
 
 -- name: GetBlockedIP :one

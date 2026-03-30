@@ -14,11 +14,11 @@ type UserResponse struct {
 }
 
 type UpdateUserProfileRequest struct {
-	FullName                  string  `json:"full_name" binding:"required"`
-	Email                     string  `json:"email" binding:"required,email"`
-	Position                  *string `json:"position"`
-	OnVacation                *bool   `json:"on_vacation"`
-	IsSick                    *bool   `json:"is_sick"`
-	AlternativeContactChannel *string `json:"alt_contact_channel"`
-	AlternativeContactInfo    *string `json:"alt_contact_info"`
+	FullName                  string                `json:"full_name" binding:"required"`
+	Email                     string                `json:"email" binding:"required,email"`
+	Position                  NullableField[string] `json:"position"`
+	OnVacation                *bool                 `json:"on_vacation"`
+	IsSick                    *bool                 `json:"is_sick"`
+	AlternativeContactChannel NullableField[string] `json:"alt_contact_channel"`
+	AlternativeContactInfo    NullableField[string] `json:"alt_contact_info"`
 }

@@ -68,11 +68,10 @@ func (q *Queries) ListMemberRoleIDs(ctx context.Context, memberID uuid.UUID) ([]
 
 const listMemberRoles = `-- name: ListMemberRoles :many
 
-SELECT r.name
+SELECT r.id::text
 FROM member_roles mr
 JOIN roles r ON r.id = mr.role_id
 WHERE mr.member_id = $1
-ORDER BY r.name
 `
 
 // Member roles
@@ -84,11 +83,11 @@ func (q *Queries) ListMemberRoles(ctx context.Context, memberID uuid.UUID) ([]st
 	defer rows.Close()
 	items := []string{}
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var r_id string
+		if err := rows.Scan(&r_id); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, r_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

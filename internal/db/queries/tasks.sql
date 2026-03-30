@@ -30,11 +30,11 @@ ORDER BY created_at DESC;
 -- name: UpdateTask :one
 UPDATE tasks
 SET name        = COALESCE(sqlc.narg('name'), name),
-    description = COALESCE(sqlc.narg('description'), description),
-    deadline    = COALESCE(sqlc.narg('deadline'), deadline),
-    executor_id = COALESCE(sqlc.narg('executor_id'), executor_id),
+    description = sqlc.narg('description'),
+    deadline    = sqlc.narg('deadline'),
+    executor_id = sqlc.narg('executor_id'),
     column_id   = COALESCE(sqlc.narg('column_id'), column_id),
-    swimlane_id = COALESCE(sqlc.narg('swimlane_id'), swimlane_id)
+    swimlane_id = sqlc.narg('swimlane_id')
 WHERE id = sqlc.arg('id')
 RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at;
 

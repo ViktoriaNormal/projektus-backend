@@ -134,7 +134,6 @@ const listProjectRoles = `-- name: ListProjectRoles :many
 SELECT id, name, description, scope, project_id
 FROM roles
 WHERE scope = 'project' AND project_id = $1
-ORDER BY name
 `
 
 type ListProjectRolesRow struct {
@@ -211,7 +210,6 @@ const listSystemRoles = `-- name: ListSystemRoles :many
 SELECT id, name, description, scope, is_admin
 FROM roles
 WHERE scope = 'system'
-ORDER BY name
 `
 
 type ListSystemRolesRow struct {

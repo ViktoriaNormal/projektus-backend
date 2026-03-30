@@ -32,12 +32,12 @@ type CreateTaskRequest struct {
 }
 
 type UpdateTaskRequest struct {
-	Name             *string    `json:"name,omitempty"`
-	Description      *string    `json:"description,omitempty"`
-	Deadline         *time.Time `json:"deadline,omitempty"`
-	ExecutorMemberID *uuid.UUID `json:"executor_member_id,omitempty"`
-	ColumnID         *uuid.UUID `json:"column_id,omitempty"`
-	SwimlaneID       *uuid.UUID `json:"swimlane_id,omitempty"`
+	Name             *string                  `json:"name,omitempty"`
+	Description      NullableField[string]    `json:"description"`
+	Deadline         NullableField[time.Time] `json:"deadline"`
+	ExecutorMemberID NullableField[uuid.UUID] `json:"executor_member_id"`
+	ColumnID         *uuid.UUID               `json:"column_id,omitempty"`
+	SwimlaneID       NullableField[uuid.UUID] `json:"swimlane_id"`
 }
 
 type DeleteTaskRequest struct {

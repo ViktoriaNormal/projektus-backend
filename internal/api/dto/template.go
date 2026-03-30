@@ -114,13 +114,13 @@ type CreateTemplateBoardRequest struct {
 }
 
 type UpdateTemplateBoardRequest struct {
-	Name            *string `json:"name"`
-	Description     *string `json:"description"`
-	IsDefault       *bool   `json:"is_default"`
-	Order           *int32  `json:"order"`
-	PriorityType    *string `json:"priority_type"`
-	EstimationUnit  *string `json:"estimation_unit"`
-	SwimlaneGroupBy *string `json:"swimlane_group_by"`
+	Name            *string               `json:"name"`
+	Description     NullableField[string] `json:"description"`
+	IsDefault       *bool                 `json:"is_default"`
+	Order           *int32                `json:"order"`
+	PriorityType    *string               `json:"priority_type"`
+	EstimationUnit  *string               `json:"estimation_unit"`
+	SwimlaneGroupBy NullableField[string] `json:"swimlane_group_by"`
 }
 
 type ReorderRequest struct {
@@ -168,10 +168,10 @@ type CreateTemplateBoardColumnRequest struct {
 }
 
 type UpdateTemplateBoardColumnRequest struct {
-	Name       *string `json:"name"`
-	SystemType *string `json:"system_type"`
-	WipLimit   *int32  `json:"wip_limit"`
-	Note       *string `json:"note"`
+	Name       *string               `json:"name"`
+	SystemType *string               `json:"system_type"`
+	WipLimit   NullableField[int32]  `json:"wip_limit"`
+	Note       NullableField[string] `json:"note"`
 }
 
 type CreateTemplateBoardSwimlaneRequest struct {
@@ -181,8 +181,8 @@ type CreateTemplateBoardSwimlaneRequest struct {
 }
 
 type UpdateTemplateBoardSwimlaneRequest struct {
-	WipLimit *int32  `json:"wip_limit"`
-	Note     *string `json:"note"`
+	WipLimit NullableField[int32]  `json:"wip_limit"`
+	Note     NullableField[string] `json:"note"`
 }
 
 type CreateTemplateBoardCustomFieldRequest struct {

@@ -527,7 +527,7 @@ func (q *Queries) ListProjectBoards(ctx context.Context, projectID uuid.NullUUID
 const updateBoard = `-- name: UpdateBoard :one
 UPDATE boards
 SET name        = COALESCE($1, name),
-    description = COALESCE($2, description),
+    description = $2,
     sort_order  = COALESCE($3, sort_order),
     priority_type    = COALESCE($4, priority_type),
     estimation_unit  = COALESCE($5, estimation_unit),
@@ -602,8 +602,8 @@ func (q *Queries) UpdateBoardOrder(ctx context.Context, arg UpdateBoardOrderPara
 const updateColumn = `-- name: UpdateColumn :one
 UPDATE columns
 SET name        = COALESCE($1, name),
-    system_type = COALESCE($2, system_type),
-    wip_limit   = COALESCE($3, wip_limit),
+    system_type = $2,
+    wip_limit   = $3,
     sort_order  = COALESCE($4, sort_order)
 WHERE id = $5
 RETURNING id, board_id, name, system_type, wip_limit, sort_order, is_locked, note
@@ -680,7 +680,7 @@ func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, e
 const updateSwimlane = `-- name: UpdateSwimlane :one
 UPDATE swimlanes
 SET name       = COALESCE($1, name),
-    wip_limit  = COALESCE($2, wip_limit),
+    wip_limit  = $2,
     sort_order = COALESCE($3, sort_order)
 WHERE id = $4
 RETURNING id, board_id, name, wip_limit, sort_order, note

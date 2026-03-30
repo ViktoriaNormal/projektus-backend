@@ -155,7 +155,7 @@ func (q *Queries) GetSprintByID(ctx context.Context, id uuid.UUID) (Sprint, erro
 const updateSprint = `-- name: UpdateSprint :one
 UPDATE sprints
 SET name       = COALESCE($1, name),
-    goal       = COALESCE($2, goal),
+    goal       = $2,
     start_date = COALESCE($3, start_date),
     end_date   = COALESCE($4, end_date),
     status     = COALESCE($5, status),

@@ -30,6 +30,7 @@ type RoleRepository interface {
 	DeleteUserRoles(ctx context.Context, userID uuid.UUID) error
 	DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) error
 
+	CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int32, error)
 	UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error)
 
 	ListProjectRoles(ctx context.Context, projectID uuid.UUID) ([]domain.Role, error)
@@ -206,15 +207,15 @@ func (r *roleRepository) DeleteUserSystemRoles(ctx context.Context, userID uuid.
 	return r.q.DeleteUserSystemRoles(ctx, userID)
 }
 
+func (r *roleRepository) CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int32, error) {
+	return r.q.CountUsersWithRole(ctx, roleID)
+}
+
 func (r *roleRepository) UserHasSystemPermission(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
-	has, err := r.q.UserHasSystemPermission(ctx, db.UserHasSystemPermissionParams{
+	return r.q.UserHasSystemPermission(ctx, db.UserHasSystemPermissionParams{
 		UserID:         userID,
 		PermissionCode: code,
 	})
-	if err != nil {
-		return false, err
-	}
-	return has, nil
 }
 
 func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UUID) ([]domain.Role, error) {

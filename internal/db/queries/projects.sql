@@ -34,7 +34,7 @@ ORDER BY p.created_at DESC;
 -- name: UpdateProject :one
 UPDATE projects
 SET name = COALESCE(sqlc.narg('name'), name),
-    description = COALESCE(sqlc.narg('description'), description),
+    description = sqlc.narg('description'),
     status = COALESCE(sqlc.narg('status'), status),
     owner_id = COALESCE(sqlc.narg('owner_id'), owner_id)
 WHERE id = sqlc.arg('id')

@@ -404,11 +404,11 @@ func (q *Queries) SoftDeleteTask(ctx context.Context, arg SoftDeleteTaskParams) 
 const updateTask = `-- name: UpdateTask :one
 UPDATE tasks
 SET name        = COALESCE($1, name),
-    description = COALESCE($2, description),
-    deadline    = COALESCE($3, deadline),
-    executor_id = COALESCE($4, executor_id),
+    description = $2,
+    deadline    = $3,
+    executor_id = $4,
     column_id   = COALESCE($5, column_id),
-    swimlane_id = COALESCE($6, swimlane_id)
+    swimlane_id = $6
 WHERE id = $7
 RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
 `

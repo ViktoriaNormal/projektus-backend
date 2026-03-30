@@ -82,7 +82,7 @@ func (r *boardRepository) CreateBoard(ctx context.Context, b *domain.Board) (*do
 		TemplateID:      templateID,
 		Name:            b.Name,
 		Description:     desc,
-		IsDefault:       false,
+		IsDefault:       b.IsDefault,
 		SortOrder:       b.Order,
 		PriorityType:    b.PriorityType,
 		EstimationUnit:  b.EstimationUnit,
@@ -527,13 +527,14 @@ func (r *boardRepository) CreateCustomField(ctx context.Context, f *domain.Board
 		return nil, err
 	}
 	row, err := r.q.CreateBoardCustomField(ctx, db.CreateBoardCustomFieldParams{
-		BoardID:    uuid.NullUUID{UUID: bid, Valid: true},
-		Name:       f.Name,
-		FieldType:  f.FieldType,
-		IsSystem:   f.IsSystem,
-		IsRequired: f.IsRequired,
-		SortOrder:  f.Order,
-		Options:    OptionsToJSON(f.Options),
+		BoardID:     uuid.NullUUID{UUID: bid, Valid: true},
+		Name:        f.Name,
+		Description: f.Description,
+		FieldType:   f.FieldType,
+		IsSystem:    f.IsSystem,
+		IsRequired:  f.IsRequired,
+		SortOrder:   f.Order,
+		Options:     OptionsToJSON(f.Options),
 	})
 	if err != nil {
 		return nil, err

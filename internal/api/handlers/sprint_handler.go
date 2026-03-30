@@ -122,6 +122,11 @@ func (h *SprintHandler) UpdateSprint(c *gin.Context) {
 		return
 	}
 
+	// Apply nullable goal field in handler (three-state: absent/null/value).
+	if req.Goal.Set {
+		sprint.Goal = req.Goal.Ptr()
+	}
+
 	var startPtr *time.Time
 	if req.StartDate != nil {
 		t, err := time.Parse("2006-01-02", *req.StartDate)
@@ -140,7 +145,7 @@ func (h *SprintHandler) UpdateSprint(c *gin.Context) {
 		duration = &d
 	}
 
-	updated, err := h.service.UpdateSprint(c.Request.Context(), sprint, req.Name, req.Goal, startPtr, duration)
+	updated, err := h.service.UpdateSprint(c.Request.Context(), sprint, req.Name, nil, startPtr, duration)
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры спринта")

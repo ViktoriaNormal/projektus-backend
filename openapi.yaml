@@ -1,7 +1,18 @@
 openapi: 3.0.3
 info:
   title: Projektus API
-  description: Backend API for the Projektus project management system.
+  description: |-
+    Backend API for the Projektus project management system.
+
+    ### PATCH-семантика для nullable-полей
+
+    В PATCH-запросах для каждого nullable-поля (помеченного `nullable: true`) поддерживаются три состояния:
+
+    | Тело запроса | Поведение |
+    |---|---|
+    | `{}` (поле отсутствует) | Значение не меняется |
+    | `{ "field": null }` | Значение сбрасывается (записывается NULL в БД) |
+    | `{ "field": "value" }` | Устанавливается новое значение |
   version: 2.0.0
 
 servers:
@@ -669,6 +680,14 @@ paths:
     post:
       tags: [Projects]
       summary: Create project
+      description: |
+        Creates a new project. The structure (boards, columns, swimlanes,
+        fields, project params, roles) is fully copied from the corresponding
+        template (scrum/kanban), including `is_default`, `is_system` flags,
+        descriptions, options, and the admin role with its permissions.
+
+        The creator is automatically added as the first member with the
+        admin role from the template.
       requestBody:
         required: true
         content:
@@ -863,6 +882,9 @@ paths:
       description: |
         Updates name, description, or permissions of a project role.
 
+        Permissions are updated partially (upsert): only the areas included
+        in the request are changed, other areas keep their current access level.
+
         **Admin role (`is_admin: true`) restrictions:**
         - `name` and `description` CAN be changed.
         - `permissions` CANNOT be changed — returns `400 PROJECT_ADMIN_ROLE`
@@ -927,6 +949,9 @@ paths:
     post:
       tags: [ProjectParams]
       summary: Create project param
+      description: |-
+        Если передано `value`, оно валидируется по `field_type` (см. правила в описании схемы `CreateProjectParamRequest`).
+        Создание с `is_required: true` без `value` допустимо — пользователь заполнит позже.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -938,6 +963,12 @@ paths:
       responses:
         '200':
           description: Created param
+        '400':
+          description: Validation error (value does not match field_type)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
           content:
             application/json:
               schema:
@@ -968,6 +999,16 @@ paths:
     patch:
       tags: [ProjectParams]
       summary: Update project param
+      description: |-
+        Обновляет параметр проекта. Поддерживается три состояния для `value`:
+        - поле отсутствует → значение не меняется
+        - `"value": null` → значение сбрасывается (NULL)
+        - `"value": "..."` → устанавливается новое значение
+
+        **Валидация:**
+        - Если параметр обязательный (`is_required = true`), `value` не может быть пустым или null.
+        - Если `is_required` устанавливается в `true`, а текущее `value` пустое — ошибка 400.
+        - Новое `value` валидируется по `field_type` параметра (см. правила в описании схемы).
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
         - $ref: '#/components/parameters/ParamIdPath'
@@ -989,6 +1030,15 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/ProjectParamResponse'
+        '400':
+          description: |-
+            Validation error. Possible reasons:
+            - Required param cannot have empty value
+            - Value does not match field_type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       tags: [ProjectParams]
       summary: Delete project param
@@ -2320,11 +2370,14 @@ paths:
       summary: Delete system role
       description: |
         Системная роль с is_admin=true не может быть удалена.
+        Роль, назначенная хотя бы одному пользователю, не может быть удалена.
       parameters:
         - $ref: '#/components/parameters/RoleIdPath'
       responses:
         '204':
           description: Deleted
+        '400':
+          description: Role has members assigned (ROLE_HAS_MEMBERS)
         '403':
           description: System admin role cannot be deleted
           content:
@@ -3408,6 +3461,19 @@ components:
         description: { type: string }
 
     # ── System Roles ──
+    RolePermissionResponse:
+      type: object
+      properties:
+        code: { type: string }
+        access: { type: string, enum: [full, view, none] }
+
+    RolePermissionRequest:
+      type: object
+      required: [code, access]
+      properties:
+        code: { type: string }
+        access: { type: string, enum: [full, view, none] }
+
     RoleResponse:
       type: object
       properties:
@@ -3417,7 +3483,7 @@ components:
         is_admin: { type: boolean }
         permissions:
           type: array
-          items: { type: string }
+          items: { $ref: '#/components/schemas/RolePermissionResponse' }
 
     CreateRoleRequest:
       type: object
@@ -3427,7 +3493,7 @@ components:
         description: { type: string }
         permissions:
           type: array
-          items: { type: string }
+          items: { $ref: '#/components/schemas/RolePermissionRequest' }
 
     UpdateRoleRequest:
       type: object
@@ -3437,7 +3503,7 @@ components:
         description: { type: string }
         permissions:
           type: array
-          items: { type: string }
+          items: { $ref: '#/components/schemas/RolePermissionRequest' }
 
     ProjectRoleResponse:
       type: object
@@ -3543,9 +3609,9 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string }
+        description: { type: string, nullable: true }
         meeting_type: { type: string }
-        location: { type: string }
+        location: { type: string, nullable: true }
         start_time: { type: string, format: date-time }
         end_time: { type: string, format: date-time }
 
@@ -3584,7 +3650,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string }
+        description: { type: string, nullable: true }
         status: { type: string, enum: [active, archived, paused] }
         owner_id: { type: string, format: uuid }
 
@@ -3622,7 +3688,8 @@ components:
         user_id: { type: string, format: uuid }
         roles:
           type: array
-          items: { type: string }
+          description: Array of role UUIDs assigned to this member
+          items: { type: string, format: uuid }
 
     AddMemberRequest:
       type: object
@@ -3704,6 +3771,16 @@ components:
     CreateProjectParamRequest:
       type: object
       required: [name, field_type]
+      description: |-
+        Создание параметра проекта. Если передано `value`, оно валидируется по `field_type`:
+        - **text** — любая строка
+        - **number** — валидное число
+        - **datetime** — ISO 8601 (RFC 3339), год в диапазоне 2000–2100
+        - **checkbox** — только `"true"` или `"false"`
+        - **select** — значение из `options`
+        - **multiselect** — значения через запятую, каждое из `options`
+        - **user** — UUID существующего пользователя
+        - **user_list** — UUID через запятую, каждый — существующий пользователь
       properties:
         name: { type: string }
         description: { type: string }
@@ -3716,6 +3793,18 @@ components:
 
     UpdateProjectParamRequest:
       type: object
+      description: |-
+        Обновление параметра проекта. Значение `value` валидируется по `field_type`:
+        - **text** — любая строка
+        - **number** — валидное число
+        - **datetime** — ISO 8601 (RFC 3339), год в диапазоне 2000–2100
+        - **checkbox** — только `"true"` или `"false"`
+        - **select** — значение из `options`
+        - **multiselect** — значения через запятую, каждое из `options`
+        - **user** — UUID существующего пользователя
+        - **user_list** — UUID через запятую, каждый — существующий пользователь
+
+        Если параметр обязательный, `value` не может быть null или пустой строкой.
       properties:
         name: { type: string }
         description: { type: string }
@@ -3746,6 +3835,7 @@ components:
         project_id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string, nullable: true }
+        is_default: { type: boolean }
         order: { type: integer }
         priority_type: { type: string, enum: [priority, service_class] }
         estimation_unit: { type: string, enum: [story_points, time] }
@@ -3767,7 +3857,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string }
+        description: { type: string, nullable: true }
         order: { type: integer }
         priority_type: { type: string }
         estimation_unit: { type: string }
@@ -3812,8 +3902,8 @@ components:
       type: object
       properties:
         name: { type: string }
-        system_type: { type: string }
-        wip_limit: { type: integer }
+        system_type: { type: string, nullable: true }
+        wip_limit: { type: integer, nullable: true }
         order: { type: integer }
 
     BoardReorderColumnsRequest:
@@ -3851,7 +3941,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        wip_limit: { type: integer }
+        wip_limit: { type: integer, nullable: true }
         order: { type: integer }
 
     BoardReorderSwimlanesRequest:
@@ -3894,7 +3984,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
         is_system: { type: boolean }
         is_required: { type: boolean }
         order: { type: integer }
@@ -3918,7 +4008,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string }
+        description: { type: string, nullable: true }
         is_required: { type: boolean }
         options:
           type: array
@@ -3970,11 +4060,11 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string }
-        deadline: { type: string, format: date-time }
-        executor_member_id: { type: string, format: uuid }
+        description: { type: string, nullable: true }
+        deadline: { type: string, format: date-time, nullable: true }
+        executor_member_id: { type: string, format: uuid, nullable: true }
         column_id: { type: string, format: uuid }
-        swimlane_id: { type: string, format: uuid }
+        swimlane_id: { type: string, format: uuid, nullable: true }
 
     DeleteTaskRequest:
       type: object
@@ -4076,7 +4166,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        goal: { type: string }
+        goal: { type: string, nullable: true }
         start_date: { type: string, format: date }
         duration_weeks: { type: integer, enum: [1, 2, 3, 4] }
         duration_days: { type: integer, minimum: 1, maximum: 28 }
@@ -4131,15 +4221,15 @@ components:
         username: { type: string, minLength: 3, maxLength: 50 }
         email: { type: string, format: email }
         full_name: { type: string }
-        position: { type: string }
+        position: { type: string, nullable: true }
         is_active: { type: boolean }
         role_ids:
           type: array
           items: { type: string, format: uuid }
         on_vacation: { type: boolean }
         is_sick: { type: boolean }
-        alt_contact_channel: { type: string }
-        alt_contact_info: { type: string }
+        alt_contact_channel: { type: string, nullable: true }
+        alt_contact_info: { type: string, nullable: true }
 
     # ── Admin: Password Policy ──
     PasswordPolicyResponse:
@@ -4238,7 +4328,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
         is_system: { type: boolean }
         is_required: { type: boolean }
         order: { type: integer }
@@ -4306,7 +4396,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string }
+        description: { type: string, nullable: true }
         is_default: { type: boolean }
         order: { type: integer }
         priority_type: { type: string }
@@ -4340,8 +4430,8 @@ components:
       properties:
         name: { type: string }
         system_type: { type: string }
-        wip_limit: { type: integer }
-        note: { type: string }
+        wip_limit: { type: integer, nullable: true }
+        note: { type: string, nullable: true }
 
     CreateTemplateBoardSwimlaneRequest:
       type: object

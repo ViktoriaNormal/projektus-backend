@@ -85,9 +85,7 @@ func (h *MeetingHandler) ListUserMeetings(c *gin.Context) {
 		resp[i] = mapMeetingToResponse(&meetings[i])
 	}
 
-	writeSuccess(c, gin.H{
-		"meetings": resp,
-	})
+	writeSuccess(c, resp)
 }
 
 // POST /api/v1/meetings
@@ -205,18 +203,33 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 		return
 	}
 
-	m := domain.Meeting{ID: meetingID}
+	// Fetch existing meeting to build a complete domain object.
+	existing, _, err := h.svc.GetMeetingWithParticipants(c.Request.Context(), userID, meetingID)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
+			return
+		}
+		if err == domain.ErrAccessDenied {
+			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет прав на изменение встречи")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		return
+	}
+
+	m := *existing
 	if req.Name != nil {
 		m.Name = *req.Name
 	}
-	if req.Description != nil {
-		m.Description = req.Description
+	if req.Description.Set {
+		m.Description = req.Description.Ptr()
 	}
 	if req.MeetingType != nil {
 		m.Type = domain.MeetingType(*req.MeetingType)
 	}
-	if req.Location != nil {
-		m.Location = req.Location
+	if req.Location.Set {
+		m.Location = req.Location.Ptr()
 	}
 	if req.StartTime != nil {
 		t, err := time.Parse(time.RFC3339, *req.StartTime)

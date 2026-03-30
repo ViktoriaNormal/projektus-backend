@@ -21,14 +21,16 @@ func NewRoleHandler(roleService *services.RoleService) *RoleHandler {
 
 func (h *RoleHandler) mapRoleToResponse(c *gin.Context, r domain.Role) dto.RoleResponse {
 	perms, _ := h.roleService.GetRolePermissions(c.Request.Context(), r.ID)
-	if perms == nil {
-		perms = []string{}
+	permResp := make([]dto.RolePermissionResponse, 0, len(perms))
+	for _, p := range perms {
+		permResp = append(permResp, dto.RolePermissionResponse{Code: p.Code, Access: p.Access})
 	}
 	return dto.RoleResponse{
 		ID:          r.ID,
 		Name:        r.Name,
 		Description: r.Description,
-		Permissions: perms,
+		IsAdmin:     r.IsAdmin,
+		Permissions: permResp,
 	}
 }
 
@@ -95,7 +97,11 @@ func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.roleService.CreateSystemRole(c.Request.Context(), req.Name, req.Description, req.Permissions)
+	perms := make([]domain.Permission, len(req.Permissions))
+	for i, p := range req.Permissions {
+		perms[i] = domain.Permission{Code: p.Code, Access: p.Access}
+	}
+	role, err := h.roleService.CreateSystemRole(c.Request.Context(), req.Name, req.Description, perms)
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя роли обязательно")
@@ -122,7 +128,11 @@ func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.roleService.UpdateSystemRole(c.Request.Context(), id, req.Name, req.Description, req.Permissions)
+	perms := make([]domain.Permission, len(req.Permissions))
+	for i, p := range req.Permissions {
+		perms[i] = domain.Permission{Code: p.Code, Access: p.Access}
+	}
+	role, err := h.roleService.UpdateSystemRole(c.Request.Context(), id, req.Name, req.Description, perms)
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя роли обязательно")
@@ -154,6 +164,10 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 	if err := h.roleService.DeleteSystemRole(c.Request.Context(), id); err != nil {
 		if err == domain.ErrSystemAdminRole {
 			writeError(c, http.StatusForbidden, "SYSTEM_ADMIN_ROLE", "Нельзя удалить системную роль администратора")
+			return
+		}
+		if err == domain.ErrRoleHasMembers {
+			writeError(c, http.StatusBadRequest, "ROLE_HAS_MEMBERS", "Нельзя удалить роль, назначенную пользователям")
 			return
 		}
 		if err == domain.ErrNotFound {

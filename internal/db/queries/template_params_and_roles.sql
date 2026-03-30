@@ -33,8 +33,7 @@ UPDATE fields SET sort_order = $2 WHERE id = $1 AND kind = 'project_param';
 -- name: ListTemplateRoles :many
 SELECT id, template_id, name, description, is_admin
 FROM roles
-WHERE template_id = $1
-ORDER BY name;
+WHERE template_id = $1;
 
 -- name: GetTemplateRoleByID :one
 SELECT id, template_id, name, description, is_admin

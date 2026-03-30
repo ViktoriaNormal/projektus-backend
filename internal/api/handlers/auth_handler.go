@@ -91,19 +91,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	uid, _ := uuid.Parse(user.ID)
 
 	// Подтягиваем системные роли с permissions
-	var roleResponses []dto.RoleResponse
+	roleResponses := make([]dto.RoleResponse, 0)
 	if roles, err := h.roleSvc.GetUserSystemRoles(c.Request.Context(), uid); err == nil {
-		roleResponses = make([]dto.RoleResponse, 0, len(roles))
 		for _, r := range roles {
 			perms, _ := h.roleSvc.GetRolePermissions(c.Request.Context(), r.ID)
-			if perms == nil {
-				perms = []string{}
+			permResp := make([]dto.RolePermissionResponse, 0, len(perms))
+			for _, p := range perms {
+				permResp = append(permResp, dto.RolePermissionResponse{Code: p.Code, Access: p.Access})
 			}
 			roleResponses = append(roleResponses, dto.RoleResponse{
 				ID:          r.ID,
 				Name:        r.Name,
 				Description: r.Description,
-				Permissions: perms,
+				IsAdmin:     r.IsAdmin,
+				Permissions: permResp,
 			})
 		}
 	}

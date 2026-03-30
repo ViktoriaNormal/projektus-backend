@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -148,8 +147,8 @@ func (h *BoardHandler) UpdateBoard(c *gin.Context) {
 	if req.Name != nil {
 		board.Name = *req.Name
 	}
-	if req.Description != nil {
-		board.Description = req.Description
+	if req.Description.Set {
+		board.Description = req.Description.Ptr()
 	}
 	if req.Order != nil {
 		board.Order = int16(*req.Order)
@@ -353,14 +352,11 @@ func (h *BoardHandler) UpdateColumn(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор колонки")
 		return
 	}
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	var req dto.UpdateColumnRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	var req dto.UpdateColumnRequest
-	rawBytes, _ := json.Marshal(raw)
-	_ = json.Unmarshal(rawBytes, &req)
 
 	col, err := h.service.GetColumnByID(c.Request.Context(), columnID)
 	if err != nil {
@@ -368,7 +364,7 @@ func (h *BoardHandler) UpdateColumn(c *gin.Context) {
 		return
 	}
 	if col.IsLocked {
-		if req.Name != nil || req.SystemType != nil {
+		if req.Name != nil || req.SystemType.Set {
 			writeError(c, http.StatusBadRequest, "COLUMN_LOCKED", "Заблокированную колонку нельзя переименовывать или менять systemType. Допускается изменение wipLimit")
 			return
 		}
@@ -376,15 +372,21 @@ func (h *BoardHandler) UpdateColumn(c *gin.Context) {
 	if req.Name != nil {
 		col.Name = *req.Name
 	}
-	if req.SystemType != nil {
-		st := domain.SystemStatusType(*req.SystemType)
-		col.SystemType = &st
+	if req.SystemType.Set {
+		if req.SystemType.Null {
+			col.SystemType = nil
+		} else {
+			st := domain.SystemStatusType(req.SystemType.Value)
+			col.SystemType = &st
+		}
 	}
-	if rawVal, exists := raw["wip_limit"]; exists && string(rawVal) == "null" {
-		col.WipLimit = nil
-	} else if req.WipLimit != nil {
-		v := int16(*req.WipLimit)
-		col.WipLimit = &v
+	if req.WipLimit.Set {
+		if req.WipLimit.Null {
+			col.WipLimit = nil
+		} else {
+			v := int16(req.WipLimit.Value)
+			col.WipLimit = &v
+		}
 	}
 	if req.Order != nil {
 		col.Order = int16(*req.Order)
@@ -454,14 +456,11 @@ func (h *BoardHandler) UpdateSwimlane(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор дорожки")
 		return
 	}
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	var req dto.UpdateSwimlaneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	var req dto.UpdateSwimlaneRequest
-	rawBytes, _ := json.Marshal(raw)
-	_ = json.Unmarshal(rawBytes, &req)
 
 	sw, err := h.service.GetSwimlaneByID(c.Request.Context(), swimlaneID)
 	if err != nil {
@@ -471,11 +470,13 @@ func (h *BoardHandler) UpdateSwimlane(c *gin.Context) {
 	if req.Name != nil {
 		sw.Name = *req.Name
 	}
-	if rawVal, exists := raw["wip_limit"]; exists && string(rawVal) == "null" {
-		sw.WipLimit = nil
-	} else if req.WipLimit != nil {
-		v := int16(*req.WipLimit)
-		sw.WipLimit = &v
+	if req.WipLimit.Set {
+		if req.WipLimit.Null {
+			sw.WipLimit = nil
+		} else {
+			v := int16(req.WipLimit.Value)
+			sw.WipLimit = &v
+		}
 	}
 	if req.Order != nil {
 		sw.Order = int16(*req.Order)
@@ -644,7 +645,16 @@ func (h *BoardHandler) UpdateCustomField(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	field, err := h.service.UpdateCustomField(c.Request.Context(), boardID, fieldID, req.Name, req.Description, req.IsRequired, req.Options)
+	var desc *string
+	if req.Description.Set {
+		if req.Description.Null {
+			empty := ""
+			desc = &empty
+		} else {
+			desc = &req.Description.Value
+		}
+	}
+	field, err := h.service.UpdateCustomField(c.Request.Context(), boardID, fieldID, req.Name, desc, req.IsRequired, req.Options)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
@@ -727,6 +737,7 @@ func mapBoardToDTO(b *domain.Board) dto.BoardResponse {
 		ProjectID:       projectID,
 		Name:            b.Name,
 		Description:     b.Description,
+		IsDefault:       b.IsDefault,
 		Order:           int32(b.Order),
 		PriorityType:    b.PriorityType,
 		EstimationUnit:  b.EstimationUnit,

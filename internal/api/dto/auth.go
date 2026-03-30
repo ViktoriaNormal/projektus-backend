@@ -31,7 +31,7 @@ type AuthResponse struct {
 	AccessToken  string         `json:"access_token"`
 	RefreshToken string         `json:"refresh_token"`
 	User         interface{}    `json:"user"`
-	Roles        []RoleResponse `json:"roles,omitempty"`
+	Roles        []RoleResponse `json:"roles"`
 }
 
 type APIError struct {

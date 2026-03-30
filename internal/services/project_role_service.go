@@ -88,7 +88,6 @@ func (s *ProjectRoleService) UpdateRole(ctx context.Context, projectID uuid.UUID
 	}
 
 	if permissions != nil && !existing.IsAdmin {
-		_ = s.repo.DeletePermissions(ctx, roleID)
 		for _, p := range permissions {
 			if err := s.repo.UpsertPermission(ctx, roleID, p.Area, p.Access); err != nil {
 				return nil, err

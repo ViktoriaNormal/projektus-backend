@@ -10,10 +10,10 @@ type CreateProjectRequest struct {
 }
 
 type UpdateProjectRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Status      *string `json:"status"`
-	OwnerID     *string `json:"owner_id"`
+	Name        *string              `json:"name"`
+	Description NullableField[string] `json:"description"`
+	Status      *string              `json:"status"`
+	OwnerID     *string              `json:"owner_id"`
 }
 
 type ProjectOwnerResponse struct {

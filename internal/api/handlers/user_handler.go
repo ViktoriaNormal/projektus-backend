@@ -123,15 +123,20 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		isSick = *req.IsSick
 	}
 	altContactChannel := existing.AlternativeContactChannel
-	if req.AlternativeContactChannel != nil {
-		altContactChannel = req.AlternativeContactChannel
+	if req.AlternativeContactChannel.Set {
+		altContactChannel = req.AlternativeContactChannel.Ptr()
 	}
 	altContactInfo := existing.AlternativeContactInfo
-	if req.AlternativeContactInfo != nil {
-		altContactInfo = req.AlternativeContactInfo
+	if req.AlternativeContactInfo.Set {
+		altContactInfo = req.AlternativeContactInfo.Ptr()
 	}
 
-	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, req.Position, onVacation, isSick, altContactChannel, altContactInfo, isAdmin)
+	position := existing.Position
+	if req.Position.Set {
+		position = req.Position.Ptr()
+	}
+
+	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, position, onVacation, isSick, altContactChannel, altContactInfo, isAdmin)
 	if err != nil {
 		switch err {
 		case domain.ErrAccessDenied:

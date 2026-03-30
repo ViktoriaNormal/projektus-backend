@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -232,25 +231,35 @@ func (h *TemplateHandler) UpdateBoard(c *gin.Context) {
 		return
 	}
 
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	var req dto.UpdateTemplateBoardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
-	var req dto.UpdateTemplateBoardRequest
-	rawBytes, _ := json.Marshal(raw)
-	_ = json.Unmarshal(rawBytes, &req)
 
-	// Detect explicit null for swimlaneGroupBy
-	clearSwimlaneGroup := false
-	var swimlaneGroupBy *string
-	if rawVal, exists := raw["swimlane_group_by"]; exists && string(rawVal) == "null" {
-		clearSwimlaneGroup = true
-	} else if req.SwimlaneGroupBy != nil {
-		swimlaneGroupBy = req.SwimlaneGroupBy
+	// Convert NullableField[string] → *string (empty string signals "set to NULL" in service).
+	var desc *string
+	if req.Description.Set {
+		if req.Description.Null {
+			empty := ""
+			desc = &empty
+		} else {
+			desc = &req.Description.Value
+		}
 	}
 
-	board, err := h.service.UpdateBoard(c.Request.Context(), templateID, boardID, req.Name, req.Description, req.IsDefault, req.Order, req.PriorityType, req.EstimationUnit, swimlaneGroupBy, clearSwimlaneGroup)
+	// Convert NullableField → (*string, clearFlag) for swimlaneGroupBy.
+	clearSwimlaneGroup := false
+	var swimlaneGroupBy *string
+	if req.SwimlaneGroupBy.Set {
+		if req.SwimlaneGroupBy.Null {
+			clearSwimlaneGroup = true
+		} else {
+			swimlaneGroupBy = &req.SwimlaneGroupBy.Value
+		}
+	}
+
+	board, err := h.service.UpdateBoard(c.Request.Context(), templateID, boardID, req.Name, desc, req.IsDefault, req.Order, req.PriorityType, req.EstimationUnit, swimlaneGroupBy, clearSwimlaneGroup)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
@@ -378,27 +387,34 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 		return
 	}
 
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	var req dto.UpdateTemplateBoardColumnRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
 
-	var req dto.UpdateTemplateBoardColumnRequest
-	rawBytes, _ := json.Marshal(raw)
-	_ = json.Unmarshal(rawBytes, &req)
-
-	// Различаем "wip_limit не передан" vs "wip_limit: null"
+	// Convert NullableField → (*int32, clearFlag) for wipLimit.
+	var wipLimit *int32
 	clearWipLimit := false
-	if rawVal, exists := raw["wip_limit"]; exists && string(rawVal) == "null" {
-		clearWipLimit = true
+	if req.WipLimit.Set {
+		if req.WipLimit.Null {
+			clearWipLimit = true
+		} else {
+			wipLimit = &req.WipLimit.Value
+		}
 	}
+	// Convert NullableField → (*string, clearFlag) for note.
+	var note *string
 	clearNote := false
-	if rawVal, exists := raw["note"]; exists && string(rawVal) == "null" {
-		clearNote = true
+	if req.Note.Set {
+		if req.Note.Null {
+			clearNote = true
+		} else {
+			note = &req.Note.Value
+		}
 	}
 
-	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, req.WipLimit, clearWipLimit, req.Note, clearNote)
+	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, wipLimit, clearWipLimit, note, clearNote)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Колонка не найдена")
@@ -549,25 +565,32 @@ func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 		return
 	}
 
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	var req dto.UpdateTemplateBoardSwimlaneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
 		return
 	}
-	var req dto.UpdateTemplateBoardSwimlaneRequest
-	rawBytes, _ := json.Marshal(raw)
-	_ = json.Unmarshal(rawBytes, &req)
 
+	var wipLimit *int32
 	clearWipLimit := false
-	if rawVal, exists := raw["wip_limit"]; exists && string(rawVal) == "null" {
-		clearWipLimit = true
+	if req.WipLimit.Set {
+		if req.WipLimit.Null {
+			clearWipLimit = true
+		} else {
+			wipLimit = &req.WipLimit.Value
+		}
 	}
+	var note *string
 	clearNote := false
-	if rawVal, exists := raw["note"]; exists && string(rawVal) == "null" {
-		clearNote = true
+	if req.Note.Set {
+		if req.Note.Null {
+			clearNote = true
+		} else {
+			note = &req.Note.Value
+		}
 	}
 
-	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, req.WipLimit, clearWipLimit, req.Note, clearNote)
+	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, wipLimit, clearWipLimit, note, clearNote)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")

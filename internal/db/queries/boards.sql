@@ -19,7 +19,7 @@ ORDER BY sort_order;
 -- name: UpdateBoard :one
 UPDATE boards
 SET name        = COALESCE(sqlc.narg('name'), name),
-    description = COALESCE(sqlc.narg('description'), description),
+    description = sqlc.narg('description'),
     sort_order  = COALESCE(sqlc.narg('sort_order'), sort_order),
     priority_type    = COALESCE(sqlc.narg('priority_type'), priority_type),
     estimation_unit  = COALESCE(sqlc.narg('estimation_unit'), estimation_unit),
@@ -55,8 +55,8 @@ RETURNING id, board_id, name, system_type, wip_limit, sort_order, is_locked, not
 -- name: UpdateColumn :one
 UPDATE columns
 SET name        = COALESCE(sqlc.narg('name'), name),
-    system_type = COALESCE(sqlc.narg('system_type'), system_type),
-    wip_limit   = COALESCE(sqlc.narg('wip_limit'), wip_limit),
+    system_type = sqlc.narg('system_type'),
+    wip_limit   = sqlc.narg('wip_limit'),
     sort_order  = COALESCE(sqlc.narg('sort_order'), sort_order)
 WHERE id = sqlc.arg('id')
 RETURNING id, board_id, name, system_type, wip_limit, sort_order, is_locked, note;
@@ -92,7 +92,7 @@ RETURNING id, board_id, name, wip_limit, sort_order, note;
 -- name: UpdateSwimlane :one
 UPDATE swimlanes
 SET name       = COALESCE(sqlc.narg('name'), name),
-    wip_limit  = COALESCE(sqlc.narg('wip_limit'), wip_limit),
+    wip_limit  = sqlc.narg('wip_limit'),
     sort_order = COALESCE(sqlc.narg('sort_order'), sort_order)
 WHERE id = sqlc.arg('id')
 RETURNING id, board_id, name, wip_limit, sort_order, note;

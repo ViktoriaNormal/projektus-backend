@@ -24,11 +24,11 @@ type CreateProjectParamRequest struct {
 }
 
 type UpdateProjectParamRequest struct {
-	Name        *string  `json:"name,omitempty"`
-	Description *string  `json:"description,omitempty"`
-	IsRequired  *bool    `json:"is_required,omitempty"`
-	Options     []string `json:"options,omitempty"`
-	Value       *string  `json:"value,omitempty"`
+	Name        *string               `json:"name,omitempty"`
+	Description *string               `json:"description,omitempty"`
+	IsRequired  *bool                 `json:"is_required,omitempty"`
+	Options     []string              `json:"options,omitempty"`
+	Value       NullableField[string] `json:"value"`
 }
 
 type ProjectParamOrderItem struct {

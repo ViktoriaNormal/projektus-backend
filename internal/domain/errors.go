@@ -1,6 +1,20 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+// ParamValidationError carries a user-facing message for project param validation failures.
+type ParamValidationError struct {
+	Message string
+}
+
+func (e *ParamValidationError) Error() string { return e.Message }
+
+func NewParamValidationError(format string, args ...any) *ParamValidationError {
+	return &ParamValidationError{Message: fmt.Sprintf(format, args...)}
+}
 
 var (
 	ErrNotFound       = errors.New("not found")

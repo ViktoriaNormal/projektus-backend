@@ -16,7 +16,7 @@ const adminCreateUser = `-- name: AdminCreateUser :one
 INSERT INTO users (username, email, password_hash, full_name, avatar_url, position, is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, username, email, password_hash, full_name, avatar_url, position,
-          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 `
 
 type AdminCreateUserParams struct {
@@ -63,13 +63,14 @@ func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams
 		&i.AltContactChannel,
 		&i.AltContactInfo,
 		&i.DeletedAt,
+		&i.BlockedUntil,
 	)
 	return i, err
 }
 
 const adminGetUserByID = `-- name: AdminGetUserByID :one
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE id = $1
 `
@@ -92,6 +93,7 @@ func (q *Queries) AdminGetUserByID(ctx context.Context, id uuid.UUID) (User, err
 		&i.AltContactChannel,
 		&i.AltContactInfo,
 		&i.DeletedAt,
+		&i.BlockedUntil,
 	)
 	return i, err
 }
@@ -109,7 +111,7 @@ SET username   = COALESCE(NULLIF($1::text, ''), username),
     alt_contact_info    = CASE WHEN $14::boolean THEN $15 ELSE alt_contact_info END
 WHERE id = $16
 RETURNING id, username, email, password_hash, full_name, avatar_url, position,
-          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 `
 
 type AdminUpdateUserParams struct {
@@ -166,13 +168,14 @@ func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams
 		&i.AltContactChannel,
 		&i.AltContactInfo,
 		&i.DeletedAt,
+		&i.BlockedUntil,
 	)
 	return i, err
 }
 
 const listAllUsers = `-- name: ListAllUsers :many
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE ($3::boolean IS TRUE OR deleted_at IS NULL)
 ORDER BY username ASC
@@ -209,6 +212,7 @@ func (q *Queries) ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]U
 			&i.AltContactChannel,
 			&i.AltContactInfo,
 			&i.DeletedAt,
+			&i.BlockedUntil,
 		); err != nil {
 			return nil, err
 		}

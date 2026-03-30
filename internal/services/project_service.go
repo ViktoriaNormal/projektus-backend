@@ -14,7 +14,6 @@ import (
 	"projektus-backend/internal/repositories"
 )
 
-const ProjectAdminRoleName = "Администратор проекта"
 
 type ProjectService struct {
 	repo            repositories.ProjectRepository
@@ -78,27 +77,23 @@ func (s *ProjectService) CreateProject(ctx context.Context, ownerID uuid.UUID, n
 		return nil, err
 	}
 
-	// Copy template structure
+	// Copy template structure (boards, params, roles)
+	var adminRoleID uuid.UUID
 	if s.templateSvc != nil {
-		if err := s.copyTemplateToProject(ctx, created.ID, string(pt)); err != nil {
-			// Best effort — don't fail project creation if template not found
+		rid, err := s.copyTemplateToProject(ctx, created.ID, string(pt))
+		if err != nil {
 			_ = err
+		} else {
+			adminRoleID = rid
 		}
 	}
 
-	// Create mandatory "Администратор проекта" role
-	adminRole, err := s.createProjectAdminRole(ctx, created.ID, string(pt))
-	if err != nil {
-		return nil, err
-	}
-
 	// Add creator as first member with admin role
-	if s.memberRepo != nil {
+	if s.memberRepo != nil && adminRoleID != uuid.Nil {
 		member, err := s.memberRepo.AddMember(ctx, created.ID, ownerID)
 		if err != nil {
 			return nil, err
 		}
-		adminRoleID := uuid.MustParse(adminRole.ID)
 		if err := s.memberRepo.ReplaceMemberRoles(ctx, member.ID, []uuid.UUID{adminRoleID}); err != nil {
 			return nil, err
 		}
@@ -107,10 +102,10 @@ func (s *ProjectService) CreateProject(ctx context.Context, ownerID uuid.UUID, n
 	return created, nil
 }
 
-func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uuid.UUID, projectType string) error {
+func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uuid.UUID, projectType string) (uuid.UUID, error) {
 	tmpl, data, err := s.templateSvc.GetByType(ctx, projectType)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	_ = tmpl
 
@@ -122,13 +117,14 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 			ProjectID:       &pid,
 			Name:            tb.Name,
 			Description:     &tb.Description,
+			IsDefault:       tb.IsDefault,
 			Order:           int16(tb.Order),
 			PriorityType:    tb.PriorityType,
 			EstimationUnit:  tb.EstimationUnit,
 			SwimlaneGroupBy: tb.SwimlaneGroupBy,
 		})
 		if err != nil {
-			return err
+			return uuid.Nil, err
 		}
 
 		// Copy columns
@@ -148,7 +144,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 				IsLocked:   tc.IsLocked,
 			})
 			if err != nil {
-				return err
+				return uuid.Nil, err
 			}
 			// Copy column note
 			if tc.Note != nil && *tc.Note != "" {
@@ -174,7 +170,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 				Order:    int16(ts.Order),
 			})
 			if err != nil {
-				return err
+				return uuid.Nil, err
 			}
 			// Copy swimlane note
 			if ts.Note != nil && *ts.Note != "" {
@@ -186,17 +182,30 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 			}
 		}
 
-		// Copy custom fields
+		// Copy custom fields and build ID mapping for swimlane_group_by remapping
+		fieldIDMap := make(map[string]string) // template field ID → project field ID
 		for _, cf := range tb.CustomFields {
-			_, _ = s.boardRepo.CreateCustomField(ctx, &domain.BoardCustomField{
-				BoardID:    board.ID,
-				Name:       cf.Name,
-				FieldType:  cf.FieldType,
-				IsSystem:   cf.IsSystem,
-				IsRequired: cf.IsRequired,
-				Order:      cf.Order,
-				Options:    cf.Options,
+			newField, err := s.boardRepo.CreateCustomField(ctx, &domain.BoardCustomField{
+				BoardID:     board.ID,
+				Name:        cf.Name,
+				Description: cf.Description,
+				FieldType:   cf.FieldType,
+				IsSystem:    cf.IsSystem,
+				IsRequired:  cf.IsRequired,
+				Order:       cf.Order,
+				Options:     cf.Options,
 			})
+			if err == nil && newField != nil {
+				fieldIDMap[cf.ID.String()] = newField.ID
+			}
+		}
+
+		// Remap swimlane_group_by from template field ID to project field ID
+		if tb.SwimlaneGroupBy != "" {
+			if newFieldID, ok := fieldIDMap[tb.SwimlaneGroupBy]; ok {
+				board.SwimlaneGroupBy = newFieldID
+				_, _ = s.boardRepo.UpdateBoard(ctx, board)
+			}
 		}
 	}
 
@@ -204,24 +213,26 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 	nullPID := uuid.NullUUID{UUID: projectID, Valid: true}
 	for _, tp := range data.Params {
 		_, _ = s.projectParamRepo.Create(ctx, db.CreateProjectParamParams{
-			ProjectID:  nullPID,
-			Name:       tp.Name,
-			FieldType:  tp.FieldType,
-			IsSystem:   false,
-			IsRequired: tp.IsRequired,
-			SortOrder:  tp.Order,
-			Options:    repositories.OptionsToJSON(tp.Options),
-			Value:      sql.NullString{},
+			ProjectID:   nullPID,
+			Name:        tp.Name,
+			Description: tp.Description,
+			FieldType:   tp.FieldType,
+			IsSystem:    tp.IsSystem,
+			IsRequired:  tp.IsRequired,
+			SortOrder:   tp.Order,
+			Options:     repositories.OptionsToJSON(tp.Options),
+			Value:       sql.NullString{},
 		})
 	}
 
-	// Copy roles (except admin — that's created separately)
+	// Copy all roles from template (including admin)
+	var adminRoleID uuid.UUID
 	for _, tr := range data.Roles {
 		role, err := s.projectRoleRepo.Create(ctx, db.CreateProjRoleDefinitionParams{
 			ProjectID:   nullPID,
 			Name:        tr.Name,
 			Description: tr.Description,
-			IsAdmin:     false,
+			IsAdmin:     tr.IsAdmin,
 		})
 		if err != nil {
 			continue
@@ -230,42 +241,14 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 		for _, p := range tr.Permissions {
 			_ = s.projectRoleRepo.UpsertPermission(ctx, roleID, p.Area, p.Access)
 		}
+		if tr.IsAdmin {
+			adminRoleID = roleID
+		}
 	}
 
-	return nil
+	return adminRoleID, nil
 }
 
-func (s *ProjectService) createProjectAdminRole(ctx context.Context, projectID uuid.UUID, projectType string) (*domain.ProjectRole, error) {
-	// Get all permission areas for this project type
-	allAreas := getPermissionAreasForType(projectType)
-
-	role, err := s.projectRoleRepo.Create(ctx, db.CreateProjRoleDefinitionParams{
-		ProjectID:   uuid.NullUUID{UUID: projectID, Valid: true},
-		Name:        ProjectAdminRoleName,
-		Description: "Полный доступ ко всем сущностям проекта",
-		IsAdmin:     true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	roleID := uuid.MustParse(role.ID)
-	perms := make([]domain.ProjectRolePermission, 0, len(allAreas))
-	for _, area := range allAreas {
-		_ = s.projectRoleRepo.UpsertPermission(ctx, roleID, area, "full")
-		perms = append(perms, domain.ProjectRolePermission{Area: area, Access: "full"})
-	}
-	role.Permissions = perms
-	return role, nil
-}
-
-func getPermissionAreasForType(projectType string) []string {
-	if projectType == "scrum" {
-		return []string{"sprints", "boards", "analytics", "backlog", "tasks", "project_settings"}
-	}
-	// kanban
-	return []string{"boards", "wip_limits", "analytics", "tasks", "project_settings"}
-}
 
 func (s *ProjectService) GetProject(ctx context.Context, id uuid.UUID) (*domain.Project, error) {
 	return s.repo.GetByID(ctx, id)

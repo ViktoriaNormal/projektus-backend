@@ -186,7 +186,6 @@ const listProjRoleDefinitions = `-- name: ListProjRoleDefinitions :many
 SELECT id, project_id, name, description, is_admin
 FROM roles
 WHERE project_id = $1
-ORDER BY name
 `
 
 type ListProjRoleDefinitionsRow struct {

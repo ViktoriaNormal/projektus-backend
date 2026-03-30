@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -50,6 +51,11 @@ func (h *ProjectParamHandler) CreateParam(c *gin.Context) {
 	}
 	param, err := h.service.CreateParam(c.Request.Context(), projectID, req.Name, req.FieldType, req.IsRequired, req.Options, req.Value)
 	if err != nil {
+		var pve *domain.ParamValidationError
+		if errors.As(err, &pve) {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", pve.Message)
+			return
+		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать параметр")
 		return
 	}
@@ -72,10 +78,24 @@ func (h *ProjectParamHandler) UpdateParam(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	param, err := h.service.UpdateParam(c.Request.Context(), projectID, paramID, req.Name, req.IsRequired, req.Options, req.Value)
+	var value *string
+	clearValue := false
+	if req.Value.Set {
+		if req.Value.Null {
+			clearValue = true
+		} else {
+			value = &req.Value.Value
+		}
+	}
+	param, err := h.service.UpdateParam(c.Request.Context(), projectID, paramID, req.Name, req.IsRequired, req.Options, value, clearValue)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
+			return
+		}
+		var pve *domain.ParamValidationError
+		if errors.As(err, &pve) {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", pve.Message)
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить параметр")

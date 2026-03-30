@@ -179,7 +179,7 @@ UPDATE fields
 SET name = COALESCE($1, name),
     is_required = COALESCE($2, is_required),
     options = COALESCE($3, options),
-    value = COALESCE($4, value)
+    value = $4
 WHERE id = $5 AND kind = 'project_param'
 RETURNING id, project_id, name, description, field_type, is_system, is_required, sort_order, options, value
 `

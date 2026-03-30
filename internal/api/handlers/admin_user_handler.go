@@ -129,17 +129,47 @@ func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
+	// Convert NullableField to *string for the service layer.
+	// Empty string signals "set to NULL" (service converts "" to sql.NullString{Valid: false}).
+	var position *string
+	if req.Position.Set {
+		if req.Position.Null {
+			empty := ""
+			position = &empty
+		} else {
+			position = &req.Position.Value
+		}
+	}
+	var altContactChannel *string
+	if req.AlternativeContactChannel.Set {
+		if req.AlternativeContactChannel.Null {
+			empty := ""
+			altContactChannel = &empty
+		} else {
+			altContactChannel = &req.AlternativeContactChannel.Value
+		}
+	}
+	var altContactInfo *string
+	if req.AlternativeContactInfo.Set {
+		if req.AlternativeContactInfo.Null {
+			empty := ""
+			altContactInfo = &empty
+		} else {
+			altContactInfo = &req.AlternativeContactInfo.Value
+		}
+	}
+
 	user, err := h.adminUserSvc.UpdateUser(c.Request.Context(), userID, services.AdminUpdateUserRequest{
 		Username:                  req.Username,
 		Email:                     req.Email,
 		FullName:                  req.FullName,
-		Position:                  req.Position,
+		Position:                  position,
 		IsActive:                  req.IsActive,
 		RoleIDs:                   req.RoleIDs,
 		OnVacation:                req.OnVacation,
 		IsSick:                    req.IsSick,
-		AlternativeContactChannel: req.AlternativeContactChannel,
-		AlternativeContactInfo:    req.AlternativeContactInfo,
+		AlternativeContactChannel: altContactChannel,
+		AlternativeContactInfo:    altContactInfo,
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {

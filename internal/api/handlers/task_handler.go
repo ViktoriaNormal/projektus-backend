@@ -107,23 +107,30 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	if req.Name != nil {
 		task.Name = *req.Name
 	}
-	if req.Description != nil {
-		task.Description = req.Description
+	if req.Description.Set {
+		task.Description = req.Description.Ptr()
 	}
-	if req.Deadline != nil {
-		d := *req.Deadline
-		task.Deadline = &d
+	if req.Deadline.Set {
+		task.Deadline = req.Deadline.Ptr()
 	}
-	if req.ExecutorMemberID != nil {
-		idStr := req.ExecutorMemberID.String()
-		task.ExecutorID = &idStr
+	if req.ExecutorMemberID.Set {
+		if req.ExecutorMemberID.Null {
+			task.ExecutorID = nil
+		} else {
+			idStr := req.ExecutorMemberID.Value.String()
+			task.ExecutorID = &idStr
+		}
 	}
 	if req.ColumnID != nil {
 		task.ColumnID = req.ColumnID.String()
 	}
-	if req.SwimlaneID != nil {
-		idStr := req.SwimlaneID.String()
-		task.SwimlaneID = &idStr
+	if req.SwimlaneID.Set {
+		if req.SwimlaneID.Null {
+			task.SwimlaneID = nil
+		} else {
+			idStr := req.SwimlaneID.Value.String()
+			task.SwimlaneID = &idStr
+		}
 	}
 
 	updated, err := h.service.UpdateTask(c.Request.Context(), task)

@@ -126,12 +126,10 @@ func (s *meetingService) UpdateMeeting(ctx context.Context, userID string, m dom
 	if existing.CreatedBy != userID {
 		return nil, domain.ErrAccessDenied
 	}
-	// переносим отсутствующие поля из существующей встречи
+	// переносим отсутствующие non-nullable поля из существующей встречи
+	// (nullable поля Description и Location мержатся в хендлере через NullableField)
 	if m.Name == "" {
 		m.Name = existing.Name
-	}
-	if m.Description == nil {
-		m.Description = existing.Description
 	}
 	if m.Type == "" {
 		m.Type = existing.Type
@@ -141,9 +139,6 @@ func (s *meetingService) UpdateMeeting(ctx context.Context, userID string, m dom
 	}
 	if m.EndTime.IsZero() {
 		m.EndTime = existing.EndTime
-	}
-	if m.Location == nil {
-		m.Location = existing.Location
 	}
 	// валидация времени после мержа с существующими значениями
 	if !m.StartTime.After(time.Now()) {

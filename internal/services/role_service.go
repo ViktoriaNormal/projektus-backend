@@ -25,7 +25,7 @@ func (s *RoleService) GetSystemRole(ctx context.Context, id uuid.UUID) (*domain.
 	return s.repo.GetRoleByID(ctx, id)
 }
 
-func (s *RoleService) CreateSystemRole(ctx context.Context, name, description string, permissions []string) (*domain.Role, error) {
+func (s *RoleService) CreateSystemRole(ctx context.Context, name, description string, permissions []domain.Permission) (*domain.Role, error) {
 	if name == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -39,7 +39,7 @@ func (s *RoleService) CreateSystemRole(ctx context.Context, name, description st
 	return role, nil
 }
 
-func (s *RoleService) UpdateSystemRole(ctx context.Context, id uuid.UUID, name, description string, permissions []string) (*domain.Role, error) {
+func (s *RoleService) UpdateSystemRole(ctx context.Context, id uuid.UUID, name, description string, permissions []domain.Permission) (*domain.Role, error) {
 	if name == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -63,12 +63,16 @@ func (s *RoleService) UpdateSystemRole(ctx context.Context, id uuid.UUID, name, 
 	return role, nil
 }
 
-func (s *RoleService) setRolePermissions(ctx context.Context, roleID uuid.UUID, permissions []string) error {
+func (s *RoleService) setRolePermissions(ctx context.Context, roleID uuid.UUID, permissions []domain.Permission) error {
 	if err := s.repo.RemoveAllPermissionsFromRole(ctx, roleID); err != nil {
 		return err
 	}
-	for _, code := range permissions {
-		if err := s.repo.AddPermissionToRole(ctx, roleID, code, "full"); err != nil {
+	for _, p := range permissions {
+		access := p.Access
+		if access == "" {
+			access = "full"
+		}
+		if err := s.repo.AddPermissionToRole(ctx, roleID, p.Code, access); err != nil {
 			return err
 		}
 	}
@@ -83,6 +87,11 @@ func (s *RoleService) DeleteSystemRole(ctx context.Context, id uuid.UUID) error 
 	// Системная роль is_admin — неудаляема
 	if role.IsAdmin {
 		return domain.ErrSystemAdminRole
+	}
+	// Нельзя удалить роль, назначенную пользователям
+	count, _ := s.repo.CountUsersWithRole(ctx, id)
+	if count > 0 {
+		return domain.ErrRoleHasMembers
 	}
 	return s.repo.DeleteRole(ctx, id)
 }
@@ -112,15 +121,7 @@ func (s *RoleService) UserHasSystemPermission(ctx context.Context, userID uuid.U
 	return s.repo.UserHasSystemPermission(ctx, userID, code)
 }
 
-func (s *RoleService) GetRolePermissions(ctx context.Context, roleID uuid.UUID) ([]string, error) {
-	perms, err := s.repo.ListRolePermissions(ctx, roleID)
-	if err != nil {
-		return nil, err
-	}
-	codes := make([]string, len(perms))
-	for i, p := range perms {
-		codes[i] = p.Code
-	}
-	return codes, nil
+func (s *RoleService) GetRolePermissions(ctx context.Context, roleID uuid.UUID) ([]domain.Permission, error) {
+	return s.repo.ListRolePermissions(ctx, roleID)
 }
 

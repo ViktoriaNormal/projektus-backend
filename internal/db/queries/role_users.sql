@@ -5,8 +5,7 @@ SELECT r.id, r.name, r.description, r.scope, r.is_admin
 FROM user_roles ur
 JOIN roles r ON r.id = ur.role_id
 WHERE ur.user_id = $1
-  AND r.scope = 'system'
-ORDER BY r.name;
+  AND r.scope = 'system';
 
 -- name: AssignRoleToUser :exec
 INSERT INTO user_roles (user_id, role_id)
@@ -25,6 +24,11 @@ WHERE user_id = $1;
 DELETE FROM user_roles
 WHERE user_id = $1
   AND role_id IN (SELECT id FROM roles WHERE scope = 'system');
+
+-- name: CountUsersWithRole :one
+SELECT COUNT(*)::int AS count
+FROM user_roles
+WHERE role_id = $1;
 
 -- name: UserHasSystemPermission :one
 SELECT EXISTS (

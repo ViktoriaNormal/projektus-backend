@@ -1,7 +1,7 @@
 -- Admin: list all users (with pagination, optional include deleted)
 -- name: ListAllUsers :many
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE ($3::boolean IS TRUE OR deleted_at IS NULL)
 ORDER BY username ASC
@@ -14,7 +14,7 @@ WHERE ($1::boolean IS TRUE OR deleted_at IS NULL);
 -- Admin: get user by ID (including deleted)
 -- name: AdminGetUserByID :one
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE id = $1;
 
@@ -23,7 +23,7 @@ WHERE id = $1;
 INSERT INTO users (username, email, password_hash, full_name, avatar_url, position, is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, username, email, password_hash, full_name, avatar_url, position,
-          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at;
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until;
 
 -- Admin: update user fields
 -- name: AdminUpdateUser :one
@@ -39,7 +39,7 @@ SET username   = COALESCE(NULLIF(sqlc.arg(username)::text, ''), username),
     alt_contact_info    = CASE WHEN sqlc.arg(set_alt_contact_info)::boolean THEN sqlc.arg(alt_contact_info) ELSE alt_contact_info END
 WHERE id = sqlc.arg(id)
 RETURNING id, username, email, password_hash, full_name, avatar_url, position,
-          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at;
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until;
 
 -- Admin: soft delete user (deactivate and set deleted_at)
 -- name: SoftDeleteUser :exec

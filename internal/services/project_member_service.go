@@ -32,7 +32,7 @@ func (s *ProjectMemberService) ListMembers(ctx context.Context, projectID uuid.U
 	return s.members.ListByProject(ctx, projectID)
 }
 
-func (s *ProjectMemberService) AddMember(ctx context.Context, projectID, userID uuid.UUID, roleNames []string) (*domain.ProjectMember, error) {
+func (s *ProjectMemberService) AddMember(ctx context.Context, projectID, userID uuid.UUID, roleIDs []string) (*domain.ProjectMember, error) {
 	// Проверяем, что пользователь существует
 	if _, err := s.users.GetUserByID(ctx, userID.String()); err != nil {
 		return nil, err
@@ -41,18 +41,16 @@ func (s *ProjectMemberService) AddMember(ctx context.Context, projectID, userID 
 	if err != nil {
 		return nil, err
 	}
-	if len(roleNames) > 0 {
-		if err := s.setMemberRolesByNames(ctx, member.ID, projectID, roleNames); err != nil {
+	if len(roleIDs) > 0 {
+		if err := s.setMemberRoles(ctx, member.ID, projectID, roleIDs); err != nil {
 			return nil, err
 		}
-		// перечитаем участника с ролями
 		return s.members.GetByID(ctx, member.ID)
 	}
 	return member, nil
 }
 
 func (s *ProjectMemberService) RemoveMember(ctx context.Context, memberID uuid.UUID) error {
-	// Check if member has admin role and is the last one
 	member, err := s.members.GetByID(ctx, memberID)
 	if err != nil {
 		return err
@@ -60,10 +58,9 @@ func (s *ProjectMemberService) RemoveMember(ctx context.Context, memberID uuid.U
 	if s.projectRoleRepo != nil {
 		adminRoleID, err := s.projectRoleRepo.GetProjectAdminRoleID(ctx, member.ProjectID)
 		if err == nil {
-			count, _ := s.projectRoleRepo.CountMembersWithRole(ctx, member.ProjectID, adminRoleID)
-			// Check if this member has admin role
-			for _, roleName := range member.Roles {
-				if roleName == ProjectAdminRoleName {
+			for _, roleID := range member.Roles {
+				if roleID == adminRoleID.String() {
+					count, _ := s.projectRoleRepo.CountMembersWithRole(ctx, member.ProjectID, adminRoleID)
 					if count <= 1 {
 						return domain.ErrLastProjectAdmin
 					}
@@ -75,35 +72,44 @@ func (s *ProjectMemberService) RemoveMember(ctx context.Context, memberID uuid.U
 	return s.members.RemoveMember(ctx, memberID)
 }
 
-func (s *ProjectMemberService) UpdateMemberRoles(ctx context.Context, memberID, projectID uuid.UUID, roleNames []string) (*domain.ProjectMember, error) {
-	if err := s.setMemberRolesByNames(ctx, memberID, projectID, roleNames); err != nil {
+func (s *ProjectMemberService) UpdateMemberRoles(ctx context.Context, memberID, projectID uuid.UUID, roleIDs []string) (*domain.ProjectMember, error) {
+	if err := s.setMemberRoles(ctx, memberID, projectID, roleIDs); err != nil {
 		return nil, err
 	}
 	return s.members.GetByID(ctx, memberID)
 }
 
-func (s *ProjectMemberService) setMemberRolesByNames(ctx context.Context, memberID, projectID uuid.UUID, roleNames []string) error {
-	if len(roleNames) == 0 {
+func (s *ProjectMemberService) setMemberRoles(ctx context.Context, memberID, projectID uuid.UUID, roleIDStrs []string) error {
+	if len(roleIDStrs) == 0 {
 		return s.members.ReplaceMemberRoles(ctx, memberID, nil)
+	}
+
+	// Parse role ID strings to UUIDs
+	roleIDs := make([]uuid.UUID, 0, len(roleIDStrs))
+	for _, idStr := range roleIDStrs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			continue
+		}
+		roleIDs = append(roleIDs, id)
 	}
 
 	// Check last admin protection before removing admin role
 	if s.projectRoleRepo != nil {
 		adminRoleID, err := s.projectRoleRepo.GetProjectAdminRoleID(ctx, projectID)
 		if err == nil {
-			// Check if we're removing admin role from the last admin
 			member, merr := s.members.GetByID(ctx, memberID)
 			if merr == nil {
 				hasAdmin := false
-				for _, rn := range member.Roles {
-					if rn == ProjectAdminRoleName {
+				for _, rid := range member.Roles {
+					if rid == adminRoleID.String() {
 						hasAdmin = true
 						break
 					}
 				}
 				keepingAdmin := false
-				for _, rn := range roleNames {
-					if rn == ProjectAdminRoleName {
+				for _, rid := range roleIDs {
+					if rid == adminRoleID {
 						keepingAdmin = true
 						break
 					}
@@ -118,21 +124,6 @@ func (s *ProjectMemberService) setMemberRolesByNames(ctx context.Context, member
 		}
 	}
 
-	// Look up roles in project_roles table
-	projectRoles, err := s.projectRoleRepo.List(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	nameToID := make(map[string]uuid.UUID, len(projectRoles))
-	for _, r := range projectRoles {
-		nameToID[r.Name] = uuid.MustParse(r.ID)
-	}
-	var roleIDs []uuid.UUID
-	for _, name := range roleNames {
-		if id, ok := nameToID[name]; ok {
-			roleIDs = append(roleIDs, id)
-		}
-	}
 	return s.members.ReplaceMemberRoles(ctx, memberID, roleIDs)
 }
 

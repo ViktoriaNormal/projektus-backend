@@ -2,23 +2,23 @@
 INSERT INTO users (username, email, password_hash, full_name, avatar_url)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id, username, email, password_hash, full_name, avatar_url, position,
-          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at;
+          is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until;
 
 -- name: GetUserByEmail :one
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE email = $1;
 
 -- name: GetUserByUsername :one
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE username = $1;
 
 -- name: GetUserByID :one
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE id = $1;
 
@@ -56,7 +56,7 @@ WHERE id = $1;
 
 -- name: SearchUsers :many
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
-       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at
+       is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
 FROM users
 WHERE deleted_at IS NULL
   AND ($1::text IS NULL OR $1::text = '' OR (

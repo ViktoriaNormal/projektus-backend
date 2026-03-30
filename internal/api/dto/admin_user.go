@@ -19,16 +19,16 @@ type AdminCreateUserRequest struct {
 
 // AdminUpdateUserRequest — обновление пользователя администратором.
 type AdminUpdateUserRequest struct {
-	Username                  *string      `json:"username" binding:"omitempty,min=3,max=50"`
-	Email                     *string      `json:"email" binding:"omitempty,email"`
-	FullName                  *string      `json:"full_name,omitempty"`
-	Position                  *string      `json:"position,omitempty"`
-	IsActive                  *bool        `json:"is_active,omitempty"`
-	RoleIDs                   *[]uuid.UUID `json:"role_ids,omitempty"`
-	OnVacation                *bool        `json:"on_vacation,omitempty"`
-	IsSick                    *bool        `json:"is_sick,omitempty"`
-	AlternativeContactChannel *string      `json:"alt_contact_channel,omitempty"`
-	AlternativeContactInfo    *string      `json:"alt_contact_info,omitempty"`
+	Username                  *string               `json:"username" binding:"omitempty,min=3,max=50"`
+	Email                     *string               `json:"email" binding:"omitempty,email"`
+	FullName                  *string               `json:"full_name,omitempty"`
+	Position                  NullableField[string] `json:"position"`
+	IsActive                  *bool                 `json:"is_active,omitempty"`
+	RoleIDs                   *[]uuid.UUID          `json:"role_ids,omitempty"`
+	OnVacation                *bool                 `json:"on_vacation,omitempty"`
+	IsSick                    *bool                 `json:"is_sick,omitempty"`
+	AlternativeContactChannel NullableField[string] `json:"alt_contact_channel"`
+	AlternativeContactInfo    NullableField[string] `json:"alt_contact_info"`
 }
 
 // AdminRoleResponse — роль в ответе AdminUser.

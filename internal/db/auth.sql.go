@@ -14,6 +14,17 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+const clearExpiredUserBlocks = `-- name: ClearExpiredUserBlocks :exec
+UPDATE users
+SET blocked_until = NULL, is_active = true
+WHERE blocked_until IS NOT NULL AND blocked_until <= NOW()
+`
+
+func (q *Queries) ClearExpiredUserBlocks(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearExpiredUserBlocks)
+	return err
+}
+
 const countFailedAttemptsByIPSince = `-- name: CountFailedAttemptsByIPSince :one
 SELECT COUNT(*)::INT
 FROM login_attempts
@@ -125,6 +136,21 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 	return i, err
 }
 
+const getUserBlockedUntil = `-- name: GetUserBlockedUntil :one
+
+SELECT blocked_until
+FROM users
+WHERE id = $1
+`
+
+// Blocked users (temporary block via users.blocked_until)
+func (q *Queries) GetUserBlockedUntil(ctx context.Context, id uuid.UUID) (sql.NullTime, error) {
+	row := q.db.QueryRowContext(ctx, getUserBlockedUntil, id)
+	var blocked_until sql.NullTime
+	err := row.Scan(&blocked_until)
+	return blocked_until, err
+}
+
 const insertLoginAttempt = `-- name: InsertLoginAttempt :exec
 
 INSERT INTO login_attempts (username, ip_address, success)
@@ -163,6 +189,22 @@ WHERE id = $1
 
 func (q *Queries) RevokeRefreshToken(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, revokeRefreshToken, id)
+	return err
+}
+
+const setUserBlockedUntil = `-- name: SetUserBlockedUntil :exec
+UPDATE users
+SET blocked_until = $2, is_active = false
+WHERE id = $1
+`
+
+type SetUserBlockedUntilParams struct {
+	ID           uuid.UUID    `json:"id"`
+	BlockedUntil sql.NullTime `json:"blocked_until"`
+}
+
+func (q *Queries) SetUserBlockedUntil(ctx context.Context, arg SetUserBlockedUntilParams) error {
+	_, err := q.db.ExecContext(ctx, setUserBlockedUntil, arg.ID, arg.BlockedUntil)
 	return err
 }
 

@@ -27,6 +27,19 @@ func (q *Queries) AssignRoleToUser(ctx context.Context, arg AssignRoleToUserPara
 	return err
 }
 
+const countUsersWithRole = `-- name: CountUsersWithRole :one
+SELECT COUNT(*)::int AS count
+FROM user_roles
+WHERE role_id = $1
+`
+
+func (q *Queries) CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countUsersWithRole, roleID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteUserRoles = `-- name: DeleteUserRoles :exec
 DELETE FROM user_roles
 WHERE user_id = $1
@@ -55,7 +68,6 @@ FROM user_roles ur
 JOIN roles r ON r.id = ur.role_id
 WHERE ur.user_id = $1
   AND r.scope = 'system'
-ORDER BY r.name
 `
 
 type ListUserSystemRolesRow struct {

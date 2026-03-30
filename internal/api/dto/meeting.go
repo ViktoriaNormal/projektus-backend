@@ -14,12 +14,12 @@ type CreateMeetingRequest struct {
 
 // UpdateMeetingRequest соответствует UpdateMeetingRequest в OpenAPI.
 type UpdateMeetingRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	MeetingType *string `json:"meeting_type"`
-	Location    *string `json:"location"`
-	StartTime   *string `json:"start_time"` // RFC3339
-	EndTime     *string `json:"end_time"`   // RFC3339
+	Name        *string               `json:"name"`
+	Description NullableField[string] `json:"description"`
+	MeetingType *string               `json:"meeting_type"`
+	Location    NullableField[string] `json:"location"`
+	StartTime   *string               `json:"start_time"` // RFC3339
+	EndTime     *string               `json:"end_time"`   // RFC3339
 }
 
 type MeetingParticipantResponse struct {

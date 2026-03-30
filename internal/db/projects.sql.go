@@ -188,7 +188,7 @@ func (q *Queries) ListUserProjects(ctx context.Context, arg ListUserProjectsPara
 const updateProject = `-- name: UpdateProject :one
 UPDATE projects
 SET name = COALESCE($1, name),
-    description = COALESCE($2, description),
+    description = $2,
     status = COALESCE($3, status),
     owner_id = COALESCE($4, owner_id)
 WHERE id = $5

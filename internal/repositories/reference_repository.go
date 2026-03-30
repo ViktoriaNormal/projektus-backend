@@ -145,8 +145,8 @@ var DefaultBoardFields = []domain.DefaultBoardFieldDef{
 	{Key: "assignee", Name: "Исполнитель", Description: "Ответственный за выполнение", FieldType: "user", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
 	{Key: "watchers", Name: "Наблюдатели", Description: "Пользователи, следящие за задачей", FieldType: "user_list", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
 	{Key: "deadline", Name: "Дедлайн", Description: "Крайний срок выполнения", FieldType: "datetime", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "priority", Name: "Приоритизация", Description: "Приоритет задачи", FieldType: "select", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "estimation", Name: "Оценка трудозатрат", Description: "Оценка объёма работы", FieldType: "number", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "priority", Name: "Приоритизация", Description: "Приоритет задачи", FieldType: "priority", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "estimation", Name: "Оценка трудозатрат", Description: "Оценка объёма работы", FieldType: "estimation", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
 	{Key: "sprint", Name: "Спринт", Description: "Спринт, к которому относится задача", FieldType: "sprint", IsRequired: false, AvailableFor: []string{"scrum"}},
 	{Key: "created_at", Name: "Дата создания", Description: "Дата и время создания задачи", FieldType: "datetime", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
 }

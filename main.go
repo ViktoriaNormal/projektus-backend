@@ -68,7 +68,7 @@ func main() {
 	projectRoleHandler := handlers.NewProjectRoleHandler(projectRoleSvc)
 
 	projectParamRepo := repositories.NewProjectParamRepository(queries)
-	projectParamSvc := services.NewProjectParamService(projectParamRepo)
+	projectParamSvc := services.NewProjectParamService(projectParamRepo, userRepo)
 	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc)
 
 	tagRepo := repositories.NewTagRepository(queries)

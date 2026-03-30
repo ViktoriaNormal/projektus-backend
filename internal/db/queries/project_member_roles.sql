@@ -1,11 +1,10 @@
 -- Member roles
 
 -- name: ListMemberRoles :many
-SELECT r.name
+SELECT r.id::text
 FROM member_roles mr
 JOIN roles r ON r.id = mr.role_id
-WHERE mr.member_id = $1
-ORDER BY r.name;
+WHERE mr.member_id = $1;
 
 -- name: AddRoleToMember :exec
 INSERT INTO member_roles (member_id, role_id)

@@ -284,6 +284,7 @@ type User struct {
 	AltContactChannel sql.NullString `json:"alt_contact_channel"`
 	AltContactInfo    sql.NullString `json:"alt_contact_info"`
 	DeletedAt         sql.NullTime   `json:"deleted_at"`
+	BlockedUntil      sql.NullTime   `json:"blocked_until"`
 }
 
 type UserRole struct {
