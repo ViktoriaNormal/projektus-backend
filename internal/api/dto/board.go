@@ -31,7 +31,7 @@ type UpdateBoardRequest struct {
 	Order           *int32                `json:"order,omitempty"`
 	PriorityType    *string               `json:"priority_type,omitempty"`
 	EstimationUnit  *string               `json:"estimation_unit,omitempty"`
-	SwimlaneGroupBy *string               `json:"swimlane_group_by,omitempty"`
+	SwimlaneGroupBy NullableField[string] `json:"swimlane_group_by"`
 }
 
 type ColumnResponse struct {

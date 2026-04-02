@@ -164,8 +164,12 @@ func (h *BoardHandler) UpdateBoard(c *gin.Context) {
 	if req.EstimationUnit != nil {
 		board.EstimationUnit = *req.EstimationUnit
 	}
-	if req.SwimlaneGroupBy != nil {
-		board.SwimlaneGroupBy = *req.SwimlaneGroupBy
+	if req.SwimlaneGroupBy.Set {
+		if req.SwimlaneGroupBy.Null {
+			board.SwimlaneGroupBy = ""
+		} else {
+			board.SwimlaneGroupBy = req.SwimlaneGroupBy.Value
+		}
 	}
 	updated, err := h.service.UpdateBoard(c.Request.Context(), board)
 	if err != nil {

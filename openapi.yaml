@@ -4048,6 +4048,7 @@ components:
     UpdateMeetingRequest:
       type: object
       properties:
+        project_id: { type: string, format: uuid, nullable: true }
         name: { type: string }
         description: { type: string, nullable: true }
         meeting_type: { type: string }
@@ -4296,7 +4297,7 @@ components:
         order: { type: integer }
         priority_type: { type: string }
         estimation_unit: { type: string }
-        swimlane_group_by: { type: string }
+        swimlane_group_by: { type: string, nullable: true }
         priority_options:
           type: array
           items: { type: string }

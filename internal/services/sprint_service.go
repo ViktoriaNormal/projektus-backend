@@ -17,9 +17,10 @@ type SprintService struct {
 	taskRepo       repositories.TaskRepository
 	boardRepo      repositories.BoardRepository
 	projectRepo    repositories.ProjectRepository
+	tagRepo        repositories.TagRepository
 }
 
-func NewSprintService(repo repositories.SprintRepository, sprintTaskRepo repositories.SprintTaskRepository, backlogRepo repositories.ProductBacklogRepository, taskRepo repositories.TaskRepository, boardRepo repositories.BoardRepository, projectRepo repositories.ProjectRepository) *SprintService {
+func NewSprintService(repo repositories.SprintRepository, sprintTaskRepo repositories.SprintTaskRepository, backlogRepo repositories.ProductBacklogRepository, taskRepo repositories.TaskRepository, boardRepo repositories.BoardRepository, projectRepo repositories.ProjectRepository, tagRepo repositories.TagRepository) *SprintService {
 	return &SprintService{
 		repo:           repo,
 		sprintTaskRepo: sprintTaskRepo,
@@ -27,6 +28,7 @@ func NewSprintService(repo repositories.SprintRepository, sprintTaskRepo reposit
 		taskRepo:       taskRepo,
 		boardRepo:      boardRepo,
 		projectRepo:    projectRepo,
+		tagRepo:        tagRepo,
 	}
 }
 
@@ -286,7 +288,31 @@ func (s *SprintService) moveIncompleteTasksToBacklog(ctx context.Context, projec
 }
 
 func (s *SprintService) GetSprintTasks(ctx context.Context, sprintID uuid.UUID) ([]domain.Task, error) {
-	return s.sprintTaskRepo.ListSprintTasksFull(ctx, sprintID)
+	tasks, err := s.sprintTaskRepo.ListSprintTasksFull(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	return s.enrichTasksWithTags(ctx, tasks)
+}
+
+func (s *SprintService) enrichTasksWithTags(ctx context.Context, tasks []domain.Task) ([]domain.Task, error) {
+	if len(tasks) == 0 {
+		return tasks, nil
+	}
+	ids := make([]uuid.UUID, len(tasks))
+	for i, t := range tasks {
+		ids[i] = uuid.MustParse(t.ID)
+	}
+	tagMap, err := s.tagRepo.ListTagsByTaskIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range tasks {
+		if tags, ok := tagMap[tasks[i].ID]; ok {
+			tasks[i].Tags = tags
+		}
+	}
+	return tasks, nil
 }
 
 func (s *SprintService) GetSprintBacklog(ctx context.Context, sprintID uuid.UUID) ([]domain.Task, error) {

@@ -278,7 +278,8 @@ SET name = $2,
     meeting_type = $4,
     location = $5,
     start_time = $6,
-    end_time = $7
+    end_time = $7,
+    project_id = $8
 WHERE id = $1
 `
 
@@ -290,6 +291,7 @@ type UpdateMeetingParams struct {
 	Location    sql.NullString `json:"location"`
 	StartTime   time.Time      `json:"start_time"`
 	EndTime     time.Time      `json:"end_time"`
+	ProjectID   uuid.NullUUID  `json:"project_id"`
 }
 
 func (q *Queries) UpdateMeeting(ctx context.Context, arg UpdateMeetingParams) error {
@@ -301,6 +303,7 @@ func (q *Queries) UpdateMeeting(ctx context.Context, arg UpdateMeetingParams) er
 		arg.Location,
 		arg.StartTime,
 		arg.EndTime,
+		arg.ProjectID,
 	)
 	return err
 }

@@ -82,7 +82,7 @@ func main() {
 	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc)
 	adminPasswordPolicyHandler := handlers.NewAdminPasswordPolicyHandler(passwordPolicySvc)
 
-	sprintSvc := services.NewSprintService(sprintRepo, sprintTaskRepo, productBacklogRepo, taskRepo, boardRepo, projectRepo)
+	sprintSvc := services.NewSprintService(sprintRepo, sprintTaskRepo, productBacklogRepo, taskRepo, boardRepo, projectRepo, tagRepo)
 
 	productBacklogSvc := services.NewProductBacklogService(productBacklogRepo, taskRepo, sprintTaskRepo)
 	productBacklogHandler := handlers.NewProductBacklogHandler(productBacklogSvc)

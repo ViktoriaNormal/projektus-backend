@@ -17,7 +17,8 @@ SET name = $2,
     meeting_type = $4,
     location = $5,
     start_time = $6,
-    end_time = $7
+    end_time = $7,
+    project_id = $8
 WHERE id = $1;
 
 -- name: CancelMeeting :one

@@ -84,6 +84,12 @@ func (r *meetingRepository) UpdateMeeting(ctx context.Context, m domain.Meeting)
 	if m.Location != nil {
 		loc = sql.NullString{String: *m.Location, Valid: true}
 	}
+	var pid uuid.NullUUID
+	if m.ProjectID != nil {
+		if parsed, err := uuid.Parse(*m.ProjectID); err == nil {
+			pid = uuid.NullUUID{UUID: parsed, Valid: true}
+		}
+	}
 	return r.q.UpdateMeeting(ctx, db.UpdateMeetingParams{
 		ID:          id,
 		Name:        m.Name,
@@ -92,6 +98,7 @@ func (r *meetingRepository) UpdateMeeting(ctx context.Context, m domain.Meeting)
 		Location:    loc,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
+		ProjectID:   pid,
 	})
 }
 

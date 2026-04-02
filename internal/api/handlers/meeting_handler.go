@@ -219,6 +219,9 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 	}
 
 	m := *existing
+	if req.ProjectID.Set {
+		m.ProjectID = req.ProjectID.Ptr()
+	}
 	if req.Name != nil {
 		m.Name = *req.Name
 	}

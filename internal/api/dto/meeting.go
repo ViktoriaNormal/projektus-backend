@@ -14,6 +14,7 @@ type CreateMeetingRequest struct {
 
 // UpdateMeetingRequest соответствует UpdateMeetingRequest в OpenAPI.
 type UpdateMeetingRequest struct {
+	ProjectID   NullableField[string] `json:"project_id"` // uuid, nullable
 	Name        *string               `json:"name"`
 	Description NullableField[string] `json:"description"`
 	MeetingType *string               `json:"meeting_type"`
