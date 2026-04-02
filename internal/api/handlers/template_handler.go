@@ -9,6 +9,7 @@ import (
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
+	"projektus-backend/internal/repositories"
 	"projektus-backend/internal/services"
 )
 
@@ -29,11 +30,10 @@ func (h *TemplateHandler) GetReferences(c *gin.Context) {
 	}
 
 	resp := dto.ReferencesResponse{
-		ColumnSystemTypes:    make([]dto.ReferenceColumnType, 0, len(refs.ColumnSystemTypes)),
-		FieldTypes:           make([]dto.ReferenceFieldType, 0, len(refs.FieldTypes)),
-		EstimationUnits:      make([]dto.ReferenceAvailable, 0, len(refs.EstimationUnits)),
-		PriorityTypeOptions:         make([]dto.ReferencePriorityType, 0, len(refs.PriorityTypeOptions)),
-		SystemTaskFields:     make([]dto.ReferenceSystemField, 0, len(refs.SystemTaskFields)),
+		ColumnSystemTypes:   make([]dto.ReferenceColumnType, 0, len(refs.ColumnSystemTypes)),
+		FieldTypes:          make([]dto.ReferenceFieldType, 0, len(refs.FieldTypes)),
+		EstimationUnits:     make([]dto.ReferenceAvailable, 0, len(refs.EstimationUnits)),
+		PriorityTypeOptions: make([]dto.ReferencePriorityType, 0, len(refs.PriorityTypeOptions)),
 	}
 
 	for _, ct := range refs.ColumnSystemTypes {
@@ -59,16 +59,6 @@ func (h *TemplateHandler) GetReferences(c *gin.Context) {
 	for _, ps := range refs.ProjectStatuses {
 		resp.ProjectStatuses = append(resp.ProjectStatuses, dto.ReferenceKeyName{Key: ps.Key, Name: ps.Name})
 	}
-	for _, sf := range refs.SystemTaskFields {
-		resp.SystemTaskFields = append(resp.SystemTaskFields, dto.ReferenceSystemField{
-			Key: sf.Key, Name: sf.Name, FieldType: sf.FieldType, AvailableFor: sf.AvailableFor, Description: sf.Description,
-		})
-	}
-	for _, sp := range refs.SystemProjectParams {
-		resp.SystemProjectParams = append(resp.SystemProjectParams, dto.ReferenceSystemProjectParam{
-			Key: sp.Key, Name: sp.Name, FieldType: sp.FieldType, IsRequired: sp.IsRequired, Options: sp.Options,
-		})
-	}
 	resp.PermissionAreas = make([]dto.ReferencePermissionArea, 0, len(refs.PermissionAreas))
 	for _, a := range refs.PermissionAreas {
 		resp.PermissionAreas = append(resp.PermissionAreas, dto.ReferencePermissionArea{
@@ -91,6 +81,7 @@ func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 	}
 	resp := make([]dto.ProjectTemplateResponse, 0, len(templates))
 	for i, t := range templates {
+		injectSystemFields(&t, &allData[i])
 		resp = append(resp, mapTemplateToResponse(&t, allData[i]))
 	}
 	writeSuccess(c, resp)
@@ -115,6 +106,7 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
+	injectSystemFields(tmpl, &data)
 	writeSuccess(c, mapTemplateToResponse(tmpl, data))
 }
 
@@ -136,6 +128,7 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 
+	injectSystemFields(tmpl, &data)
 	writeSuccess(c, mapTemplateToResponse(tmpl, data))
 }
 
@@ -163,6 +156,7 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 
+	injectSystemFields(tmpl, &data)
 	writeSuccess(c, mapTemplateToResponse(tmpl, data))
 }
 
@@ -981,6 +975,41 @@ func (h *TemplateHandler) DeleteRole(c *gin.Context) {
 
 // --- Response mapping helpers ---
 
+// injectSystemFields adds system board fields and project params into template data.
+func injectSystemFields(tmpl *domain.ProjectTemplate, data *services.TemplateFullData) {
+	// Inject system fields into each board's custom fields.
+	for i, b := range data.Boards {
+		systemFields := domain.GenerateSystemBoardFields(
+			string(tmpl.Type), b.PriorityType, b.EstimationUnit,
+			b.PriorityOptions, repositories.DefaultBoardFields,
+		)
+		sysTemplateFields := make([]domain.TemplateBoardCustomField, 0, len(systemFields))
+		for _, sf := range systemFields {
+			opts := sf.Options
+			if opts == nil {
+				opts = []string{}
+			}
+			sysTemplateFields = append(sysTemplateFields, domain.TemplateBoardCustomField{
+				ID: uuid.MustParse(sf.ID), Name: sf.Name,
+				FieldType: sf.FieldType, IsSystem: true, IsRequired: sf.IsRequired, Options: opts,
+			})
+		}
+		data.Boards[i].CustomFields = append(sysTemplateFields, b.CustomFields...)
+	}
+
+	// Inject system project params.
+	sysParams := domain.GenerateSystemProjectParamsForTemplate()
+	sysTemplateParams := make([]domain.TemplateProjectParam, 0, len(sysParams))
+	for _, sp := range sysParams {
+		sysTemplateParams = append(sysTemplateParams, domain.TemplateProjectParam{
+			ID: uuid.MustParse(sp.ID), Name: sp.Name,
+			FieldType: sp.FieldType, IsSystem: true, IsRequired: sp.IsRequired,
+			Options: []string{},
+		})
+	}
+	data.Params = append(sysTemplateParams, data.Params...)
+}
+
 func mapTemplateToResponse(tmpl *domain.ProjectTemplate, data services.TemplateFullData) dto.ProjectTemplateResponse {
 	desc := ""
 	if tmpl.Description != nil {
@@ -1011,7 +1040,7 @@ func mapTemplateToResponse(tmpl *domain.ProjectTemplate, data services.TemplateF
 
 func mapProjectParamToResponse(p domain.TemplateProjectParam) dto.TemplateProjectParamResponse {
 	return dto.TemplateProjectParamResponse{
-		ID: p.ID, Name: p.Name, Description: p.Description, FieldType: p.FieldType,
+		ID: p.ID, Name: p.Name, FieldType: p.FieldType,
 		IsSystem: p.IsSystem, IsRequired: p.IsRequired, Options: p.Options,
 	}
 }
@@ -1087,12 +1116,11 @@ func mapSwimlaneToResponse(sw domain.TemplateBoardSwimlane) dto.TemplateBoardSwi
 
 func mapCustomFieldToResponse(f domain.TemplateBoardCustomField) dto.TemplateBoardCustomFieldResponse {
 	return dto.TemplateBoardCustomFieldResponse{
-		ID:          f.ID,
-		Name:        f.Name,
-		Description: f.Description,
-		FieldType:   f.FieldType,
-		IsSystem:    f.IsSystem,
-		IsRequired:  f.IsRequired,
-		Options:     f.Options,
+		ID:         f.ID,
+		Name:       f.Name,
+		FieldType:  f.FieldType,
+		IsSystem:   f.IsSystem,
+		IsRequired: f.IsRequired,
+		Options:    f.Options,
 	}
 }

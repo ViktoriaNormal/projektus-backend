@@ -10,10 +10,12 @@ type CreateProjectRequest struct {
 }
 
 type UpdateProjectRequest struct {
-	Name        *string              `json:"name"`
-	Description NullableField[string] `json:"description"`
-	Status      *string              `json:"status"`
-	OwnerID     *string              `json:"owner_id"`
+	Name                  *string              `json:"name"`
+	Description           NullableField[string] `json:"description"`
+	Status                *string              `json:"status"`
+	OwnerID               *string              `json:"owner_id"`
+	SprintDurationWeeks   *int                 `json:"sprint_duration_weeks,omitempty"`
+	IncompleteTasksAction *string              `json:"incomplete_tasks_action,omitempty" binding:"omitempty,oneof=backlog next_sprint"`
 }
 
 type ProjectOwnerResponse struct {
@@ -33,13 +35,15 @@ type ProjectReferencesResponse struct {
 }
 
 type ProjectResponse struct {
-	ID          uuid.UUID             `json:"id"`
-	Key         string                `json:"key"`
-	Name        string                `json:"name"`
-	Description string                `json:"description,omitempty"`
-	ProjectType string                `json:"project_type"`
-	OwnerID     uuid.UUID             `json:"owner_id"`
-	Status      string                `json:"status"`
-	CreatedAt   string                `json:"created_at"`
-	Owner       *ProjectOwnerResponse `json:"owner,omitempty"`
+	ID                    uuid.UUID             `json:"id"`
+	Key                   string                `json:"key"`
+	Name                  string                `json:"name"`
+	Description           string                `json:"description,omitempty"`
+	ProjectType           string                `json:"project_type"`
+	OwnerID               uuid.UUID             `json:"owner_id"`
+	Status                string                `json:"status"`
+	SprintDurationWeeks   *int                  `json:"sprint_duration_weeks,omitempty"`
+	IncompleteTasksAction string                `json:"incomplete_tasks_action"`
+	CreatedAt             string                `json:"created_at"`
+	Owner                 *ProjectOwnerResponse `json:"owner,omitempty"`
 }

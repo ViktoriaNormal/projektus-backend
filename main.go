@@ -69,7 +69,6 @@ func main() {
 
 	projectParamRepo := repositories.NewProjectParamRepository(queries)
 	projectParamSvc := services.NewProjectParamService(projectParamRepo, userRepo)
-	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc)
 
 	tagRepo := repositories.NewTagRepository(queries)
 	tagSvc := services.NewTagService(tagRepo)
@@ -77,17 +76,15 @@ func main() {
 
 	boardSvc := services.NewBoardService(boardRepo)
 
-	taskSvc := services.NewTaskService(taskRepo, projectRepo)
-	taskHandler := handlers.NewTaskHandler(taskSvc)
+	taskSvc := services.NewTaskService(taskRepo, projectRepo, tagRepo, conn)
 
 	adminUserSvc := services.NewAdminUserService(userRepo, adminUserRepo, roleSvc, passwordSvc, passwordPolicySvc)
 	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc)
 	adminPasswordPolicyHandler := handlers.NewAdminPasswordPolicyHandler(passwordPolicySvc)
 
-	sprintSvc := services.NewSprintService(sprintRepo, sprintTaskRepo, productBacklogRepo, taskRepo)
-	sprintHandler := handlers.NewSprintHandler(sprintSvc)
+	sprintSvc := services.NewSprintService(sprintRepo, sprintTaskRepo, productBacklogRepo, taskRepo, boardRepo, projectRepo)
 
-	productBacklogSvc := services.NewProductBacklogService(productBacklogRepo, taskRepo)
+	productBacklogSvc := services.NewProductBacklogService(productBacklogRepo, taskRepo, sprintTaskRepo)
 	productBacklogHandler := handlers.NewProductBacklogHandler(productBacklogSvc)
 	sprintBacklogHandler := handlers.NewSprintBacklogHandler(sprintSvc)
 
@@ -99,10 +96,16 @@ func main() {
 	templateHandler := handlers.NewTemplateHandler(templateSvc)
 
 	projectSvc := services.NewProjectService(projectRepo, templateSvc, boardRepo, projectRoleRepo, projectParamRepo, projectMemberRepo)
+	taskHandler := handlers.NewTaskHandler(taskSvc, boardSvc, projectSvc)
 	projectHandler := handlers.NewProjectHandler(projectSvc, templateSvc)
 	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc)
+	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc, projectSvc)
+	sprintHandler := handlers.NewSprintHandler(sprintSvc, projectSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, projectSvc, permissionSvc)
+	scrumAnalyticsSvc := services.NewScrumAnalyticsService(sprintRepo, queries)
+	scrumAnalyticsHandler := handlers.NewScrumAnalyticsHandler(scrumAnalyticsSvc)
+
+	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, scrumAnalyticsHandler, projectSvc, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

@@ -1,17 +1,17 @@
 -- Boards
 
 -- name: CreateBoard :one
-INSERT INTO boards (project_id, template_id, name, description, sort_order, is_default, priority_type, estimation_unit, swimlane_group_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default;
+INSERT INTO boards (project_id, template_id, name, description, sort_order, is_default, priority_type, estimation_unit, swimlane_group_by, priority_options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options;
 
 -- name: GetBoardByID :one
-SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
+SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options
 FROM boards
 WHERE id = $1;
 
 -- name: ListProjectBoards :many
-SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
+SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options
 FROM boards
 WHERE project_id = $1
 ORDER BY sort_order;
@@ -24,9 +24,10 @@ SET name        = COALESCE(sqlc.narg('name'), name),
     priority_type    = COALESCE(sqlc.narg('priority_type'), priority_type),
     estimation_unit  = COALESCE(sqlc.narg('estimation_unit'), estimation_unit),
     swimlane_group_by = COALESCE(sqlc.narg('swimlane_group_by'), swimlane_group_by),
-    is_default = COALESCE(sqlc.narg('is_default'), is_default)
+    is_default = COALESCE(sqlc.narg('is_default'), is_default),
+    priority_options = COALESCE(sqlc.narg('priority_options'), priority_options)
 WHERE id = sqlc.arg('id')
-RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default;
+RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options;
 
 -- name: DeleteBoard :exec
 DELETE FROM boards

@@ -30,6 +30,24 @@ func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberPara
 	return i, err
 }
 
+const getMemberByProjectAndUser = `-- name: GetMemberByProjectAndUser :one
+SELECT id, project_id, user_id
+FROM members
+WHERE project_id = $1 AND user_id = $2
+`
+
+type GetMemberByProjectAndUserParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetMemberByProjectAndUser(ctx context.Context, arg GetMemberByProjectAndUserParams) (Member, error) {
+	row := q.db.QueryRowContext(ctx, getMemberByProjectAndUser, arg.ProjectID, arg.UserID)
+	var i Member
+	err := row.Scan(&i.ID, &i.ProjectID, &i.UserID)
+	return i, err
+}
+
 const getProjectMember = `-- name: GetProjectMember :one
 SELECT m.id, m.project_id, m.user_id
 FROM members m

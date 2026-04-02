@@ -13,11 +13,12 @@ import (
 )
 
 type ProjectParamHandler struct {
-	service *services.ProjectParamService
+	service        *services.ProjectParamService
+	projectService *services.ProjectService
 }
 
-func NewProjectParamHandler(service *services.ProjectParamService) *ProjectParamHandler {
-	return &ProjectParamHandler{service: service}
+func NewProjectParamHandler(service *services.ProjectParamService, projectService *services.ProjectService) *ProjectParamHandler {
+	return &ProjectParamHandler{service: service, projectService: projectService}
 }
 
 func (h *ProjectParamHandler) ListParams(c *gin.Context) {
@@ -26,13 +27,25 @@ func (h *ProjectParamHandler) ListParams(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
 		return
 	}
-	params, err := h.service.ListParams(c.Request.Context(), projectID)
+
+	// Generate system params with real values from the project.
+	project, err := h.projectService.GetProject(c.Request.Context(), projectID)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
+		return
+	}
+	systemParams := domain.GenerateSystemProjectParams(project)
+
+	// Get custom params from DB.
+	customParams, err := h.service.ListParams(c.Request.Context(), projectID)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить параметры проекта")
 		return
 	}
-	resp := make([]dto.ProjectParamResponse, 0, len(params))
-	for _, p := range params {
+
+	allParams := append(systemParams, customParams...)
+	resp := make([]dto.ProjectParamResponse, 0, len(allParams))
+	for _, p := range allParams {
 		resp = append(resp, mapProjectParamToDTO(p))
 	}
 	writeSuccess(c, resp)
@@ -137,13 +150,12 @@ func mapProjectParamToDTO(p domain.ProjectParam) dto.ProjectParamResponse {
 		opts = []string{}
 	}
 	return dto.ProjectParamResponse{
-		ID:          uuid.MustParse(p.ID),
-		Name:        p.Name,
-		Description: p.Description,
-		FieldType:   p.FieldType,
-		IsSystem:    p.IsSystem,
-		IsRequired:  p.IsRequired,
-		Options:     opts,
-		Value:       p.Value,
+		ID:         uuid.MustParse(p.ID),
+		Name:       p.Name,
+		FieldType:  p.FieldType,
+		IsSystem:   p.IsSystem,
+		IsRequired: p.IsRequired,
+		Options:    opts,
+		Value:      p.Value,
 	}
 }

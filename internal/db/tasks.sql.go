@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
@@ -39,11 +40,34 @@ func (q *Queries) AddTaskDependency(ctx context.Context, arg AddTaskDependencyPa
 	return i, err
 }
 
+const assignColumnToTask = `-- name: AssignColumnToTask :exec
+UPDATE tasks SET column_id = $2 WHERE id = $1
+`
+
+type AssignColumnToTaskParams struct {
+	ID       uuid.UUID     `json:"id"`
+	ColumnID uuid.NullUUID `json:"column_id"`
+}
+
+func (q *Queries) AssignColumnToTask(ctx context.Context, arg AssignColumnToTaskParams) error {
+	_, err := q.db.ExecContext(ctx, assignColumnToTask, arg.ID, arg.ColumnID)
+	return err
+}
+
+const clearColumnFromTask = `-- name: ClearColumnFromTask :exec
+UPDATE tasks SET column_id = NULL WHERE id = $1
+`
+
+func (q *Queries) ClearColumnFromTask(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, clearColumnFromTask, id)
+	return err
+}
+
 const createTask = `-- name: CreateTask :one
 
-INSERT INTO tasks (key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
+INSERT INTO tasks (key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, priority, estimation, board_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, deleted_at, created_at, priority, estimation, board_id
 `
 
 type CreateTaskParams struct {
@@ -54,8 +78,11 @@ type CreateTaskParams struct {
 	Name        string         `json:"name"`
 	Description sql.NullString `json:"description"`
 	Deadline    sql.NullTime   `json:"deadline"`
-	ColumnID    uuid.UUID      `json:"column_id"`
+	ColumnID    uuid.NullUUID  `json:"column_id"`
 	SwimlaneID  uuid.NullUUID  `json:"swimlane_id"`
+	Priority    sql.NullString `json:"priority"`
+	Estimation  sql.NullString `json:"estimation"`
+	BoardID     uuid.UUID      `json:"board_id"`
 }
 
 // Tasks basic CRUD
@@ -70,6 +97,9 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		arg.Deadline,
 		arg.ColumnID,
 		arg.SwimlaneID,
+		arg.Priority,
+		arg.Estimation,
+		arg.BoardID,
 	)
 	var i Task
 	err := row.Scan(
@@ -83,10 +113,11 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.Deadline,
 		&i.ColumnID,
 		&i.SwimlaneID,
-		&i.StatusType,
 		&i.DeletedAt,
-		&i.DeleteReason,
 		&i.CreatedAt,
+		&i.Priority,
+		&i.Estimation,
+		&i.BoardID,
 	)
 	return i, err
 }
@@ -107,14 +138,44 @@ func (q *Queries) DeleteTaskFieldValue(ctx context.Context, arg DeleteTaskFieldV
 }
 
 const getTaskByID = `-- name: GetTaskByID :one
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
-FROM tasks
-WHERE id = $1
+SELECT t.id, t.key, t.project_id, t.owner_id, t.executor_id, t.name, t.description,
+       t.deadline, t.column_id, t.swimlane_id, t.deleted_at, t.created_at,
+       t.priority, t.estimation, t.board_id,
+       c.name AS column_name, c.system_type AS column_system_type,
+       m_owner.user_id AS owner_user_id,
+       m_exec.user_id AS executor_user_id
+FROM tasks t
+LEFT JOIN columns c ON t.column_id = c.id
+JOIN members m_owner ON m_owner.id = t.owner_id
+LEFT JOIN members m_exec ON m_exec.id = t.executor_id
+WHERE t.id = $1
 `
 
-func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
+type GetTaskByIDRow struct {
+	ID               uuid.UUID      `json:"id"`
+	Key              string         `json:"key"`
+	ProjectID        uuid.UUID      `json:"project_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	ExecutorID       uuid.NullUUID  `json:"executor_id"`
+	Name             string         `json:"name"`
+	Description      sql.NullString `json:"description"`
+	Deadline         sql.NullTime   `json:"deadline"`
+	ColumnID         uuid.NullUUID  `json:"column_id"`
+	SwimlaneID       uuid.NullUUID  `json:"swimlane_id"`
+	DeletedAt        sql.NullTime   `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	Priority         sql.NullString `json:"priority"`
+	Estimation       sql.NullString `json:"estimation"`
+	BoardID          uuid.UUID      `json:"board_id"`
+	ColumnName       sql.NullString `json:"column_name"`
+	ColumnSystemType sql.NullString `json:"column_system_type"`
+	OwnerUserID      uuid.UUID      `json:"owner_user_id"`
+	ExecutorUserID   uuid.NullUUID  `json:"executor_user_id"`
+}
+
+func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (GetTaskByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getTaskByID, id)
-	var i Task
+	var i GetTaskByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Key,
@@ -126,10 +187,33 @@ func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.Deadline,
 		&i.ColumnID,
 		&i.SwimlaneID,
-		&i.StatusType,
 		&i.DeletedAt,
-		&i.DeleteReason,
 		&i.CreatedAt,
+		&i.Priority,
+		&i.Estimation,
+		&i.BoardID,
+		&i.ColumnName,
+		&i.ColumnSystemType,
+		&i.OwnerUserID,
+		&i.ExecutorUserID,
+	)
+	return i, err
+}
+
+const getTaskDependencyByID = `-- name: GetTaskDependencyByID :one
+SELECT id, task_id, depends_on_task_id, dependency_type
+FROM task_dependencies
+WHERE id = $1
+`
+
+func (q *Queries) GetTaskDependencyByID(ctx context.Context, id uuid.UUID) (TaskDependency, error) {
+	row := q.db.QueryRowContext(ctx, getTaskDependencyByID, id)
+	var i TaskDependency
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.DependsOnTaskID,
+		&i.DependencyType,
 	)
 	return i, err
 }
@@ -200,22 +284,52 @@ func (q *Queries) ListProjectTaskKeys(ctx context.Context, projectID uuid.UUID) 
 }
 
 const listProjectTasks = `-- name: ListProjectTasks :many
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
-FROM tasks
-WHERE project_id = $1
-  AND deleted_at IS NULL
-ORDER BY created_at DESC
+SELECT t.id, t.key, t.project_id, t.owner_id, t.executor_id, t.name, t.description,
+       t.deadline, t.column_id, t.swimlane_id, t.deleted_at, t.created_at,
+       t.priority, t.estimation, t.board_id,
+       c.name AS column_name, c.system_type AS column_system_type,
+       m_owner.user_id AS owner_user_id,
+       m_exec.user_id AS executor_user_id
+FROM tasks t
+LEFT JOIN columns c ON t.column_id = c.id
+JOIN members m_owner ON m_owner.id = t.owner_id
+LEFT JOIN members m_exec ON m_exec.id = t.executor_id
+WHERE t.project_id = $1
+  AND t.deleted_at IS NULL
+ORDER BY t.created_at DESC
 `
 
-func (q *Queries) ListProjectTasks(ctx context.Context, projectID uuid.UUID) ([]Task, error) {
+type ListProjectTasksRow struct {
+	ID               uuid.UUID      `json:"id"`
+	Key              string         `json:"key"`
+	ProjectID        uuid.UUID      `json:"project_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	ExecutorID       uuid.NullUUID  `json:"executor_id"`
+	Name             string         `json:"name"`
+	Description      sql.NullString `json:"description"`
+	Deadline         sql.NullTime   `json:"deadline"`
+	ColumnID         uuid.NullUUID  `json:"column_id"`
+	SwimlaneID       uuid.NullUUID  `json:"swimlane_id"`
+	DeletedAt        sql.NullTime   `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	Priority         sql.NullString `json:"priority"`
+	Estimation       sql.NullString `json:"estimation"`
+	BoardID          uuid.UUID      `json:"board_id"`
+	ColumnName       sql.NullString `json:"column_name"`
+	ColumnSystemType sql.NullString `json:"column_system_type"`
+	OwnerUserID      uuid.UUID      `json:"owner_user_id"`
+	ExecutorUserID   uuid.NullUUID  `json:"executor_user_id"`
+}
+
+func (q *Queries) ListProjectTasks(ctx context.Context, projectID uuid.UUID) ([]ListProjectTasksRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectTasks, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []ListProjectTasksRow{}
 	for rows.Next() {
-		var i Task
+		var i ListProjectTasksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Key,
@@ -227,11 +341,51 @@ func (q *Queries) ListProjectTasks(ctx context.Context, projectID uuid.UUID) ([]
 			&i.Deadline,
 			&i.ColumnID,
 			&i.SwimlaneID,
-			&i.StatusType,
 			&i.DeletedAt,
-			&i.DeleteReason,
 			&i.CreatedAt,
+			&i.Priority,
+			&i.Estimation,
+			&i.BoardID,
+			&i.ColumnName,
+			&i.ColumnSystemType,
+			&i.OwnerUserID,
+			&i.ExecutorUserID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSprintTasksWithoutColumn = `-- name: ListSprintTasksWithoutColumn :many
+SELECT t.id, t.board_id
+FROM tasks t
+JOIN sprint_tasks st ON st.task_id = t.id
+WHERE st.sprint_id = $1 AND t.column_id IS NULL
+`
+
+type ListSprintTasksWithoutColumnRow struct {
+	ID      uuid.UUID `json:"id"`
+	BoardID uuid.UUID `json:"board_id"`
+}
+
+func (q *Queries) ListSprintTasksWithoutColumn(ctx context.Context, sprintID uuid.UUID) ([]ListSprintTasksWithoutColumnRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSprintTasksWithoutColumn, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSprintTasksWithoutColumnRow{}
+	for rows.Next() {
+		var i ListSprintTasksWithoutColumnRow
+		if err := rows.Scan(&i.ID, &i.BoardID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -313,6 +467,21 @@ func (q *Queries) ListTaskDependencies(ctx context.Context, taskID uuid.UUID) ([
 	return items, nil
 }
 
+const removeInverseDependency = `-- name: RemoveInverseDependency :exec
+DELETE FROM task_dependencies
+WHERE task_id = $1 AND depends_on_task_id = $2
+`
+
+type RemoveInverseDependencyParams struct {
+	TaskID          uuid.UUID `json:"task_id"`
+	DependsOnTaskID uuid.UUID `json:"depends_on_task_id"`
+}
+
+func (q *Queries) RemoveInverseDependency(ctx context.Context, arg RemoveInverseDependencyParams) error {
+	_, err := q.db.ExecContext(ctx, removeInverseDependency, arg.TaskID, arg.DependsOnTaskID)
+	return err
+}
+
 const removeTaskDependency = `-- name: RemoveTaskDependency :exec
 DELETE FROM task_dependencies
 WHERE id = $1
@@ -324,37 +493,62 @@ func (q *Queries) RemoveTaskDependency(ctx context.Context, id uuid.UUID) error 
 }
 
 const searchTasks = `-- name: SearchTasks :many
-SELECT id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
-FROM tasks
-WHERE ($1::uuid IS NULL OR project_id = $1)
-  AND ($2::uuid IS NULL OR owner_id = $2)
-  AND ($3::uuid IS NULL OR executor_id = $3)
-  AND ($4::uuid IS NULL OR column_id = $4)
-  AND deleted_at IS NULL
-ORDER BY created_at DESC
+SELECT DISTINCT t.id, t.key, t.project_id, t.owner_id, t.executor_id, t.name, t.description,
+       t.deadline, t.column_id, t.swimlane_id, t.deleted_at, t.created_at,
+       t.priority, t.estimation, t.board_id,
+       c.name AS column_name, c.system_type AS column_system_type,
+       m_owner.user_id AS owner_user_id,
+       m_exec.user_id AS executor_user_id
+FROM tasks t
+LEFT JOIN columns c ON t.column_id = c.id
+JOIN members m_owner ON m_owner.id = t.owner_id
+LEFT JOIN members m_exec ON m_exec.id = t.executor_id
+LEFT JOIN task_watchers tw ON tw.task_id = t.id
+LEFT JOIN members m_watch ON m_watch.id = tw.member_id
+WHERE (m_owner.user_id = $1 OR m_exec.user_id = $1 OR m_watch.user_id = $1)
+  AND ($2::uuid IS NULL OR t.project_id = $2)
+  AND ($3::uuid IS NULL OR t.column_id = $3)
+  AND t.deleted_at IS NULL
+ORDER BY t.created_at DESC
 `
 
 type SearchTasksParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Column2 uuid.UUID `json:"column_2"`
-	Column3 uuid.UUID `json:"column_3"`
-	Column4 uuid.UUID `json:"column_4"`
+	UserID    uuid.UUID     `json:"user_id"`
+	ProjectID uuid.NullUUID `json:"project_id"`
+	ColumnID  uuid.NullUUID `json:"column_id"`
 }
 
-func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Task, error) {
-	rows, err := q.db.QueryContext(ctx, searchTasks,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-	)
+type SearchTasksRow struct {
+	ID               uuid.UUID      `json:"id"`
+	Key              string         `json:"key"`
+	ProjectID        uuid.UUID      `json:"project_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	ExecutorID       uuid.NullUUID  `json:"executor_id"`
+	Name             string         `json:"name"`
+	Description      sql.NullString `json:"description"`
+	Deadline         sql.NullTime   `json:"deadline"`
+	ColumnID         uuid.NullUUID  `json:"column_id"`
+	SwimlaneID       uuid.NullUUID  `json:"swimlane_id"`
+	DeletedAt        sql.NullTime   `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	Priority         sql.NullString `json:"priority"`
+	Estimation       sql.NullString `json:"estimation"`
+	BoardID          uuid.UUID      `json:"board_id"`
+	ColumnName       sql.NullString `json:"column_name"`
+	ColumnSystemType sql.NullString `json:"column_system_type"`
+	OwnerUserID      uuid.UUID      `json:"owner_user_id"`
+	ExecutorUserID   uuid.NullUUID  `json:"executor_user_id"`
+}
+
+func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]SearchTasksRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchTasks, arg.UserID, arg.ProjectID, arg.ColumnID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []SearchTasksRow{}
 	for rows.Next() {
-		var i Task
+		var i SearchTasksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Key,
@@ -366,10 +560,15 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Tas
 			&i.Deadline,
 			&i.ColumnID,
 			&i.SwimlaneID,
-			&i.StatusType,
 			&i.DeletedAt,
-			&i.DeleteReason,
 			&i.CreatedAt,
+			&i.Priority,
+			&i.Estimation,
+			&i.BoardID,
+			&i.ColumnName,
+			&i.ColumnSystemType,
+			&i.OwnerUserID,
+			&i.ExecutorUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -386,18 +585,12 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Tas
 
 const softDeleteTask = `-- name: SoftDeleteTask :exec
 UPDATE tasks
-SET deleted_at   = NOW(),
-    delete_reason = $2
+SET deleted_at = NOW()
 WHERE id = $1
 `
 
-type SoftDeleteTaskParams struct {
-	ID           uuid.UUID      `json:"id"`
-	DeleteReason sql.NullString `json:"delete_reason"`
-}
-
-func (q *Queries) SoftDeleteTask(ctx context.Context, arg SoftDeleteTaskParams) error {
-	_, err := q.db.ExecContext(ctx, softDeleteTask, arg.ID, arg.DeleteReason)
+func (q *Queries) SoftDeleteTask(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, softDeleteTask, id)
 	return err
 }
 
@@ -408,9 +601,11 @@ SET name        = COALESCE($1, name),
     deadline    = $3,
     executor_id = $4,
     column_id   = COALESCE($5, column_id),
-    swimlane_id = $6
-WHERE id = $7
-RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, status_type, deleted_at, delete_reason, created_at
+    swimlane_id = $6,
+    priority    = $7,
+    estimation  = $8
+WHERE id = $9
+RETURNING id, key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, deleted_at, created_at, priority, estimation, board_id
 `
 
 type UpdateTaskParams struct {
@@ -420,6 +615,8 @@ type UpdateTaskParams struct {
 	ExecutorID  uuid.NullUUID  `json:"executor_id"`
 	ColumnID    uuid.NullUUID  `json:"column_id"`
 	SwimlaneID  uuid.NullUUID  `json:"swimlane_id"`
+	Priority    sql.NullString `json:"priority"`
+	Estimation  sql.NullString `json:"estimation"`
 	ID          uuid.UUID      `json:"id"`
 }
 
@@ -431,6 +628,8 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		arg.ExecutorID,
 		arg.ColumnID,
 		arg.SwimlaneID,
+		arg.Priority,
+		arg.Estimation,
 		arg.ID,
 	)
 	var i Task
@@ -445,10 +644,11 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.Deadline,
 		&i.ColumnID,
 		&i.SwimlaneID,
-		&i.StatusType,
 		&i.DeletedAt,
-		&i.DeleteReason,
 		&i.CreatedAt,
+		&i.Priority,
+		&i.Estimation,
+		&i.BoardID,
 	)
 	return i, err
 }

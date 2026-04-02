@@ -25,36 +25,32 @@ func (q *Queries) CountTemplateRolesByTemplateID(ctx context.Context, templateID
 }
 
 const createTemplateProjectParam = `-- name: CreateTemplateProjectParam :one
-INSERT INTO fields (kind, template_id, name, description, field_type, is_required, options)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6)
-RETURNING id, template_id, name, description, field_type, is_system, is_required, options
+INSERT INTO project_params (template_id, name, field_type, is_required, options)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, template_id, name, field_type, is_required, options
 `
 
 type CreateTemplateProjectParamParams struct {
-	TemplateID  uuid.NullUUID         `json:"template_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	TemplateID uuid.NullUUID         `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
 type CreateTemplateProjectParamRow struct {
-	ID          uuid.UUID             `json:"id"`
-	TemplateID  uuid.NullUUID         `json:"template_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	ID         uuid.UUID             `json:"id"`
+	TemplateID uuid.NullUUID         `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
 func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemplateProjectParamParams) (CreateTemplateProjectParamRow, error) {
 	row := q.db.QueryRowContext(ctx, createTemplateProjectParam,
 		arg.TemplateID,
 		arg.Name,
-		arg.Description,
 		arg.FieldType,
 		arg.IsRequired,
 		arg.Options,
@@ -64,9 +60,7 @@ func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemp
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -76,7 +70,7 @@ func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemp
 const createTemplateRole = `-- name: CreateTemplateRole :one
 INSERT INTO roles (template_id, scope, name, description)
 VALUES ($1, 'template', $2, $3)
-RETURNING id, template_id, name, description, is_admin
+RETURNING id, template_id, name, is_admin
 `
 
 type CreateTemplateRoleParams struct {
@@ -86,11 +80,10 @@ type CreateTemplateRoleParams struct {
 }
 
 type CreateTemplateRoleRow struct {
-	ID          uuid.UUID     `json:"id"`
-	TemplateID  uuid.NullUUID `json:"template_id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	IsAdmin     bool          `json:"is_admin"`
+	ID         uuid.UUID     `json:"id"`
+	TemplateID uuid.NullUUID `json:"template_id"`
+	Name       string        `json:"name"`
+	IsAdmin    bool          `json:"is_admin"`
 }
 
 func (q *Queries) CreateTemplateRole(ctx context.Context, arg CreateTemplateRoleParams) (CreateTemplateRoleRow, error) {
@@ -100,14 +93,13 @@ func (q *Queries) CreateTemplateRole(ctx context.Context, arg CreateTemplateRole
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
-		&i.Description,
 		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const deleteTemplateProjectParamByID = `-- name: DeleteTemplateProjectParamByID :exec
-DELETE FROM fields WHERE id = $1 AND kind = 'project_param'
+DELETE FROM project_params WHERE id = $1
 `
 
 func (q *Queries) DeleteTemplateProjectParamByID(ctx context.Context, id uuid.UUID) error {
@@ -134,20 +126,18 @@ func (q *Queries) DeleteTemplateRolePermissionsByRoleID(ctx context.Context, rol
 }
 
 const getTemplateProjectParamByID = `-- name: GetTemplateProjectParamByID :one
-SELECT id, template_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE id = $1 AND kind = 'project_param'
+SELECT id, template_id, name, field_type, is_required, options
+FROM project_params
+WHERE id = $1
 `
 
 type GetTemplateProjectParamByIDRow struct {
-	ID          uuid.UUID             `json:"id"`
-	TemplateID  uuid.NullUUID         `json:"template_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	ID         uuid.UUID             `json:"id"`
+	TemplateID uuid.NullUUID         `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
 func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID) (GetTemplateProjectParamByIDRow, error) {
@@ -157,9 +147,7 @@ func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID)
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -167,17 +155,16 @@ func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID)
 }
 
 const getTemplateRoleByID = `-- name: GetTemplateRoleByID :one
-SELECT id, template_id, name, description, is_admin
+SELECT id, template_id, name, is_admin
 FROM roles
 WHERE id = $1
 `
 
 type GetTemplateRoleByIDRow struct {
-	ID          uuid.UUID     `json:"id"`
-	TemplateID  uuid.NullUUID `json:"template_id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	IsAdmin     bool          `json:"is_admin"`
+	ID         uuid.UUID     `json:"id"`
+	TemplateID uuid.NullUUID `json:"template_id"`
+	Name       string        `json:"name"`
+	IsAdmin    bool          `json:"is_admin"`
 }
 
 func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTemplateRoleByIDRow, error) {
@@ -187,7 +174,6 @@ func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTem
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
-		&i.Description,
 		&i.IsAdmin,
 	)
 	return i, err
@@ -195,23 +181,21 @@ func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTem
 
 const listTemplateProjectParams = `-- name: ListTemplateProjectParams :many
 
-SELECT id, template_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE template_id = $1 AND kind = 'project_param'
+SELECT id, template_id, name, field_type, is_required, options
+FROM project_params
+WHERE template_id = $1
 `
 
 type ListTemplateProjectParamsRow struct {
-	ID          uuid.UUID             `json:"id"`
-	TemplateID  uuid.NullUUID         `json:"template_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	ID         uuid.UUID             `json:"id"`
+	TemplateID uuid.NullUUID         `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
-// Template project params (in unified `fields` table, kind='project_param')
+// Template project params
 func (q *Queries) ListTemplateProjectParams(ctx context.Context, templateID uuid.NullUUID) ([]ListTemplateProjectParamsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateProjectParams, templateID)
 	if err != nil {
@@ -225,9 +209,7 @@ func (q *Queries) ListTemplateProjectParams(ctx context.Context, templateID uuid
 			&i.ID,
 			&i.TemplateID,
 			&i.Name,
-			&i.Description,
 			&i.FieldType,
-			&i.IsSystem,
 			&i.IsRequired,
 			&i.Options,
 		); err != nil {
@@ -277,17 +259,16 @@ func (q *Queries) ListTemplateRolePermissions(ctx context.Context, roleID uuid.U
 
 const listTemplateRoles = `-- name: ListTemplateRoles :many
 
-SELECT id, template_id, name, description, is_admin
+SELECT id, template_id, name, is_admin
 FROM roles
 WHERE template_id = $1
 `
 
 type ListTemplateRolesRow struct {
-	ID          uuid.UUID     `json:"id"`
-	TemplateID  uuid.NullUUID `json:"template_id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	IsAdmin     bool          `json:"is_admin"`
+	ID         uuid.UUID     `json:"id"`
+	TemplateID uuid.NullUUID `json:"template_id"`
+	Name       string        `json:"name"`
+	IsAdmin    bool          `json:"is_admin"`
 }
 
 // Template roles (in unified roles table, scope='template')
@@ -304,7 +285,6 @@ func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.NullUUI
 			&i.ID,
 			&i.TemplateID,
 			&i.Name,
-			&i.Description,
 			&i.IsAdmin,
 		); err != nil {
 			return nil, err
@@ -321,10 +301,10 @@ func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.NullUUI
 }
 
 const updateTemplateProjectParam = `-- name: UpdateTemplateProjectParam :one
-UPDATE fields
+UPDATE project_params
 SET name = $2, is_required = $3, options = $4
-WHERE id = $1 AND kind = 'project_param'
-RETURNING id, template_id, name, description, field_type, is_system, is_required, options
+WHERE id = $1
+RETURNING id, template_id, name, field_type, is_required, options
 `
 
 type UpdateTemplateProjectParamParams struct {
@@ -335,14 +315,12 @@ type UpdateTemplateProjectParamParams struct {
 }
 
 type UpdateTemplateProjectParamRow struct {
-	ID          uuid.UUID             `json:"id"`
-	TemplateID  uuid.NullUUID         `json:"template_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	ID         uuid.UUID             `json:"id"`
+	TemplateID uuid.NullUUID         `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
 func (q *Queries) UpdateTemplateProjectParam(ctx context.Context, arg UpdateTemplateProjectParamParams) (UpdateTemplateProjectParamRow, error) {
@@ -357,9 +335,7 @@ func (q *Queries) UpdateTemplateProjectParam(ctx context.Context, arg UpdateTemp
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -370,7 +346,7 @@ const updateTemplateRole = `-- name: UpdateTemplateRole :one
 UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, template_id, name, description, is_admin
+RETURNING id, template_id, name, is_admin
 `
 
 type UpdateTemplateRoleParams struct {
@@ -380,11 +356,10 @@ type UpdateTemplateRoleParams struct {
 }
 
 type UpdateTemplateRoleRow struct {
-	ID          uuid.UUID     `json:"id"`
-	TemplateID  uuid.NullUUID `json:"template_id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	IsAdmin     bool          `json:"is_admin"`
+	ID         uuid.UUID     `json:"id"`
+	TemplateID uuid.NullUUID `json:"template_id"`
+	Name       string        `json:"name"`
+	IsAdmin    bool          `json:"is_admin"`
 }
 
 func (q *Queries) UpdateTemplateRole(ctx context.Context, arg UpdateTemplateRoleParams) (UpdateTemplateRoleRow, error) {
@@ -394,7 +369,6 @@ func (q *Queries) UpdateTemplateRole(ctx context.Context, arg UpdateTemplateRole
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
-		&i.Description,
 		&i.IsAdmin,
 	)
 	return i, err

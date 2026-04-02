@@ -9,6 +9,7 @@ import (
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
+	"projektus-backend/internal/repositories"
 	"projektus-backend/internal/services"
 )
 
@@ -97,7 +98,7 @@ func (h *BoardHandler) CreateBoard(c *gin.Context) {
 	if req.SwimlaneGroupBy != nil {
 		swimlaneGroupBy = *req.SwimlaneGroupBy
 	}
-	board, err := h.service.CreateBoard(c.Request.Context(), req.ProjectID, req.Name, req.Description, int16(req.Order), req.PriorityType, req.EstimationUnit, swimlaneGroupBy)
+	board, err := h.service.CreateBoard(c.Request.Context(), req.ProjectID, string(project.Type), req.Name, req.Description, int16(req.Order), req.PriorityType, req.EstimationUnit, swimlaneGroupBy)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать доску")
 		return
@@ -640,13 +641,39 @@ func (h *BoardHandler) ListCustomFields(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
 		return
 	}
-	fields, err := h.service.ListCustomFields(c.Request.Context(), boardID)
+
+	// Get board to determine project type and priority options.
+	board, err := h.service.GetBoard(c.Request.Context(), boardID)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить доску")
+		return
+	}
+	projectType := "kanban"
+	if board.ProjectID != nil {
+		pid, _ := uuid.Parse(*board.ProjectID)
+		project, err := h.projectService.GetProject(c.Request.Context(), pid)
+		if err == nil {
+			projectType = string(project.Type)
+		}
+	}
+
+	// Generate system fields from constants.
+	systemFields := domain.GenerateSystemBoardFields(
+		projectType, board.PriorityType, board.EstimationUnit,
+		board.PriorityOptions, repositories.DefaultBoardFields,
+	)
+
+	// Get custom fields from DB.
+	customFields, err := h.service.ListCustomFields(c.Request.Context(), boardID)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить кастомные поля")
 		return
 	}
-	resp := make([]dto.BoardCustomFieldResponse, 0, len(fields))
-	for _, f := range fields {
+
+	// Merge: system first, then custom.
+	allFields := append(systemFields, customFields...)
+	resp := make([]dto.BoardCustomFieldResponse, 0, len(allFields))
+	for _, f := range allFields {
 		resp = append(resp, mapCustomFieldToDTO(f))
 	}
 	writeSuccess(c, resp)
@@ -687,16 +714,7 @@ func (h *BoardHandler) UpdateCustomField(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	var desc *string
-	if req.Description.Set {
-		if req.Description.Null {
-			empty := ""
-			desc = &empty
-		} else {
-			desc = &req.Description.Value
-		}
-	}
-	field, err := h.service.UpdateCustomField(c.Request.Context(), boardID, fieldID, req.Name, desc, req.IsRequired, req.Options)
+	field, err := h.service.UpdateCustomField(c.Request.Context(), boardID, fieldID, req.Name, req.IsRequired, req.Options)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
@@ -771,13 +789,12 @@ func mapCustomFieldToDTO(f domain.BoardCustomField) dto.BoardCustomFieldResponse
 		opts = []string{}
 	}
 	return dto.BoardCustomFieldResponse{
-		ID:          uuid.MustParse(f.ID),
-		Name:        f.Name,
-		Description: f.Description,
-		FieldType:   f.FieldType,
-		IsSystem:    f.IsSystem,
-		IsRequired:  f.IsRequired,
-		Options:     opts,
+		ID:         uuid.MustParse(f.ID),
+		Name:       f.Name,
+		FieldType:  f.FieldType,
+		IsSystem:   f.IsSystem,
+		IsRequired: f.IsRequired,
+		Options:    opts,
 	}
 }
 

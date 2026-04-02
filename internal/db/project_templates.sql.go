@@ -49,32 +49,34 @@ func (q *Queries) CreateProjectTemplate(ctx context.Context, arg CreateProjectTe
 }
 
 const createTemplateBoard = `-- name: CreateTemplateBoard :one
-INSERT INTO boards (template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by
+INSERT INTO boards (template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options
 `
 
 type CreateTemplateBoardParams struct {
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	IsDefault       bool           `json:"is_default"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	IsDefault       bool                  `json:"is_default"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 type CreateTemplateBoardRow struct {
-	ID              uuid.UUID      `json:"id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	IsDefault       bool           `json:"is_default"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ID              uuid.UUID             `json:"id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	IsDefault       bool                  `json:"is_default"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 func (q *Queries) CreateTemplateBoard(ctx context.Context, arg CreateTemplateBoardParams) (CreateTemplateBoardRow, error) {
@@ -87,6 +89,7 @@ func (q *Queries) CreateTemplateBoard(ctx context.Context, arg CreateTemplateBoa
 		arg.PriorityType,
 		arg.EstimationUnit,
 		arg.SwimlaneGroupBy,
+		arg.PriorityOptions,
 	)
 	var i CreateTemplateBoardRow
 	err := row.Scan(
@@ -99,6 +102,7 @@ func (q *Queries) CreateTemplateBoard(ctx context.Context, arg CreateTemplateBoa
 		&i.PriorityType,
 		&i.EstimationUnit,
 		&i.SwimlaneGroupBy,
+		&i.PriorityOptions,
 	)
 	return i, err
 }
@@ -144,50 +148,33 @@ func (q *Queries) CreateTemplateBoardColumn(ctx context.Context, arg CreateTempl
 }
 
 const createTemplateBoardField = `-- name: CreateTemplateBoardField :one
-INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, options)
-VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7)
-RETURNING id, board_id, name, description, field_type, is_system, is_required, options
+INSERT INTO board_fields (board_id, name, field_type, is_required, options)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, board_id, name, field_type, is_required, options
 `
 
 type CreateTemplateBoardFieldParams struct {
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	BoardID    uuid.UUID             `json:"board_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
-type CreateTemplateBoardFieldRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) CreateTemplateBoardField(ctx context.Context, arg CreateTemplateBoardFieldParams) (CreateTemplateBoardFieldRow, error) {
+func (q *Queries) CreateTemplateBoardField(ctx context.Context, arg CreateTemplateBoardFieldParams) (BoardField, error) {
 	row := q.db.QueryRowContext(ctx, createTemplateBoardField,
 		arg.BoardID,
 		arg.Name,
-		arg.Description,
 		arg.FieldType,
-		arg.IsSystem,
 		arg.IsRequired,
 		arg.Options,
 	)
-	var i CreateTemplateBoardFieldRow
+	var i BoardField
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -228,15 +215,6 @@ func (q *Queries) CreateTemplateBoardSwimlane(ctx context.Context, arg CreateTem
 	return i, err
 }
 
-const deleteNonSystemFieldsByBoardID = `-- name: DeleteNonSystemFieldsByBoardID :exec
-DELETE FROM fields WHERE board_id = $1 AND is_system = false
-`
-
-func (q *Queries) DeleteNonSystemFieldsByBoardID(ctx context.Context, boardID uuid.NullUUID) error {
-	_, err := q.db.ExecContext(ctx, deleteNonSystemFieldsByBoardID, boardID)
-	return err
-}
-
 const deleteProjectTemplate = `-- name: DeleteProjectTemplate :exec
 DELETE FROM templates WHERE id = $1
 `
@@ -274,7 +252,7 @@ func (q *Queries) DeleteTemplateBoardColumnsByBoardID(ctx context.Context, board
 }
 
 const deleteTemplateBoardFieldByID = `-- name: DeleteTemplateBoardFieldByID :exec
-DELETE FROM fields WHERE id = $1
+DELETE FROM board_fields WHERE id = $1
 `
 
 func (q *Queries) DeleteTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) error {
@@ -283,10 +261,10 @@ func (q *Queries) DeleteTemplateBoardFieldByID(ctx context.Context, id uuid.UUID
 }
 
 const deleteTemplateBoardFieldsByBoardID = `-- name: DeleteTemplateBoardFieldsByBoardID :exec
-DELETE FROM fields WHERE board_id = $1
+DELETE FROM board_fields WHERE board_id = $1
 `
 
-func (q *Queries) DeleteTemplateBoardFieldsByBoardID(ctx context.Context, boardID uuid.NullUUID) error {
+func (q *Queries) DeleteTemplateBoardFieldsByBoardID(ctx context.Context, boardID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, deleteTemplateBoardFieldsByBoardID, boardID)
 	return err
 }
@@ -347,21 +325,22 @@ func (q *Queries) GetProjectTemplateByType(ctx context.Context, projectType stri
 }
 
 const getTemplateBoardByID = `-- name: GetTemplateBoardByID :one
-SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by
+SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options
 FROM boards
 WHERE id = $1
 `
 
 type GetTemplateBoardByIDRow struct {
-	ID              uuid.UUID      `json:"id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	IsDefault       bool           `json:"is_default"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ID              uuid.UUID             `json:"id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	IsDefault       bool                  `json:"is_default"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 func (q *Queries) GetTemplateBoardByID(ctx context.Context, id uuid.UUID) (GetTemplateBoardByIDRow, error) {
@@ -377,6 +356,7 @@ func (q *Queries) GetTemplateBoardByID(ctx context.Context, id uuid.UUID) (GetTe
 		&i.PriorityType,
 		&i.EstimationUnit,
 		&i.SwimlaneGroupBy,
+		&i.PriorityOptions,
 	)
 	return i, err
 }
@@ -404,32 +384,19 @@ func (q *Queries) GetTemplateBoardColumnByID(ctx context.Context, id uuid.UUID) 
 }
 
 const getTemplateBoardFieldByID = `-- name: GetTemplateBoardFieldByID :one
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
 WHERE id = $1
 `
 
-type GetTemplateBoardFieldByIDRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) GetTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) (GetTemplateBoardFieldByIDRow, error) {
+func (q *Queries) GetTemplateBoardFieldByID(ctx context.Context, id uuid.UUID) (BoardField, error) {
 	row := q.db.QueryRowContext(ctx, getTemplateBoardFieldByID, id)
-	var i GetTemplateBoardFieldByIDRow
+	var i BoardField
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -555,38 +522,25 @@ func (q *Queries) ListTemplateBoardColumns(ctx context.Context, boardID uuid.UUI
 }
 
 const listTemplateBoardCustomFields = `-- name: ListTemplateBoardCustomFields :many
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE board_id = $1 AND kind = 'board_field' AND is_system = false
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
+WHERE board_id = $1
 `
 
-type ListTemplateBoardCustomFieldsRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) ListTemplateBoardCustomFields(ctx context.Context, boardID uuid.NullUUID) ([]ListTemplateBoardCustomFieldsRow, error) {
+func (q *Queries) ListTemplateBoardCustomFields(ctx context.Context, boardID uuid.UUID) ([]BoardField, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateBoardCustomFields, boardID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListTemplateBoardCustomFieldsRow{}
+	items := []BoardField{}
 	for rows.Next() {
-		var i ListTemplateBoardCustomFieldsRow
+		var i BoardField
 		if err := rows.Scan(
 			&i.ID,
 			&i.BoardID,
 			&i.Name,
-			&i.Description,
 			&i.FieldType,
-			&i.IsSystem,
 			&i.IsRequired,
 			&i.Options,
 		); err != nil {
@@ -605,39 +559,26 @@ func (q *Queries) ListTemplateBoardCustomFields(ctx context.Context, boardID uui
 
 const listTemplateBoardFields = `-- name: ListTemplateBoardFields :many
 
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE board_id = $1 AND kind = 'board_field'
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
+WHERE board_id = $1
 `
 
-type ListTemplateBoardFieldsRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
 // Template board custom fields (now in unified fields table)
-func (q *Queries) ListTemplateBoardFields(ctx context.Context, boardID uuid.NullUUID) ([]ListTemplateBoardFieldsRow, error) {
+func (q *Queries) ListTemplateBoardFields(ctx context.Context, boardID uuid.UUID) ([]BoardField, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateBoardFields, boardID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListTemplateBoardFieldsRow{}
+	items := []BoardField{}
 	for rows.Next() {
-		var i ListTemplateBoardFieldsRow
+		var i BoardField
 		if err := rows.Scan(
 			&i.ID,
 			&i.BoardID,
 			&i.Name,
-			&i.Description,
 			&i.FieldType,
-			&i.IsSystem,
 			&i.IsRequired,
 			&i.Options,
 		); err != nil {
@@ -695,22 +636,23 @@ func (q *Queries) ListTemplateBoardSwimlanes(ctx context.Context, boardID uuid.U
 
 const listTemplateBoardsByTemplateID = `-- name: ListTemplateBoardsByTemplateID :many
 
-SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by
+SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options
 FROM boards
 WHERE template_id = $1
 ORDER BY sort_order ASC
 `
 
 type ListTemplateBoardsByTemplateIDRow struct {
-	ID              uuid.UUID      `json:"id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	IsDefault       bool           `json:"is_default"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ID              uuid.UUID             `json:"id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	IsDefault       bool                  `json:"is_default"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 // Template boards (now in unified boards table, filtered by template_id)
@@ -733,6 +675,7 @@ func (q *Queries) ListTemplateBoardsByTemplateID(ctx context.Context, templateID
 			&i.PriorityType,
 			&i.EstimationUnit,
 			&i.SwimlaneGroupBy,
+			&i.PriorityOptions,
 		); err != nil {
 			return nil, err
 		}
@@ -783,32 +726,34 @@ func (q *Queries) UpdateProjectTemplate(ctx context.Context, arg UpdateProjectTe
 
 const updateTemplateBoard = `-- name: UpdateTemplateBoard :one
 UPDATE boards
-SET name = $2, description = $3, is_default = $4, sort_order = $5, priority_type = $6, estimation_unit = $7, swimlane_group_by = $8
+SET name = $2, description = $3, is_default = $4, sort_order = $5, priority_type = $6, estimation_unit = $7, swimlane_group_by = $8, priority_options = $9
 WHERE id = $1
-RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by
+RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options
 `
 
 type UpdateTemplateBoardParams struct {
-	ID              uuid.UUID      `json:"id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	IsDefault       bool           `json:"is_default"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ID              uuid.UUID             `json:"id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	IsDefault       bool                  `json:"is_default"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 type UpdateTemplateBoardRow struct {
-	ID              uuid.UUID      `json:"id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	IsDefault       bool           `json:"is_default"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ID              uuid.UUID             `json:"id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	IsDefault       bool                  `json:"is_default"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 func (q *Queries) UpdateTemplateBoard(ctx context.Context, arg UpdateTemplateBoardParams) (UpdateTemplateBoardRow, error) {
@@ -821,6 +766,7 @@ func (q *Queries) UpdateTemplateBoard(ctx context.Context, arg UpdateTemplateBoa
 		arg.PriorityType,
 		arg.EstimationUnit,
 		arg.SwimlaneGroupBy,
+		arg.PriorityOptions,
 	)
 	var i UpdateTemplateBoardRow
 	err := row.Scan(
@@ -833,6 +779,7 @@ func (q *Queries) UpdateTemplateBoard(ctx context.Context, arg UpdateTemplateBoa
 		&i.PriorityType,
 		&i.EstimationUnit,
 		&i.SwimlaneGroupBy,
+		&i.PriorityOptions,
 	)
 	return i, err
 }
@@ -889,10 +836,10 @@ func (q *Queries) UpdateTemplateBoardColumnOrder(ctx context.Context, arg Update
 }
 
 const updateTemplateBoardField = `-- name: UpdateTemplateBoardField :one
-UPDATE fields
+UPDATE board_fields
 SET name = $2, is_required = $3, options = $4
 WHERE id = $1
-RETURNING id, board_id, name, description, field_type, is_system, is_required, options
+RETURNING id, board_id, name, field_type, is_required, options
 `
 
 type UpdateTemplateBoardFieldParams struct {
@@ -902,32 +849,19 @@ type UpdateTemplateBoardFieldParams struct {
 	Options    pqtype.NullRawMessage `json:"options"`
 }
 
-type UpdateTemplateBoardFieldRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) UpdateTemplateBoardField(ctx context.Context, arg UpdateTemplateBoardFieldParams) (UpdateTemplateBoardFieldRow, error) {
+func (q *Queries) UpdateTemplateBoardField(ctx context.Context, arg UpdateTemplateBoardFieldParams) (BoardField, error) {
 	row := q.db.QueryRowContext(ctx, updateTemplateBoardField,
 		arg.ID,
 		arg.Name,
 		arg.IsRequired,
 		arg.Options,
 	)
-	var i UpdateTemplateBoardFieldRow
+	var i BoardField
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)

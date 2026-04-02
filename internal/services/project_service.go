@@ -63,13 +63,20 @@ func (s *ProjectService) CreateProject(ctx context.Context, ownerID uuid.UUID, n
 		descPtr = &description
 	}
 
+	var sprintDuration *int
+	if pt == domain.ProjectTypeScrum {
+		d := 2
+		sprintDuration = &d
+	}
+
 	p := &domain.Project{
-		Key:         key,
-		Name:        name,
-		Description: descPtr,
-		Type:        pt,
-		OwnerID:     ownerID,
-		Status:      domain.ProjectStatusActive,
+		Key:                 key,
+		Name:                name,
+		Description:         descPtr,
+		Type:                pt,
+		OwnerID:             ownerID,
+		Status:              domain.ProjectStatusActive,
+		SprintDurationWeeks: sprintDuration,
 	}
 
 	created, err := s.repo.Create(ctx, p)
@@ -186,13 +193,12 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 		fieldIDMap := make(map[string]string) // template field ID → project field ID
 		for _, cf := range tb.CustomFields {
 			newField, err := s.boardRepo.CreateCustomField(ctx, &domain.BoardCustomField{
-				BoardID:     board.ID,
-				Name:        cf.Name,
-				Description: cf.Description,
-				FieldType:   cf.FieldType,
-				IsSystem:    cf.IsSystem,
-				IsRequired:  cf.IsRequired,
-				Options:     cf.Options,
+				BoardID:    board.ID,
+				Name:       cf.Name,
+				FieldType:  cf.FieldType,
+				IsSystem:   cf.IsSystem,
+				IsRequired: cf.IsRequired,
+				Options:    cf.Options,
 			})
 			if err == nil && newField != nil {
 				fieldIDMap[cf.ID.String()] = newField.ID
@@ -212,14 +218,12 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 	nullPID := uuid.NullUUID{UUID: projectID, Valid: true}
 	for _, tp := range data.Params {
 		_, _ = s.projectParamRepo.Create(ctx, db.CreateProjectParamParams{
-			ProjectID:   nullPID,
-			Name:        tp.Name,
-			Description: tp.Description,
-			FieldType:   tp.FieldType,
-			IsSystem:    tp.IsSystem,
-			IsRequired:  tp.IsRequired,
-			Options:     repositories.OptionsToJSON(tp.Options),
-			Value:       sql.NullString{},
+			ProjectID:  nullPID,
+			Name:       tp.Name,
+			FieldType:  tp.FieldType,
+			IsRequired: tp.IsRequired,
+			Options:    repositories.OptionsToJSON(tp.Options),
+			Value:      sql.NullString{},
 		})
 	}
 
@@ -256,8 +260,45 @@ func (s *ProjectService) ListProjects(ctx context.Context, userID uuid.UUID, que
 	return s.repo.ListUserProjects(ctx, userID, query, status, projectType)
 }
 
-func (s *ProjectService) UpdateProject(ctx context.Context, p *domain.Project) (*domain.Project, error) {
-	return s.repo.Update(ctx, p)
+func (s *ProjectService) UpdateProject(ctx context.Context, p *domain.Project, newOwnerID *uuid.UUID) (*domain.Project, error) {
+	updated, err := s.repo.Update(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	// Если сменился owner — убедиться что он участник проекта с admin-ролью
+	if newOwnerID != nil && s.memberRepo != nil {
+		if err := s.ensureOwnerIsMember(ctx, p.ID, *newOwnerID); err != nil {
+			return nil, err
+		}
+	}
+
+	return updated, nil
+}
+
+func (s *ProjectService) ensureOwnerIsMember(ctx context.Context, projectID, ownerID uuid.UUID) error {
+	// Проверяем, является ли owner участником проекта
+	member, err := s.memberRepo.GetByProjectAndUser(ctx, projectID, ownerID)
+	if err != nil && err != domain.ErrNotFound {
+		return err
+	}
+
+	if member == nil {
+		// Добавляем в участники
+		member, err = s.memberRepo.AddMember(ctx, projectID, ownerID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Назначаем admin-роль
+	adminRoleID, err := s.projectRoleRepo.GetProjectAdminRoleID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	// Добавляем admin-роль к существующим ролям (не заменяем)
+	return s.memberRepo.ReplaceMemberRoles(ctx, member.ID, []uuid.UUID{adminRoleID})
 }
 
 func (s *ProjectService) DeleteProject(ctx context.Context, id uuid.UUID, confirm bool) error {

@@ -198,6 +198,7 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	if req.Status != nil {
 		p.Status = domain.ProjectStatus(*req.Status)
 	}
+	var newOwnerID *uuid.UUID
 	if req.OwnerID != nil {
 		ownerID, err := uuid.Parse(*req.OwnerID)
 		if err != nil {
@@ -205,9 +206,16 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 			return
 		}
 		p.OwnerID = ownerID
+		newOwnerID = &ownerID
+	}
+	if req.SprintDurationWeeks != nil {
+		p.SprintDurationWeeks = req.SprintDurationWeeks
+	}
+	if req.IncompleteTasksAction != nil {
+		p.IncompleteTasksAction = *req.IncompleteTasksAction
 	}
 
-	updated, err := h.service.UpdateProject(c.Request.Context(), p)
+	updated, err := h.service.UpdateProject(c.Request.Context(), p, newOwnerID)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Проект не найден")
@@ -247,14 +255,16 @@ func mapProjectToDTO(p *domain.Project) dto.ProjectResponse {
 		desc = *p.Description
 	}
 	resp := dto.ProjectResponse{
-		ID:          p.ID,
-		Key:         p.Key,
-		Name:        p.Name,
-		Description: desc,
-		ProjectType: string(p.Type),
-		OwnerID:     p.OwnerID,
-		Status:      string(p.Status),
-		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
+		ID:                    p.ID,
+		Key:                   p.Key,
+		Name:                  p.Name,
+		Description:           desc,
+		ProjectType:           string(p.Type),
+		OwnerID:               p.OwnerID,
+		Status:                string(p.Status),
+		SprintDurationWeeks:   p.SprintDurationWeeks,
+		IncompleteTasksAction: p.IncompleteTasksAction,
+		CreatedAt:             p.CreatedAt.Format(time.RFC3339),
 	}
 	if p.Owner != nil {
 		resp.Owner = &dto.ProjectOwnerResponse{

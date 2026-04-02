@@ -15,18 +15,20 @@ import (
 
 const createProject = `-- name: CreateProject :one
 
-INSERT INTO projects (key, name, description, project_type, owner_id, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, key, name, description, project_type, owner_id, status, created_at
+INSERT INTO projects (key, name, description, project_type, owner_id, status, sprint_duration_weeks, incomplete_tasks_action)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
 `
 
 type CreateProjectParams struct {
-	Key         string         `json:"key"`
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
-	ProjectType string         `json:"project_type"`
-	OwnerID     uuid.UUID      `json:"owner_id"`
-	Status      string         `json:"status"`
+	Key                   string         `json:"key"`
+	Name                  string         `json:"name"`
+	Description           sql.NullString `json:"description"`
+	ProjectType           string         `json:"project_type"`
+	OwnerID               uuid.UUID      `json:"owner_id"`
+	Status                string         `json:"status"`
+	SprintDurationWeeks   sql.NullInt32  `json:"sprint_duration_weeks"`
+	IncompleteTasksAction string         `json:"incomplete_tasks_action"`
 }
 
 // Projects
@@ -38,6 +40,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.ProjectType,
 		arg.OwnerID,
 		arg.Status,
+		arg.SprintDurationWeeks,
+		arg.IncompleteTasksAction,
 	)
 	var i Project
 	err := row.Scan(
@@ -49,6 +53,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.SprintDurationWeeks,
+		&i.IncompleteTasksAction,
 	)
 	return i, err
 }
@@ -64,7 +70,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id uuid.UUID) error {
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at
+SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
 FROM projects
 WHERE id = $1
 `
@@ -81,12 +87,14 @@ func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, er
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.SprintDurationWeeks,
+		&i.IncompleteTasksAction,
 	)
 	return i, err
 }
 
 const getProjectByKey = `-- name: GetProjectByKey :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at
+SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
 FROM projects
 WHERE key = $1
 `
@@ -103,6 +111,8 @@ func (q *Queries) GetProjectByKey(ctx context.Context, key string) (Project, err
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.SprintDurationWeeks,
+		&i.IncompleteTasksAction,
 	)
 	return i, err
 }
@@ -190,17 +200,21 @@ UPDATE projects
 SET name = COALESCE($1, name),
     description = $2,
     status = COALESCE($3, status),
-    owner_id = COALESCE($4, owner_id)
-WHERE id = $5
-RETURNING id, key, name, description, project_type, owner_id, status, created_at
+    owner_id = COALESCE($4, owner_id),
+    sprint_duration_weeks = COALESCE($5, sprint_duration_weeks),
+    incomplete_tasks_action = COALESCE($6, incomplete_tasks_action)
+WHERE id = $7
+RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
 `
 
 type UpdateProjectParams struct {
-	Name        sql.NullString `json:"name"`
-	Description sql.NullString `json:"description"`
-	Status      sql.NullString `json:"status"`
-	OwnerID     uuid.NullUUID  `json:"owner_id"`
-	ID          uuid.UUID      `json:"id"`
+	Name                  sql.NullString `json:"name"`
+	Description           sql.NullString `json:"description"`
+	Status                sql.NullString `json:"status"`
+	OwnerID               uuid.NullUUID  `json:"owner_id"`
+	SprintDurationWeeks   sql.NullInt32  `json:"sprint_duration_weeks"`
+	IncompleteTasksAction sql.NullString `json:"incomplete_tasks_action"`
+	ID                    uuid.UUID      `json:"id"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
@@ -209,6 +223,8 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.Description,
 		arg.Status,
 		arg.OwnerID,
+		arg.SprintDurationWeeks,
+		arg.IncompleteTasksAction,
 		arg.ID,
 	)
 	var i Project
@@ -221,6 +237,8 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.OwnerID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.SprintDurationWeeks,
+		&i.IncompleteTasksAction,
 	)
 	return i, err
 }

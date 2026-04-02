@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const addTagToTask = `-- name: AddTagToTask :exec
@@ -136,6 +137,49 @@ func (q *Queries) ListTagsByBoard(ctx context.Context, boardID uuid.UUID) ([]Tag
 			&i.BoardID,
 			&i.Name,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTagsByTaskIDs = `-- name: ListTagsByTaskIDs :many
+SELECT tt.task_id, t.id, t.board_id, t.name
+FROM tags t
+JOIN task_tags tt ON tt.tag_id = t.id
+WHERE tt.task_id = ANY($1::uuid[])
+ORDER BY t.name
+`
+
+type ListTagsByTaskIDsRow struct {
+	TaskID  uuid.UUID `json:"task_id"`
+	ID      uuid.UUID `json:"id"`
+	BoardID uuid.UUID `json:"board_id"`
+	Name    string    `json:"name"`
+}
+
+func (q *Queries) ListTagsByTaskIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]ListTagsByTaskIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTagsByTaskIDs, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTagsByTaskIDsRow{}
+	for rows.Next() {
+		var i ListTagsByTaskIDsRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.ID,
+			&i.BoardID,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}

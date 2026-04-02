@@ -1,17 +1,17 @@
 -- Projects
 
 -- name: CreateProject :one
-INSERT INTO projects (key, name, description, project_type, owner_id, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, key, name, description, project_type, owner_id, status, created_at;
+INSERT INTO projects (key, name, description, project_type, owner_id, status, sprint_duration_weeks, incomplete_tasks_action)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action;
 
 -- name: GetProjectByID :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at
+SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
 FROM projects
 WHERE id = $1;
 
 -- name: GetProjectByKey :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at
+SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
 FROM projects
 WHERE key = $1;
 
@@ -36,9 +36,11 @@ UPDATE projects
 SET name = COALESCE(sqlc.narg('name'), name),
     description = sqlc.narg('description'),
     status = COALESCE(sqlc.narg('status'), status),
-    owner_id = COALESCE(sqlc.narg('owner_id'), owner_id)
+    owner_id = COALESCE(sqlc.narg('owner_id'), owner_id),
+    sprint_duration_weeks = COALESCE(sqlc.narg('sprint_duration_weeks'), sprint_duration_weeks),
+    incomplete_tasks_action = COALESCE(sqlc.narg('incomplete_tasks_action'), incomplete_tasks_action)
 WHERE id = sqlc.arg('id')
-RETURNING id, key, name, description, project_type, owner_id, status, created_at;
+RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action;
 
 -- name: DeleteProject :exec
 DELETE FROM projects

@@ -35,7 +35,7 @@ func (r *projectParamRepository) List(ctx context.Context, projectID uuid.UUID) 
 	}
 	result := make([]domain.ProjectParam, len(rows))
 	for i, row := range rows {
-		result[i] = mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
+		result[i] = mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	}
 	return result, nil
 }
@@ -48,7 +48,7 @@ func (r *projectParamRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 		}
 		return nil, err
 	}
-	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
+	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
@@ -57,7 +57,7 @@ func (r *projectParamRepository) Create(ctx context.Context, params db.CreatePro
 	if err != nil {
 		return nil, err
 	}
-	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
+	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
@@ -69,7 +69,7 @@ func (r *projectParamRepository) Update(ctx context.Context, params db.UpdatePro
 		}
 		return nil, err
 	}
-	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.Description, row.FieldType, row.IsSystem, row.IsRequired, row.Options, row.Value)
+	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
@@ -77,7 +77,7 @@ func (r *projectParamRepository) Delete(ctx context.Context, id uuid.UUID) error
 	return r.q.DeleteProjectParamByID(ctx, id)
 }
 
-func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, description, fieldType string, isSystem, isRequired bool, options pqtype.NullRawMessage, value sql.NullString) domain.ProjectParam {
+func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, fieldType string, isRequired bool, options pqtype.NullRawMessage, value sql.NullString) domain.ProjectParam {
 	var val *string
 	if value.Valid {
 		v := value.String
@@ -88,14 +88,13 @@ func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, description
 		pid = projectID.UUID.String()
 	}
 	return domain.ProjectParam{
-		ID:          id.String(),
-		ProjectID:   pid,
-		Name:        name,
-		Description: description,
-		FieldType:   fieldType,
-		IsSystem:    isSystem,
-		IsRequired:  isRequired,
-		Options:     JSONToOptions(options),
-		Value:       val,
+		ID:         id.String(),
+		ProjectID:  pid,
+		Name:       name,
+		FieldType:  fieldType,
+		IsSystem:   false,
+		IsRequired: isRequired,
+		Options:    JSONToOptions(options),
+		Value:      val,
 	}
 }

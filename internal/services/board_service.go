@@ -23,17 +23,29 @@ func (s *BoardService) ListBoards(ctx context.Context, projectID uuid.UUID) ([]d
 	return s.repo.ListProjectBoards(ctx, projectID.String())
 }
 
-func (s *BoardService) CreateBoard(ctx context.Context, projectID uuid.UUID, name, description string, order int16, priorityType, estimationUnit, swimlaneGroupBy string) (*domain.Board, error) {
+func (s *BoardService) CreateBoard(ctx context.Context, projectID uuid.UUID, projectType, name, description string, order int16, priorityType, estimationUnit, swimlaneGroupBy string) (*domain.Board, error) {
 	var desc *string
 	if description != "" {
 		desc = &description
 	}
-	if priorityType == "" {
+
+	// Apply type-specific base structure
+	if projectType == "kanban" {
+		priorityType = "service_class"
+		estimationUnit = "time"
+		swimlaneGroupBy = domain.SystemBoardFieldIDs["priority"].String()
+	} else {
 		priorityType = "priority"
-	}
-	if estimationUnit == "" {
 		estimationUnit = "story_points"
+		swimlaneGroupBy = ""
 	}
+
+	// Auto-compute order if not provided
+	if order == 0 {
+		boards, _ := s.repo.ListProjectBoards(ctx, projectID.String())
+		order = int16(len(boards) + 1)
+	}
+
 	pid := projectID.String()
 	board := &domain.Board{
 		ProjectID:       &pid,
@@ -44,7 +56,47 @@ func (s *BoardService) CreateBoard(ctx context.Context, projectID uuid.UUID, nam
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: swimlaneGroupBy,
 	}
-	return s.repo.CreateBoard(ctx, board)
+	created, err := s.repo.CreateBoard(ctx, board)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create default columns
+	defaults := repositories.DefaultColumns[projectType]
+	for i, d := range defaults {
+		st := domain.SystemStatusType(d.SystemType)
+		_, err := s.repo.CreateColumn(ctx, &domain.Column{
+			BoardID:    created.ID,
+			Name:       d.Name,
+			SystemType: &st,
+			Order:      int16(i + 1),
+			IsLocked:   d.IsLocked,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Create default swimlanes when grouped by the priority field
+	if swimlaneGroupBy == domain.SystemBoardFieldIDs["priority"].String() {
+		for _, pt := range repositories.PriorityTypes {
+			if pt.Key == priorityType {
+				for i, swName := range pt.DefaultValues {
+					_, err := s.repo.CreateSwimlane(ctx, &domain.Swimlane{
+						BoardID: created.ID,
+						Name:    swName,
+						Order:   int16(i + 1),
+					})
+					if err != nil {
+						return nil, err
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return created, nil
 }
 
 func (s *BoardService) GetBoard(ctx context.Context, id uuid.UUID) (*domain.Board, error) {
@@ -59,7 +111,28 @@ func (s *BoardService) UpdateBoard(ctx context.Context, b *domain.Board) (*domai
 }
 
 func (s *BoardService) DeleteBoard(ctx context.Context, id uuid.UUID) error {
-	return s.repo.DeleteBoard(ctx, id.String())
+	// Get board before deletion to know the project.
+	board, err := s.repo.GetBoardByID(ctx, id.String())
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.DeleteBoard(ctx, id.String()); err != nil {
+		return err
+	}
+
+	// Recompact board orders for the project.
+	if board.ProjectID != nil {
+		boards, _ := s.repo.ListProjectBoards(ctx, *board.ProjectID)
+		sort.Slice(boards, func(i, j int) bool { return boards[i].Order < boards[j].Order })
+		for i, b := range boards {
+			newOrder := int16(i + 1)
+			if b.Order != newOrder {
+				_ = s.repo.UpdateBoardOrder(ctx, b.ID, newOrder)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *BoardService) ListColumns(ctx context.Context, boardID uuid.UUID) ([]domain.Column, error) {
@@ -347,7 +420,7 @@ func (s *BoardService) CreateCustomField(ctx context.Context, boardID uuid.UUID,
 	return s.repo.CreateCustomField(ctx, f)
 }
 
-func (s *BoardService) UpdateCustomField(ctx context.Context, boardID, fieldID uuid.UUID, name *string, description *string, isRequired *bool, options []string) (*domain.BoardCustomField, error) {
+func (s *BoardService) UpdateCustomField(ctx context.Context, boardID, fieldID uuid.UUID, name *string, isRequired *bool, options []string) (*domain.BoardCustomField, error) {
 	existing, err := s.repo.GetCustomFieldByID(ctx, fieldID.String())
 	if err != nil {
 		return nil, err
@@ -356,11 +429,11 @@ func (s *BoardService) UpdateCustomField(ctx context.Context, boardID, fieldID u
 		return nil, domain.ErrNotFound
 	}
 
-	// Системные поля: запрещено менять name, description, isRequired.
+	// Системные поля: запрещено менять name, isRequired.
 	// Исключение: «Приоритизация» и «Оценка трудозатрат» — можно менять options.
 	if existing.IsSystem {
 		configurable := existing.Name == "Приоритизация" || existing.Name == "Оценка трудозатрат"
-		if name != nil || description != nil || isRequired != nil {
+		if name != nil || isRequired != nil {
 			return nil, domain.ErrSystemField
 		}
 		if !configurable && options != nil {
@@ -372,10 +445,6 @@ func (s *BoardService) UpdateCustomField(ctx context.Context, boardID, fieldID u
 	if name != nil {
 		finalName = *name
 	}
-	finalDesc := existing.Description
-	if description != nil {
-		finalDesc = *description
-	}
 	finalRequired := existing.IsRequired
 	if isRequired != nil {
 		finalRequired = *isRequired
@@ -386,11 +455,10 @@ func (s *BoardService) UpdateCustomField(ctx context.Context, boardID, fieldID u
 	}
 
 	return s.repo.UpdateCustomField(ctx, &domain.BoardCustomField{
-		ID:          existing.ID,
-		Name:        finalName,
-		Description: finalDesc,
-		IsRequired:  finalRequired,
-		Options:     finalOptions,
+		ID:         existing.ID,
+		Name:       finalName,
+		IsRequired: finalRequired,
+		Options:    finalOptions,
 	})
 }
 

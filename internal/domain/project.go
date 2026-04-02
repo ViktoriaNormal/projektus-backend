@@ -29,13 +29,15 @@ type ProjectOwner struct {
 }
 
 type Project struct {
-	ID          uuid.UUID     `json:"id"`
-	Key         string        `json:"key"`
-	Name        string        `json:"name"`
-	Description *string       `json:"description,omitempty"`
-	Type        ProjectType   `json:"project_type"`
-	OwnerID     uuid.UUID     `json:"owner_id"`
-	Status      ProjectStatus `json:"status"`
-	CreatedAt   time.Time     `json:"-"`
-	Owner       *ProjectOwner `json:"-"`
+	ID                    uuid.UUID     `json:"id"`
+	Key                   string        `json:"key"`
+	Name                  string        `json:"name"`
+	Description           *string       `json:"description,omitempty"`
+	Type                  ProjectType   `json:"project_type"`
+	OwnerID               uuid.UUID     `json:"owner_id"`
+	Status                ProjectStatus `json:"status"`
+	SprintDurationWeeks   *int          `json:"sprint_duration_weeks,omitempty"`
+	IncompleteTasksAction string        `json:"incomplete_tasks_action"`
+	CreatedAt             time.Time     `json:"-"`
+	Owner                 *ProjectOwner `json:"-"`
 }

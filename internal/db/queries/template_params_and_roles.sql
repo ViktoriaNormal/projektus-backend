@@ -1,51 +1,51 @@
--- Template project params (in unified `fields` table, kind='project_param')
+-- Template project params
 
 -- name: ListTemplateProjectParams :many
-SELECT id, template_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE template_id = $1 AND kind = 'project_param';
+SELECT id, template_id, name, field_type, is_required, options
+FROM project_params
+WHERE template_id = $1;
 
 -- name: GetTemplateProjectParamByID :one
-SELECT id, template_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE id = $1 AND kind = 'project_param';
+SELECT id, template_id, name, field_type, is_required, options
+FROM project_params
+WHERE id = $1;
 
 -- name: CreateTemplateProjectParam :one
-INSERT INTO fields (kind, template_id, name, description, field_type, is_required, options)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6)
-RETURNING id, template_id, name, description, field_type, is_system, is_required, options;
+INSERT INTO project_params (template_id, name, field_type, is_required, options)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, template_id, name, field_type, is_required, options;
 
 -- name: UpdateTemplateProjectParam :one
-UPDATE fields
+UPDATE project_params
 SET name = $2, is_required = $3, options = $4
-WHERE id = $1 AND kind = 'project_param'
-RETURNING id, template_id, name, description, field_type, is_system, is_required, options;
+WHERE id = $1
+RETURNING id, template_id, name, field_type, is_required, options;
 
 -- name: DeleteTemplateProjectParamByID :exec
-DELETE FROM fields WHERE id = $1 AND kind = 'project_param';
+DELETE FROM project_params WHERE id = $1;
 
 -- Template roles (in unified roles table, scope='template')
 
 -- name: ListTemplateRoles :many
-SELECT id, template_id, name, description, is_admin
+SELECT id, template_id, name, is_admin
 FROM roles
 WHERE template_id = $1;
 
 -- name: GetTemplateRoleByID :one
-SELECT id, template_id, name, description, is_admin
+SELECT id, template_id, name, is_admin
 FROM roles
 WHERE id = $1;
 
 -- name: CreateTemplateRole :one
 INSERT INTO roles (template_id, scope, name, description)
 VALUES ($1, 'template', $2, $3)
-RETURNING id, template_id, name, description, is_admin;
+RETURNING id, template_id, name, is_admin;
 
 -- name: UpdateTemplateRole :one
 UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, template_id, name, description, is_admin;
+RETURNING id, template_id, name, is_admin;
 
 -- name: DeleteTemplateRoleByID :exec
 DELETE FROM roles WHERE id = $1;

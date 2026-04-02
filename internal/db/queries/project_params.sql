@@ -1,28 +1,28 @@
--- Project params (stored in unified `fields` table, kind='project_param')
+-- Project params (custom only; system params generated from Go constants)
 
 -- name: ListProjectParams :many
-SELECT id, project_id, name, description, field_type, is_system, is_required, options, value
-FROM fields
-WHERE project_id = $1 AND kind = 'project_param';
+SELECT id, project_id, name, field_type, is_required, options, value
+FROM project_params
+WHERE project_id = $1;
 
 -- name: GetProjectParamByID :one
-SELECT id, project_id, name, description, field_type, is_system, is_required, options, value
-FROM fields
-WHERE id = $1 AND kind = 'project_param';
+SELECT id, project_id, name, field_type, is_required, options, value
+FROM project_params
+WHERE id = $1;
 
 -- name: CreateProjectParam :one
-INSERT INTO fields (kind, project_id, name, description, field_type, is_system, is_required, options, value)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, project_id, name, description, field_type, is_system, is_required, options, value;
+INSERT INTO project_params (project_id, name, field_type, is_required, options, value)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, project_id, name, field_type, is_required, options, value;
 
 -- name: UpdateProjectParam :one
-UPDATE fields
+UPDATE project_params
 SET name = COALESCE(sqlc.narg('name'), name),
     is_required = COALESCE(sqlc.narg('is_required'), is_required),
     options = COALESCE(sqlc.narg('options'), options),
     value = sqlc.narg('value')
-WHERE id = sqlc.arg('id') AND kind = 'project_param'
-RETURNING id, project_id, name, description, field_type, is_system, is_required, options, value;
+WHERE id = sqlc.arg('id')
+RETURNING id, project_id, name, field_type, is_required, options, value;
 
 -- name: DeleteProjectParamByID :exec
-DELETE FROM fields WHERE id = $1 AND kind = 'project_param';
+DELETE FROM project_params WHERE id = $1;

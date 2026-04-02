@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
@@ -87,11 +88,12 @@ func (r *boardRepository) CreateBoard(ctx context.Context, b *domain.Board) (*do
 		PriorityType:    b.PriorityType,
 		EstimationUnit:  b.EstimationUnit,
 		SwimlaneGroupBy: b.SwimlaneGroupBy,
+		PriorityOptions: OptionsToJSON(b.PriorityOptions),
 	})
 	if err != nil {
 		return nil, err
 	}
-	dbBoard := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
+	dbBoard := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy, row.PriorityOptions)
 	return &dbBoard, nil
 }
 
@@ -107,7 +109,7 @@ func (r *boardRepository) GetBoardByID(ctx context.Context, id string) (*domain.
 		}
 		return nil, err
 	}
-	b := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
+	b := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy, row.PriorityOptions)
 	return &b, nil
 }
 
@@ -122,7 +124,7 @@ func (r *boardRepository) ListProjectBoards(ctx context.Context, projectID strin
 	}
 	result := make([]domain.Board, len(rows))
 	for i, row := range rows {
-		result[i] = mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
+		result[i] = mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy, row.PriorityOptions)
 	}
 	return result, nil
 }
@@ -148,12 +150,15 @@ func (r *boardRepository) UpdateBoard(ctx context.Context, b *domain.Board) (*do
 	}
 	params.SwimlaneGroupBy = sql.NullString{String: b.SwimlaneGroupBy, Valid: true}
 	params.IsDefault = sql.NullBool{Bool: b.IsDefault, Valid: true}
+	if len(b.PriorityOptions) > 0 {
+		params.PriorityOptions = OptionsToJSON(b.PriorityOptions)
+	}
 
 	row, err := r.q.UpdateBoard(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	updated := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy)
+	updated := mapBoardRowToDomain(row.ID, row.ProjectID, row.TemplateID, row.Name, row.Description, row.IsDefault, row.SortOrder, row.PriorityType, row.EstimationUnit, row.SwimlaneGroupBy, row.PriorityOptions)
 	return &updated, nil
 }
 
@@ -432,7 +437,7 @@ func (r *boardRepository) CountTasksInColumn(ctx context.Context, id string) (in
 	if err != nil {
 		return 0, err
 	}
-	count, err := r.q.CountTasksInColumn(ctx, uid)
+	count, err := r.q.CountTasksInColumn(ctx, uuid.NullUUID{UUID: uid, Valid: true})
 	return int(count), err
 }
 
@@ -495,15 +500,15 @@ func (r *boardRepository) ListCustomFields(ctx context.Context, boardID string) 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.q.ListBoardCustomFields(ctx, uuid.NullUUID{UUID: bid, Valid: true})
+	rows, err := r.q.ListBoardCustomFields(ctx, bid)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]domain.BoardCustomField, len(rows))
 	for i, row := range rows {
 		result[i] = domain.BoardCustomField{
-			ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
-			Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+			ID: row.ID.String(), BoardID: row.BoardID.String(), Name: row.Name,
+			FieldType: row.FieldType, IsSystem: false,
 			IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 		}
 	}
@@ -523,8 +528,8 @@ func (r *boardRepository) GetCustomFieldByID(ctx context.Context, id string) (*d
 		return nil, err
 	}
 	f := domain.BoardCustomField{
-		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
-		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+		ID: row.ID.String(), BoardID: row.BoardID.String(), Name: row.Name,
+		FieldType: row.FieldType, IsSystem: false,
 		IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 	}
 	return &f, nil
@@ -536,20 +541,18 @@ func (r *boardRepository) CreateCustomField(ctx context.Context, f *domain.Board
 		return nil, err
 	}
 	row, err := r.q.CreateBoardCustomField(ctx, db.CreateBoardCustomFieldParams{
-		BoardID:     uuid.NullUUID{UUID: bid, Valid: true},
-		Name:        f.Name,
-		Description: f.Description,
-		FieldType:   f.FieldType,
-		IsSystem:    f.IsSystem,
-		IsRequired:  f.IsRequired,
-		Options:     OptionsToJSON(f.Options),
+		BoardID:    bid,
+		Name:       f.Name,
+		FieldType:  f.FieldType,
+		IsRequired: f.IsRequired,
+		Options:    OptionsToJSON(f.Options),
 	})
 	if err != nil {
 		return nil, err
 	}
 	created := domain.BoardCustomField{
-		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
-		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+		ID: row.ID.String(), BoardID: row.BoardID.String(), Name: row.Name,
+		FieldType: row.FieldType, IsSystem: false,
 		IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 	}
 	return &created, nil
@@ -570,8 +573,8 @@ func (r *boardRepository) UpdateCustomField(ctx context.Context, f *domain.Board
 		return nil, err
 	}
 	updated := domain.BoardCustomField{
-		ID: row.ID.String(), BoardID: row.BoardID.UUID.String(), Name: row.Name,
-		Description: row.Description, FieldType: row.FieldType, IsSystem: row.IsSystem,
+		ID: row.ID.String(), BoardID: row.BoardID.String(), Name: row.Name,
+		FieldType: row.FieldType, IsSystem: false,
 		IsRequired: row.IsRequired, Options: JSONToOptions(row.Options),
 	}
 	return &updated, nil
@@ -585,7 +588,7 @@ func (r *boardRepository) DeleteCustomField(ctx context.Context, id string) erro
 	return r.q.DeleteBoardCustomFieldByID(ctx, uid)
 }
 
-func mapBoardRowToDomain(id uuid.UUID, projectID, templateID uuid.NullUUID, name string, desc sql.NullString, isDefault bool, sortOrder int16, priorityType, estimationUnit, swimlaneGroupBy string) domain.Board {
+func mapBoardRowToDomain(id uuid.UUID, projectID, templateID uuid.NullUUID, name string, desc sql.NullString, isDefault bool, sortOrder int16, priorityType, estimationUnit, swimlaneGroupBy string, priorityOptions pqtype.NullRawMessage) domain.Board {
 	var pid *string
 	if projectID.Valid {
 		s := projectID.UUID.String()
@@ -612,6 +615,7 @@ func mapBoardRowToDomain(id uuid.UUID, projectID, templateID uuid.NullUUID, name
 		PriorityType:    priorityType,
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: swimlaneGroupBy,
+		PriorityOptions: JSONToOptions(priorityOptions),
 	}
 }
 

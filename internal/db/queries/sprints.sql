@@ -46,3 +46,28 @@ SET status = CASE
                  ELSE 'active'
              END,
     updated_at = NOW();
+
+-- name: GetNextPlannedSprint :one
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status = 'planned'
+ORDER BY start_date ASC
+LIMIT 1;
+
+-- name: GetPlannedSprintsByProject :many
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status = 'planned'
+ORDER BY start_date ASC;
+
+-- name: GetNonCompletedSprintsByProject :many
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status IN ('planned', 'active')
+ORDER BY start_date ASC;
+
+-- name: GetCompletedSprintsByProject :many
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status IN ('completed', 'active')
+ORDER BY start_date ASC;

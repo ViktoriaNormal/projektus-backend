@@ -10,12 +10,13 @@ import (
 )
 
 type ProductBacklogService struct {
-	backlogRepo repositories.ProductBacklogRepository
-	taskRepo    repositories.TaskRepository
+	backlogRepo    repositories.ProductBacklogRepository
+	taskRepo       repositories.TaskRepository
+	sprintTaskRepo repositories.SprintTaskRepository
 }
 
-func NewProductBacklogService(backlogRepo repositories.ProductBacklogRepository, taskRepo repositories.TaskRepository) *ProductBacklogService {
-	return &ProductBacklogService{backlogRepo: backlogRepo, taskRepo: taskRepo}
+func NewProductBacklogService(backlogRepo repositories.ProductBacklogRepository, taskRepo repositories.TaskRepository, sprintTaskRepo repositories.SprintTaskRepository) *ProductBacklogService {
+	return &ProductBacklogService{backlogRepo: backlogRepo, taskRepo: taskRepo, sprintTaskRepo: sprintTaskRepo}
 }
 
 func (s *ProductBacklogService) GetProductBacklog(ctx context.Context, projectID uuid.UUID) ([]domain.Task, error) {
@@ -36,6 +37,14 @@ func (s *ProductBacklogService) GetProductBacklog(ctx context.Context, projectID
 }
 
 func (s *ProductBacklogService) AddToProductBacklog(ctx context.Context, projectID, taskID uuid.UUID, order int32) error {
+	// Удаляем из всех спринтов, если задача была в спринте
+	if err := s.sprintTaskRepo.RemoveTaskFromAllSprints(ctx, taskID); err != nil {
+		return err
+	}
+	// Сбрасываем column_id
+	if err := s.taskRepo.ClearColumnFromTask(ctx, taskID); err != nil {
+		return err
+	}
 	_, err := s.backlogRepo.Add(ctx, projectID, taskID, order)
 	return err
 }

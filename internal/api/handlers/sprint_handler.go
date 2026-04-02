@@ -13,11 +13,12 @@ import (
 )
 
 type SprintHandler struct {
-	service *services.SprintService
+	service    *services.SprintService
+	projectSvc *services.ProjectService
 }
 
-func NewSprintHandler(service *services.SprintService) *SprintHandler {
-	return &SprintHandler{service: service}
+func NewSprintHandler(service *services.SprintService, projectSvc *services.ProjectService) *SprintHandler {
+	return &SprintHandler{service: service, projectSvc: projectSvc}
 }
 
 func (h *SprintHandler) ListProjectSprints(c *gin.Context) {
@@ -66,13 +67,23 @@ func (h *SprintHandler) CreateSprint(c *gin.Context) {
 		duration = *req.DurationWeeks * 7
 	}
 	if duration <= 0 {
-		duration = 14 // значение по умолчанию 2 недели
+		// Use project's sprint_duration_weeks as default, fallback to 2 weeks
+		project, projErr := h.projectSvc.GetProject(c.Request.Context(), projectID)
+		if projErr == nil && project.SprintDurationWeeks != nil {
+			duration = *project.SprintDurationWeeks * 7
+		} else {
+			duration = 14
+		}
 	}
 
 	sprint, err := h.service.CreateSprint(c.Request.Context(), projectID, req.Name, req.Goal, start, duration)
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры спринта")
+			return
+		}
+		if err == domain.ErrSprintDatesOverlap {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Даты спринта пересекаются с существующим незавершённым спринтом")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать спринт")
@@ -184,6 +195,10 @@ func (h *SprintHandler) StartSprint(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Нельзя запустить завершённый спринт")
 			return
 		}
+		if err == domain.ErrActiveSprintExists {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Нельзя запустить спринт: уже есть активный спринт на проекте")
+			return
+		}
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Спринт не найден")
 			return
@@ -201,16 +216,48 @@ func (h *SprintHandler) CompleteSprint(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор спринта")
 		return
 	}
-	sprint, err := h.service.CompleteSprint(c.Request.Context(), id)
+	var req dto.CompleteSprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Необходимо указать incomplete_tasks_action (backlog или next_sprint)")
+		return
+	}
+	sprint, err := h.service.CompleteSprint(c.Request.Context(), id, req.IncompleteTasksAction)
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Спринт не найден")
+			return
+		}
+		if err == domain.ErrNoNextSprintForMove {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Нет следующего спринта для переноса незавершённых задач")
 			return
 		}
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось завершить спринт")
 		return
 	}
 	writeSuccess(c, mapSprintToDTO(sprint))
+}
+
+func (h *SprintHandler) GetSprintTasks(c *gin.Context) {
+	idStr := c.Param("sprintId")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор спринта")
+		return
+	}
+	tasks, err := h.service.GetSprintTasks(c.Request.Context(), id)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeError(c, http.StatusNotFound, "NOT_FOUND", "Спринт не найден")
+			return
+		}
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить задачи спринта")
+		return
+	}
+	resp := make([]dto.TaskResponse, 0, len(tasks))
+	for _, t := range tasks {
+		resp = append(resp, mapTaskToDTO(&t))
+	}
+	writeSuccess(c, resp)
 }
 
 func mapSprintToDTO(s *domain.Sprint) dto.SprintResponse {

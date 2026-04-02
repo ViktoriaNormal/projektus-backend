@@ -48,8 +48,8 @@ func (h *SprintBacklogHandler) GetSprintBacklog(c *gin.Context) {
 }
 
 type moveToSprintRequest struct {
-	SprintID uuid.UUID   `json:"sprintId" binding:"required"`
-	TaskIDs  []uuid.UUID `json:"taskIds" binding:"required,min=1"`
+	SprintID uuid.UUID   `json:"sprint_id" binding:"required"`
+	TaskIDs  []uuid.UUID `json:"task_ids" binding:"required,min=1"`
 }
 
 func (h *SprintBacklogHandler) MoveTasksToSprint(c *gin.Context) {

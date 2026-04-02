@@ -11,6 +11,11 @@ SELECT m.id, m.project_id, m.user_id
 FROM members m
 WHERE m.id = $1;
 
+-- name: GetMemberByProjectAndUser :one
+SELECT id, project_id, user_id
+FROM members
+WHERE project_id = $1 AND user_id = $2;
+
 -- name: AddProjectMember :one
 INSERT INTO members (project_id, user_id)
 VALUES ($1, $2)

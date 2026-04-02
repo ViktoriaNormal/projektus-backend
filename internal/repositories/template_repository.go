@@ -52,10 +52,10 @@ type TemplateRepository interface {
 	UpdateSwimlaneOrder(ctx context.Context, id uuid.UUID, order int16) error
 
 	// Custom fields
-	ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.ListTemplateBoardFieldsRow, error)
-	GetFieldByID(ctx context.Context, id uuid.UUID) (db.GetTemplateBoardFieldByIDRow, error)
-	CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error)
-	UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error)
+	ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.BoardField, error)
+	GetFieldByID(ctx context.Context, id uuid.UUID) (db.BoardField, error)
+	CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.BoardField, error)
+	UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.BoardField, error)
 	DeleteField(ctx context.Context, id uuid.UUID) error
 
 	// Project params
@@ -193,6 +193,7 @@ func (r *templateRepository) CreateBoard(ctx context.Context, params db.CreateTe
 		PriorityType:    row.PriorityType,
 		EstimationUnit:  row.EstimationUnit,
 		SwimlaneGroupBy: row.SwimlaneGroupBy,
+		PriorityOptions: row.PriorityOptions,
 	}, nil
 }
 
@@ -210,6 +211,7 @@ func (r *templateRepository) UpdateBoard(ctx context.Context, params db.UpdateTe
 		PriorityType:    row.PriorityType,
 		EstimationUnit:  row.EstimationUnit,
 		SwimlaneGroupBy: row.SwimlaneGroupBy,
+		PriorityOptions: row.PriorityOptions,
 	}, nil
 }
 
@@ -291,43 +293,39 @@ func (r *templateRepository) UpdateSwimlaneOrder(ctx context.Context, id uuid.UU
 
 // --- Custom fields ---
 
-func (r *templateRepository) ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.ListTemplateBoardFieldsRow, error) {
-	return r.q.ListTemplateBoardFields(ctx, uuid.NullUUID{UUID: boardID, Valid: true})
+func (r *templateRepository) ListCustomFields(ctx context.Context, boardID uuid.UUID) ([]db.BoardField, error) {
+	return r.q.ListTemplateBoardFields(ctx, boardID)
 }
 
-func (r *templateRepository) GetFieldByID(ctx context.Context, id uuid.UUID) (db.GetTemplateBoardFieldByIDRow, error) {
+func (r *templateRepository) GetFieldByID(ctx context.Context, id uuid.UUID) (db.BoardField, error) {
 	return r.q.GetTemplateBoardFieldByID(ctx, id)
 }
 
-func (r *templateRepository) CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error) {
+func (r *templateRepository) CreateField(ctx context.Context, params db.CreateTemplateBoardFieldParams) (db.BoardField, error) {
 	row, err := r.q.CreateTemplateBoardField(ctx, params)
 	if err != nil {
-		return db.ListTemplateBoardFieldsRow{}, err
+		return db.BoardField{}, err
 	}
-	return db.ListTemplateBoardFieldsRow{
+	return db.BoardField{
 		ID:         row.ID,
 		BoardID:    row.BoardID,
 		Name:       row.Name,
-		Description: row.Description,
 		FieldType:  row.FieldType,
-		IsSystem:   row.IsSystem,
 		IsRequired: row.IsRequired,
 		Options:    row.Options,
 	}, nil
 }
 
-func (r *templateRepository) UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.ListTemplateBoardFieldsRow, error) {
+func (r *templateRepository) UpdateField(ctx context.Context, params db.UpdateTemplateBoardFieldParams) (db.BoardField, error) {
 	row, err := r.q.UpdateTemplateBoardField(ctx, params)
 	if err != nil {
-		return db.ListTemplateBoardFieldsRow{}, err
+		return db.BoardField{}, err
 	}
-	return db.ListTemplateBoardFieldsRow{
+	return db.BoardField{
 		ID:         row.ID,
 		BoardID:    row.BoardID,
 		Name:       row.Name,
-		Description: row.Description,
 		FieldType:  row.FieldType,
-		IsSystem:   row.IsSystem,
 		IsRequired: row.IsRequired,
 		Options:    row.Options,
 	}, nil
@@ -404,14 +402,12 @@ func (r *templateRepository) CreateProjectParam(ctx context.Context, params db.C
 		return db.ListTemplateProjectParamsRow{}, err
 	}
 	return db.ListTemplateProjectParamsRow{
-		ID:          row.ID,
-		TemplateID:  row.TemplateID,
-		Name:        row.Name,
-		Description: row.Description,
-		FieldType:   row.FieldType,
-		IsSystem:    row.IsSystem,
-		IsRequired:  row.IsRequired,
-		Options:     row.Options,
+		ID:         row.ID,
+		TemplateID: row.TemplateID,
+		Name:       row.Name,
+		FieldType:  row.FieldType,
+		IsRequired: row.IsRequired,
+		Options:    row.Options,
 	}, nil
 }
 
@@ -421,14 +417,12 @@ func (r *templateRepository) UpdateProjectParam(ctx context.Context, params db.U
 		return db.ListTemplateProjectParamsRow{}, err
 	}
 	return db.ListTemplateProjectParamsRow{
-		ID:          row.ID,
-		TemplateID:  row.TemplateID,
-		Name:        row.Name,
-		Description: row.Description,
-		FieldType:   row.FieldType,
-		IsSystem:    row.IsSystem,
-		IsRequired:  row.IsRequired,
-		Options:     row.Options,
+		ID:         row.ID,
+		TemplateID: row.TemplateID,
+		Name:       row.Name,
+		FieldType:  row.FieldType,
+		IsRequired: row.IsRequired,
+		Options:    row.Options,
 	}, nil
 }
 
@@ -452,11 +446,10 @@ func (r *templateRepository) CreateRole(ctx context.Context, params db.CreateTem
 		return db.ListTemplateRolesRow{}, err
 	}
 	return db.ListTemplateRolesRow{
-		ID:          row.ID,
-		TemplateID:  row.TemplateID,
-		Name:        row.Name,
-		Description: row.Description,
-		IsAdmin:     row.IsAdmin,
+		ID:         row.ID,
+		TemplateID: row.TemplateID,
+		Name:       row.Name,
+		IsAdmin:    row.IsAdmin,
 	}, nil
 }
 
@@ -466,11 +459,10 @@ func (r *templateRepository) UpdateRole(ctx context.Context, params db.UpdateTem
 		return db.ListTemplateRolesRow{}, err
 	}
 	return db.ListTemplateRolesRow{
-		ID:          row.ID,
-		TemplateID:  row.TemplateID,
-		Name:        row.Name,
-		Description: row.Description,
-		IsAdmin:     row.IsAdmin,
+		ID:         row.ID,
+		TemplateID: row.TemplateID,
+		Name:       row.Name,
+		IsAdmin:    row.IsAdmin,
 	}, nil
 }
 

@@ -72,7 +72,7 @@ func (h *ProductBacklogHandler) AddTaskToBacklog(c *gin.Context) {
 		return
 	}
 	var body struct {
-		TaskID uuid.UUID `json:"taskId" binding:"required"`
+		TaskID uuid.UUID `json:"task_id" binding:"required"`
 		Order  int32     `json:"order"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {

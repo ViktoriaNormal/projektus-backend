@@ -21,6 +21,7 @@ type ProjectMemberWithProject struct {
 
 type ProjectMemberRepository interface {
 	ListByProject(ctx context.Context, projectID uuid.UUID) ([]domain.ProjectMember, error)
+	GetByProjectAndUser(ctx context.Context, projectID, userID uuid.UUID) (*domain.ProjectMember, error)
 	AddMember(ctx context.Context, projectID, userID uuid.UUID) (*domain.ProjectMember, error)
 	RemoveMember(ctx context.Context, memberID uuid.UUID) error
 	GetByID(ctx context.Context, memberID uuid.UUID) (*domain.ProjectMember, error)
@@ -56,6 +57,24 @@ func (r *projectMemberRepository) ListByProject(ctx context.Context, projectID u
 		})
 	}
 	return members, nil
+}
+
+func (r *projectMemberRepository) GetByProjectAndUser(ctx context.Context, projectID, userID uuid.UUID) (*domain.ProjectMember, error) {
+	row, err := r.q.GetMemberByProjectAndUser(ctx, db.GetMemberByProjectAndUserParams{
+		ProjectID: projectID,
+		UserID:    userID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &domain.ProjectMember{
+		ID:        row.ID,
+		ProjectID: row.ProjectID,
+		UserID:    row.UserID,
+	}, nil
 }
 
 func (r *projectMemberRepository) AddMember(ctx context.Context, projectID, userID uuid.UUID) (*domain.ProjectMember, error) {

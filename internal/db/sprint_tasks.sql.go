@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -36,10 +37,11 @@ func (q *Queries) AddTaskToSprint(ctx context.Context, arg AddTaskToSprintParams
 }
 
 const getSprintTasks = `-- name: GetSprintTasks :many
-SELECT sprint_id, task_id, sort_order
-FROM sprint_tasks
-WHERE sprint_id = $1
-ORDER BY sort_order NULLS LAST
+SELECT st.sprint_id, st.task_id, st.sort_order
+FROM sprint_tasks st
+JOIN tasks t ON t.id = st.task_id
+WHERE st.sprint_id = $1 AND t.deleted_at IS NULL
+ORDER BY st.sort_order NULLS LAST
 `
 
 func (q *Queries) GetSprintTasks(ctx context.Context, sprintID uuid.UUID) ([]SprintTask, error) {
@@ -63,6 +65,97 @@ func (q *Queries) GetSprintTasks(ctx context.Context, sprintID uuid.UUID) ([]Spr
 		return nil, err
 	}
 	return items, nil
+}
+
+const listSprintTasksFull = `-- name: ListSprintTasksFull :many
+SELECT t.id, t.key, t.project_id, t.owner_id, t.executor_id, t.name, t.description,
+       t.deadline, t.column_id, t.swimlane_id, t.deleted_at, t.created_at,
+       t.priority, t.estimation, t.board_id,
+       c.name AS column_name, c.system_type AS column_system_type,
+       m_owner.user_id AS owner_user_id,
+       m_exec.user_id AS executor_user_id
+FROM tasks t
+JOIN sprint_tasks st ON st.task_id = t.id
+LEFT JOIN columns c ON t.column_id = c.id
+JOIN members m_owner ON m_owner.id = t.owner_id
+LEFT JOIN members m_exec ON m_exec.id = t.executor_id
+WHERE st.sprint_id = $1 AND t.deleted_at IS NULL
+ORDER BY st.sort_order NULLS LAST
+`
+
+type ListSprintTasksFullRow struct {
+	ID               uuid.UUID      `json:"id"`
+	Key              string         `json:"key"`
+	ProjectID        uuid.UUID      `json:"project_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	ExecutorID       uuid.NullUUID  `json:"executor_id"`
+	Name             string         `json:"name"`
+	Description      sql.NullString `json:"description"`
+	Deadline         sql.NullTime   `json:"deadline"`
+	ColumnID         uuid.NullUUID  `json:"column_id"`
+	SwimlaneID       uuid.NullUUID  `json:"swimlane_id"`
+	DeletedAt        sql.NullTime   `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	Priority         sql.NullString `json:"priority"`
+	Estimation       sql.NullString `json:"estimation"`
+	BoardID          uuid.UUID      `json:"board_id"`
+	ColumnName       sql.NullString `json:"column_name"`
+	ColumnSystemType sql.NullString `json:"column_system_type"`
+	OwnerUserID      uuid.UUID      `json:"owner_user_id"`
+	ExecutorUserID   uuid.NullUUID  `json:"executor_user_id"`
+}
+
+func (q *Queries) ListSprintTasksFull(ctx context.Context, sprintID uuid.UUID) ([]ListSprintTasksFullRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSprintTasksFull, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSprintTasksFullRow{}
+	for rows.Next() {
+		var i ListSprintTasksFullRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.ProjectID,
+			&i.OwnerID,
+			&i.ExecutorID,
+			&i.Name,
+			&i.Description,
+			&i.Deadline,
+			&i.ColumnID,
+			&i.SwimlaneID,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.Priority,
+			&i.Estimation,
+			&i.BoardID,
+			&i.ColumnName,
+			&i.ColumnSystemType,
+			&i.OwnerUserID,
+			&i.ExecutorUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeTaskFromAllSprints = `-- name: RemoveTaskFromAllSprints :exec
+DELETE FROM sprint_tasks
+WHERE task_id = $1
+`
+
+func (q *Queries) RemoveTaskFromAllSprints(ctx context.Context, taskID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, removeTaskFromAllSprints, taskID)
+	return err
 }
 
 const removeTaskFromSprint = `-- name: RemoveTaskFromSprint :exec

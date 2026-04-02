@@ -13,50 +13,33 @@ import (
 )
 
 const createBoardCustomField = `-- name: CreateBoardCustomField :one
-INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, options)
-VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7)
-RETURNING id, board_id, name, description, field_type, is_system, is_required, options
+INSERT INTO board_fields (board_id, name, field_type, is_required, options)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, board_id, name, field_type, is_required, options
 `
 
 type CreateBoardCustomFieldParams struct {
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
+	BoardID    uuid.UUID             `json:"board_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
 }
 
-type CreateBoardCustomFieldRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) CreateBoardCustomField(ctx context.Context, arg CreateBoardCustomFieldParams) (CreateBoardCustomFieldRow, error) {
+func (q *Queries) CreateBoardCustomField(ctx context.Context, arg CreateBoardCustomFieldParams) (BoardField, error) {
 	row := q.db.QueryRowContext(ctx, createBoardCustomField,
 		arg.BoardID,
 		arg.Name,
-		arg.Description,
 		arg.FieldType,
-		arg.IsSystem,
 		arg.IsRequired,
 		arg.Options,
 	)
-	var i CreateBoardCustomFieldRow
+	var i BoardField
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -64,7 +47,7 @@ func (q *Queries) CreateBoardCustomField(ctx context.Context, arg CreateBoardCus
 }
 
 const deleteBoardCustomFieldByID = `-- name: DeleteBoardCustomFieldByID :exec
-DELETE FROM fields WHERE id = $1 AND kind = 'board_field'
+DELETE FROM board_fields WHERE id = $1
 `
 
 func (q *Queries) DeleteBoardCustomFieldByID(ctx context.Context, id uuid.UUID) error {
@@ -73,32 +56,19 @@ func (q *Queries) DeleteBoardCustomFieldByID(ctx context.Context, id uuid.UUID) 
 }
 
 const getBoardCustomFieldByID = `-- name: GetBoardCustomFieldByID :one
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE id = $1 AND kind = 'board_field'
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
+WHERE id = $1
 `
 
-type GetBoardCustomFieldByIDRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) GetBoardCustomFieldByID(ctx context.Context, id uuid.UUID) (GetBoardCustomFieldByIDRow, error) {
+func (q *Queries) GetBoardCustomFieldByID(ctx context.Context, id uuid.UUID) (BoardField, error) {
 	row := q.db.QueryRowContext(ctx, getBoardCustomFieldByID, id)
-	var i GetBoardCustomFieldByIDRow
+	var i BoardField
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)
@@ -107,39 +77,26 @@ func (q *Queries) GetBoardCustomFieldByID(ctx context.Context, id uuid.UUID) (Ge
 
 const listBoardCustomFields = `-- name: ListBoardCustomFields :many
 
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE board_id = $1 AND kind = 'board_field'
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
+WHERE board_id = $1
 `
 
-type ListBoardCustomFieldsRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-// Board custom fields (stored in unified `fields` table, kind='board_field')
-func (q *Queries) ListBoardCustomFields(ctx context.Context, boardID uuid.NullUUID) ([]ListBoardCustomFieldsRow, error) {
+// Board custom fields (system fields generated from Go constants)
+func (q *Queries) ListBoardCustomFields(ctx context.Context, boardID uuid.UUID) ([]BoardField, error) {
 	rows, err := q.db.QueryContext(ctx, listBoardCustomFields, boardID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListBoardCustomFieldsRow{}
+	items := []BoardField{}
 	for rows.Next() {
-		var i ListBoardCustomFieldsRow
+		var i BoardField
 		if err := rows.Scan(
 			&i.ID,
 			&i.BoardID,
 			&i.Name,
-			&i.Description,
 			&i.FieldType,
-			&i.IsSystem,
 			&i.IsRequired,
 			&i.Options,
 		); err != nil {
@@ -157,10 +114,10 @@ func (q *Queries) ListBoardCustomFields(ctx context.Context, boardID uuid.NullUU
 }
 
 const updateBoardCustomField = `-- name: UpdateBoardCustomField :one
-UPDATE fields
+UPDATE board_fields
 SET name = $2, is_required = $3, options = $4
-WHERE id = $1 AND kind = 'board_field'
-RETURNING id, board_id, name, description, field_type, is_system, is_required, options
+WHERE id = $1
+RETURNING id, board_id, name, field_type, is_required, options
 `
 
 type UpdateBoardCustomFieldParams struct {
@@ -170,32 +127,19 @@ type UpdateBoardCustomFieldParams struct {
 	Options    pqtype.NullRawMessage `json:"options"`
 }
 
-type UpdateBoardCustomFieldRow struct {
-	ID          uuid.UUID             `json:"id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-}
-
-func (q *Queries) UpdateBoardCustomField(ctx context.Context, arg UpdateBoardCustomFieldParams) (UpdateBoardCustomFieldRow, error) {
+func (q *Queries) UpdateBoardCustomField(ctx context.Context, arg UpdateBoardCustomFieldParams) (BoardField, error) {
 	row := q.db.QueryRowContext(ctx, updateBoardCustomField,
 		arg.ID,
 		arg.Name,
 		arg.IsRequired,
 		arg.Options,
 	)
-	var i UpdateBoardCustomFieldRow
+	var i BoardField
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 	)

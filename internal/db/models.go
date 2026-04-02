@@ -12,6 +12,18 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+type Attachment struct {
+	ID          uuid.UUID     `json:"id"`
+	TaskID      uuid.NullUUID `json:"task_id"`
+	CommentID   uuid.NullUUID `json:"comment_id"`
+	FileName    string        `json:"file_name"`
+	FilePath    string        `json:"file_path"`
+	FileSize    int64         `json:"file_size"`
+	ContentType string        `json:"content_type"`
+	UploadedBy  uuid.UUID     `json:"uploaded_by"`
+	UploadedAt  time.Time     `json:"uploaded_at"`
+}
+
 type Backlog struct {
 	ProjectID uuid.UUID `json:"project_id"`
 	TaskID    uuid.UUID `json:"task_id"`
@@ -24,16 +36,41 @@ type BlockedIp struct {
 }
 
 type Board struct {
-	ID              uuid.UUID      `json:"id"`
-	ProjectID       uuid.NullUUID  `json:"project_id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       int16          `json:"sort_order"`
-	IsDefault       bool           `json:"is_default"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ID              uuid.UUID             `json:"id"`
+	ProjectID       uuid.NullUUID         `json:"project_id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       int16                 `json:"sort_order"`
+	IsDefault       bool                  `json:"is_default"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
+}
+
+type BoardField struct {
+	ID         uuid.UUID             `json:"id"`
+	BoardID    uuid.UUID             `json:"board_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+}
+
+type Checklist struct {
+	ID        uuid.UUID `json:"id"`
+	TaskID    uuid.UUID `json:"task_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ChecklistItem struct {
+	ID          uuid.UUID `json:"id"`
+	ChecklistID uuid.UUID `json:"checklist_id"`
+	Content     string    `json:"content"`
+	IsChecked   bool      `json:"is_checked"`
+	SortOrder   int16     `json:"sort_order"`
 }
 
 type Column struct {
@@ -47,19 +84,14 @@ type Column struct {
 	Note       string         `json:"note"`
 }
 
-type Field struct {
-	ID          uuid.UUID             `json:"id"`
-	Kind        string                `json:"kind"`
-	ProjectID   uuid.NullUUID         `json:"project_id"`
-	TemplateID  uuid.NullUUID         `json:"template_id"`
-	BoardID     uuid.NullUUID         `json:"board_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-	Value       sql.NullString        `json:"value"`
+type Comment struct {
+	ID              uuid.UUID     `json:"id"`
+	TaskID          uuid.UUID     `json:"task_id"`
+	AuthorID        uuid.UUID     `json:"author_id"`
+	Content         string        `json:"content"`
+	CreatedAt       time.Time     `json:"created_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
+	ParentCommentID uuid.NullUUID `json:"parent_comment_id"`
 }
 
 type LoginAttempt struct {
@@ -148,14 +180,27 @@ type PasswordPolicy struct {
 }
 
 type Project struct {
-	ID          uuid.UUID      `json:"id"`
-	Key         string         `json:"key"`
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
-	ProjectType string         `json:"project_type"`
-	OwnerID     uuid.UUID      `json:"owner_id"`
-	Status      string         `json:"status"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID                    uuid.UUID      `json:"id"`
+	Key                   string         `json:"key"`
+	Name                  string         `json:"name"`
+	Description           sql.NullString `json:"description"`
+	ProjectType           string         `json:"project_type"`
+	OwnerID               uuid.UUID      `json:"owner_id"`
+	Status                string         `json:"status"`
+	CreatedAt             time.Time      `json:"created_at"`
+	SprintDurationWeeks   sql.NullInt32  `json:"sprint_duration_weeks"`
+	IncompleteTasksAction string         `json:"incomplete_tasks_action"`
+}
+
+type ProjectParam struct {
+	ID         uuid.UUID             `json:"id"`
+	ProjectID  uuid.NullUUID         `json:"project_id"`
+	TemplateID uuid.NullUUID         `json:"template_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Value      sql.NullString        `json:"value"`
 }
 
 type Role struct {
@@ -209,20 +254,21 @@ type Tag struct {
 }
 
 type Task struct {
-	ID           uuid.UUID      `json:"id"`
-	Key          string         `json:"key"`
-	ProjectID    uuid.UUID      `json:"project_id"`
-	OwnerID      uuid.UUID      `json:"owner_id"`
-	ExecutorID   uuid.NullUUID  `json:"executor_id"`
-	Name         string         `json:"name"`
-	Description  sql.NullString `json:"description"`
-	Deadline     sql.NullTime   `json:"deadline"`
-	ColumnID     uuid.UUID      `json:"column_id"`
-	SwimlaneID   uuid.NullUUID  `json:"swimlane_id"`
-	StatusType   string         `json:"status_type"`
-	DeletedAt    sql.NullTime   `json:"deleted_at"`
-	DeleteReason sql.NullString `json:"delete_reason"`
-	CreatedAt    time.Time      `json:"created_at"`
+	ID          uuid.UUID      `json:"id"`
+	Key         string         `json:"key"`
+	ProjectID   uuid.UUID      `json:"project_id"`
+	OwnerID     uuid.UUID      `json:"owner_id"`
+	ExecutorID  uuid.NullUUID  `json:"executor_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	Deadline    sql.NullTime   `json:"deadline"`
+	ColumnID    uuid.NullUUID  `json:"column_id"`
+	SwimlaneID  uuid.NullUUID  `json:"swimlane_id"`
+	DeletedAt   sql.NullTime   `json:"deleted_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	Priority    sql.NullString `json:"priority"`
+	Estimation  sql.NullString `json:"estimation"`
+	BoardID     uuid.UUID      `json:"board_id"`
 }
 
 type TaskDependency struct {
@@ -252,6 +298,11 @@ type TaskStatusHistory struct {
 type TaskTag struct {
 	TaskID uuid.UUID `json:"task_id"`
 	TagID  uuid.UUID `json:"tag_id"`
+}
+
+type TaskWatcher struct {
+	TaskID   uuid.UUID `json:"task_id"`
+	MemberID uuid.UUID `json:"member_id"`
 }
 
 type Template struct {

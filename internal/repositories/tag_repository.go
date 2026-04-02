@@ -19,6 +19,7 @@ type TagRepository interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 
 	ListTaskTags(ctx context.Context, taskID uuid.UUID) ([]domain.Tag, error)
+	ListTagsByTaskIDs(ctx context.Context, taskIDs []uuid.UUID) (map[string][]domain.Tag, error)
 	AddTagToTask(ctx context.Context, taskID, tagID uuid.UUID) error
 	RemoveTagFromTask(ctx context.Context, taskID, tagID uuid.UUID) error
 	RemoveAllTagsFromTask(ctx context.Context, taskID uuid.UUID) error
@@ -100,6 +101,23 @@ func (r *tagRepository) ListTaskTags(ctx context.Context, taskID uuid.UUID) ([]d
 		tags[i] = domain.Tag{ID: row.ID.String(), BoardID: row.BoardID.String(), Name: row.Name}
 	}
 	return tags, nil
+}
+
+func (r *tagRepository) ListTagsByTaskIDs(ctx context.Context, taskIDs []uuid.UUID) (map[string][]domain.Tag, error) {
+	rows, err := r.q.ListTagsByTaskIDs(ctx, taskIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]domain.Tag, len(taskIDs))
+	for _, row := range rows {
+		tid := row.TaskID.String()
+		result[tid] = append(result[tid], domain.Tag{
+			ID:      row.ID.String(),
+			BoardID: row.BoardID.String(),
+			Name:    row.Name,
+		})
+	}
+	return result, nil
 }
 
 func (r *tagRepository) AddTagToTask(ctx context.Context, taskID, tagID uuid.UUID) error {

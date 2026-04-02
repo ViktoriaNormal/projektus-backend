@@ -13,19 +13,28 @@ const (
 type TaskStatus string
 
 type Task struct {
-	ID          string      `json:"id"`
-	Key         string      `json:"key"`
-	ProjectID   string      `json:"project_id"`
-	OwnerID     string      `json:"owner_id"`
-	ExecutorID  *string     `json:"executor_id,omitempty"`
-	Name        string      `json:"name"`
-	Description *string     `json:"description,omitempty"`
-	Deadline    *time.Time  `json:"deadline,omitempty"`
-	ColumnID    string      `json:"column_id"`
-	SwimlaneID  *string     `json:"swimlane_id,omitempty"`
-	DeletedAt   *time.Time  `json:"-"`
-	Checklists  []Checklist `json:"checklists,omitempty"`
-	StoryPoints *int        `json:"story_points,omitempty"`
+	ID               string      `json:"id"`
+	Key              string      `json:"key"`
+	ProjectID        string      `json:"project_id"`
+	BoardID          string      `json:"board_id"`
+	OwnerID          string      `json:"owner_id"`
+	ExecutorID       *string     `json:"executor_id,omitempty"`
+	OwnerUserID      *string     `json:"owner_user_id,omitempty"`
+	ExecutorUserID   *string     `json:"executor_user_id,omitempty"`
+	Name             string      `json:"name"`
+	Description      *string     `json:"description,omitempty"`
+	Deadline         *time.Time  `json:"deadline,omitempty"`
+	ColumnID         *string     `json:"column_id,omitempty"`
+	SwimlaneID       *string     `json:"swimlane_id,omitempty"`
+	DeletedAt        *time.Time  `json:"-"`
+	CreatedAt        time.Time   `json:"created_at"`
+	Priority         *string     `json:"priority,omitempty"`
+	Estimation       *string     `json:"estimation,omitempty"`
+	Checklists       []Checklist `json:"checklists,omitempty"`
+	StoryPoints      *int        `json:"story_points,omitempty"`
+	ColumnName       *string     `json:"column_name,omitempty"`
+	ColumnSystemType *string     `json:"column_system_type,omitempty"`
+	Tags             []Tag       `json:"tags,omitempty"`
 }
 
 type BacklogType string
@@ -38,17 +47,24 @@ const (
 type TaskDependencyType string
 
 const (
-	TaskDependencyBlocks  TaskDependencyType = "blocks"
-	TaskDependencyRelated TaskDependencyType = "related"
-	TaskDependencyParent  TaskDependencyType = "parent"
-	TaskDependencyChild   TaskDependencyType = "child"
+	TaskDependencyBlocks      TaskDependencyType = "blocks"
+	TaskDependencyIsBlockedBy TaskDependencyType = "is_blocked_by"
+	TaskDependencyRelatesTo   TaskDependencyType = "relates_to"
+	TaskDependencyParent      TaskDependencyType = "parent"
+	TaskDependencySubtask     TaskDependencyType = "subtask"
 )
 
 type TaskWatcher struct {
-	ID              string    `json:"id"`
-	TaskID          string    `json:"task_id"`
-	ProjectMemberID string    `json:"project_member_id"`
-	CreatedAt       time.Time `json:"created_at"`
+	TaskID   string `json:"task_id"`
+	MemberID string `json:"member_id"`
+}
+
+type TaskFieldValue struct {
+	TaskID        string     `json:"task_id"`
+	FieldID       string     `json:"field_id"`
+	ValueText     *string    `json:"value_text,omitempty"`
+	ValueNumber   *string    `json:"value_number,omitempty"`
+	ValueDatetime *time.Time `json:"value_datetime,omitempty"`
 }
 
 type TaskDependency struct {
@@ -72,4 +88,9 @@ type ChecklistItem struct {
 	Content     string `json:"content"`
 	IsChecked   bool   `json:"is_checked"`
 	Order       int16  `json:"order"`
+}
+
+type SprintTaskWithoutColumn struct {
+	TaskID  string
+	BoardID string
 }

@@ -10,13 +10,14 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
 
 const countTasksInColumn = `-- name: CountTasksInColumn :one
 SELECT COUNT(*)::int AS count FROM tasks WHERE column_id = $1
 `
 
-func (q *Queries) CountTasksInColumn(ctx context.Context, columnID uuid.UUID) (int32, error) {
+func (q *Queries) CountTasksInColumn(ctx context.Context, columnID uuid.NullUUID) (int32, error) {
 	row := q.db.QueryRowContext(ctx, countTasksInColumn, columnID)
 	var count int32
 	err := row.Scan(&count)
@@ -36,34 +37,36 @@ func (q *Queries) CountTasksInSwimlane(ctx context.Context, swimlaneID uuid.Null
 
 const createBoard = `-- name: CreateBoard :one
 
-INSERT INTO boards (project_id, template_id, name, description, sort_order, is_default, priority_type, estimation_unit, swimlane_group_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
+INSERT INTO boards (project_id, template_id, name, description, sort_order, is_default, priority_type, estimation_unit, swimlane_group_by, priority_options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options
 `
 
 type CreateBoardParams struct {
-	ProjectID       uuid.NullUUID  `json:"project_id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       int16          `json:"sort_order"`
-	IsDefault       bool           `json:"is_default"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
+	ProjectID       uuid.NullUUID         `json:"project_id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       int16                 `json:"sort_order"`
+	IsDefault       bool                  `json:"is_default"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 type CreateBoardRow struct {
-	ID              uuid.UUID      `json:"id"`
-	ProjectID       uuid.NullUUID  `json:"project_id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
-	IsDefault       bool           `json:"is_default"`
+	ID              uuid.UUID             `json:"id"`
+	ProjectID       uuid.NullUUID         `json:"project_id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	IsDefault       bool                  `json:"is_default"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 // Boards
@@ -78,6 +81,7 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Creat
 		arg.PriorityType,
 		arg.EstimationUnit,
 		arg.SwimlaneGroupBy,
+		arg.PriorityOptions,
 	)
 	var i CreateBoardRow
 	err := row.Scan(
@@ -91,6 +95,7 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Creat
 		&i.EstimationUnit,
 		&i.SwimlaneGroupBy,
 		&i.IsDefault,
+		&i.PriorityOptions,
 	)
 	return i, err
 }
@@ -252,22 +257,23 @@ func (q *Queries) DeleteSwimlane(ctx context.Context, id uuid.UUID) error {
 }
 
 const getBoardByID = `-- name: GetBoardByID :one
-SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
+SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options
 FROM boards
 WHERE id = $1
 `
 
 type GetBoardByIDRow struct {
-	ID              uuid.UUID      `json:"id"`
-	ProjectID       uuid.NullUUID  `json:"project_id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
-	IsDefault       bool           `json:"is_default"`
+	ID              uuid.UUID             `json:"id"`
+	ProjectID       uuid.NullUUID         `json:"project_id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	IsDefault       bool                  `json:"is_default"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 func (q *Queries) GetBoardByID(ctx context.Context, id uuid.UUID) (GetBoardByIDRow, error) {
@@ -284,6 +290,7 @@ func (q *Queries) GetBoardByID(ctx context.Context, id uuid.UUID) (GetBoardByIDR
 		&i.EstimationUnit,
 		&i.SwimlaneGroupBy,
 		&i.IsDefault,
+		&i.PriorityOptions,
 	)
 	return i, err
 }
@@ -471,23 +478,24 @@ func (q *Queries) ListBoardSwimlanes(ctx context.Context, boardID uuid.UUID) ([]
 }
 
 const listProjectBoards = `-- name: ListProjectBoards :many
-SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
+SELECT id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options
 FROM boards
 WHERE project_id = $1
 ORDER BY sort_order
 `
 
 type ListProjectBoardsRow struct {
-	ID              uuid.UUID      `json:"id"`
-	ProjectID       uuid.NullUUID  `json:"project_id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
-	IsDefault       bool           `json:"is_default"`
+	ID              uuid.UUID             `json:"id"`
+	ProjectID       uuid.NullUUID         `json:"project_id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	IsDefault       bool                  `json:"is_default"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 func (q *Queries) ListProjectBoards(ctx context.Context, projectID uuid.NullUUID) ([]ListProjectBoardsRow, error) {
@@ -510,6 +518,7 @@ func (q *Queries) ListProjectBoards(ctx context.Context, projectID uuid.NullUUID
 			&i.EstimationUnit,
 			&i.SwimlaneGroupBy,
 			&i.IsDefault,
+			&i.PriorityOptions,
 		); err != nil {
 			return nil, err
 		}
@@ -541,33 +550,36 @@ SET name        = COALESCE($1, name),
     priority_type    = COALESCE($4, priority_type),
     estimation_unit  = COALESCE($5, estimation_unit),
     swimlane_group_by = COALESCE($6, swimlane_group_by),
-    is_default = COALESCE($7, is_default)
-WHERE id = $8
-RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default
+    is_default = COALESCE($7, is_default),
+    priority_options = COALESCE($8, priority_options)
+WHERE id = $9
+RETURNING id, project_id, template_id, name, description, sort_order, priority_type, estimation_unit, swimlane_group_by, is_default, priority_options
 `
 
 type UpdateBoardParams struct {
-	Name            sql.NullString `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       sql.NullInt16  `json:"sort_order"`
-	PriorityType    sql.NullString `json:"priority_type"`
-	EstimationUnit  sql.NullString `json:"estimation_unit"`
-	SwimlaneGroupBy sql.NullString `json:"swimlane_group_by"`
-	IsDefault       sql.NullBool   `json:"is_default"`
-	ID              uuid.UUID      `json:"id"`
+	Name            sql.NullString        `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       sql.NullInt16         `json:"sort_order"`
+	PriorityType    sql.NullString        `json:"priority_type"`
+	EstimationUnit  sql.NullString        `json:"estimation_unit"`
+	SwimlaneGroupBy sql.NullString        `json:"swimlane_group_by"`
+	IsDefault       sql.NullBool          `json:"is_default"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
+	ID              uuid.UUID             `json:"id"`
 }
 
 type UpdateBoardRow struct {
-	ID              uuid.UUID      `json:"id"`
-	ProjectID       uuid.NullUUID  `json:"project_id"`
-	TemplateID      uuid.NullUUID  `json:"template_id"`
-	Name            string         `json:"name"`
-	Description     sql.NullString `json:"description"`
-	SortOrder       int16          `json:"sort_order"`
-	PriorityType    string         `json:"priority_type"`
-	EstimationUnit  string         `json:"estimation_unit"`
-	SwimlaneGroupBy string         `json:"swimlane_group_by"`
-	IsDefault       bool           `json:"is_default"`
+	ID              uuid.UUID             `json:"id"`
+	ProjectID       uuid.NullUUID         `json:"project_id"`
+	TemplateID      uuid.NullUUID         `json:"template_id"`
+	Name            string                `json:"name"`
+	Description     sql.NullString        `json:"description"`
+	SortOrder       int16                 `json:"sort_order"`
+	PriorityType    string                `json:"priority_type"`
+	EstimationUnit  string                `json:"estimation_unit"`
+	SwimlaneGroupBy string                `json:"swimlane_group_by"`
+	IsDefault       bool                  `json:"is_default"`
+	PriorityOptions pqtype.NullRawMessage `json:"priority_options"`
 }
 
 func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (UpdateBoardRow, error) {
@@ -579,6 +591,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Updat
 		arg.EstimationUnit,
 		arg.SwimlaneGroupBy,
 		arg.IsDefault,
+		arg.PriorityOptions,
 		arg.ID,
 	)
 	var i UpdateBoardRow
@@ -593,6 +606,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Updat
 		&i.EstimationUnit,
 		&i.SwimlaneGroupBy,
 		&i.IsDefault,
+		&i.PriorityOptions,
 	)
 	return i, err
 }

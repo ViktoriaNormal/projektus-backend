@@ -105,19 +105,6 @@ var PriorityTypes = []domain.RefPriorityType{
 	{Key: "service_class", Name: "Класс обслуживания", AvailableFor: []string{"kanban"}, DefaultValues: []string{"Ускоренный", "С фиксированной датой", "Стандартный", "Нематериальный"}},
 }
 
-// --- Системные параметры шаблонов (для справочника) ---
-
-// SystemTaskFields — системные параметры задач (нередактируемые в шаблонах).
-var SystemTaskFields = []domain.RefSystemField{
-	{Key: "priority", Name: "Приоритет", FieldType: "select", AvailableFor: []string{"scrum", "kanban"}, Description: "Приоритет задачи"},
-	{Key: "estimation", Name: "Оценка", FieldType: "number", AvailableFor: []string{"scrum", "kanban"}, Description: "Оценка трудозатрат"},
-}
-
-// SystemProjectParams — системные параметры проекта (нередактируемые в шаблонах).
-var SystemProjectParams = []domain.RefSystemProjectParam{
-	{Key: "sprint_duration", Name: "Длительность спринта", FieldType: "number", IsRequired: false, Options: nil},
-}
-
 // DefaultColumns — колонки по умолчанию для каждого типа проекта.
 var DefaultColumns = map[string][]domain.DefaultColumnDef{
 	"scrum": {
@@ -138,29 +125,17 @@ var DefaultColumns = map[string][]domain.DefaultColumnDef{
 // DefaultBoardFields — полный перечень системных полей доски.
 // Единственное место, где определяется набор полей — сервисы берут данные отсюда.
 var DefaultBoardFields = []domain.DefaultBoardFieldDef{
-	{Key: "title", Name: "Название", Description: "Название задачи", FieldType: "text", IsRequired: true, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "description", Name: "Описание", Description: "Подробное описание задачи", FieldType: "text", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "status", Name: "Статус задачи", Description: "Текущий статус задачи", FieldType: "select", IsRequired: true, Options: []string{"Начальный", "В работе", "Завершено", "Отменено"}, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "author", Name: "Автор", Description: "Создатель задачи", FieldType: "user", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "assignee", Name: "Исполнитель", Description: "Ответственный за выполнение", FieldType: "user", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "watchers", Name: "Наблюдатели", Description: "Пользователи, следящие за задачей", FieldType: "user_list", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "deadline", Name: "Дедлайн", Description: "Крайний срок выполнения", FieldType: "datetime", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "priority", Name: "Приоритизация", Description: "Приоритет задачи", FieldType: "priority", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "estimation", Name: "Оценка трудозатрат", Description: "Оценка объёма работы", FieldType: "estimation", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-	{Key: "sprint", Name: "Спринт", Description: "Спринт, к которому относится задача", FieldType: "sprint", IsRequired: false, AvailableFor: []string{"scrum"}},
-	{Key: "created_at", Name: "Дата создания", Description: "Дата и время создания задачи", FieldType: "datetime", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
-}
-
-// PriorityDescriptions — описания поля «Приоритизация» в зависимости от priority_type.
-var PriorityDescriptions = map[string]string{
-	"priority":      "Приоритет задачи",
-	"service_class": "Класс обслуживания задачи",
-}
-
-// EstimationDescriptions — описания поля «Оценка трудозатрат» в зависимости от estimation_unit.
-var EstimationDescriptions = map[string]string{
-	"story_points": "Оценка объёма работы в Story Points",
-	"time":         "Оценка объёма работы в формате времени",
+	{Key: "title", Name: "Название", FieldType: "text", IsRequired: true, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "description", Name: "Описание", FieldType: "text", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "status", Name: "Статус задачи", FieldType: "select", IsRequired: true, Options: []string{"Начальный", "В работе", "Завершено", "Отменено"}, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "author", Name: "Автор", FieldType: "user", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "assignee", Name: "Исполнитель", FieldType: "user", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "watchers", Name: "Наблюдатели", FieldType: "user_list", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "deadline", Name: "Дедлайн", FieldType: "datetime", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "priority", Name: "Приоритизация", FieldType: "priority", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "estimation", Name: "Оценка трудозатрат", FieldType: "estimation", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
+	{Key: "sprint", Name: "Спринт", FieldType: "sprint", IsRequired: false, AvailableFor: []string{"scrum"}},
+	{Key: "created_at", Name: "Дата создания", FieldType: "datetime", IsRequired: false, AvailableFor: []string{"scrum", "kanban"}},
 }
 
 // =============================================================================
@@ -172,8 +147,6 @@ type ReferenceRepository interface {
 	ListFieldTypes(ctx context.Context) ([]domain.FieldTypeDefinition, error)
 	ListEstimationUnits(ctx context.Context) ([]domain.RefAvailable, error)
 	ListPriorityTypes(ctx context.Context) ([]domain.RefPriorityType, error)
-	ListSystemTaskFields(ctx context.Context) ([]domain.RefSystemField, error)
-	ListSystemProjectParams(ctx context.Context) ([]domain.RefSystemProjectParam, error)
 	ListPermissionAreas(ctx context.Context) ([]domain.RefPermissionArea, error)
 	ListAccessLevels(ctx context.Context) ([]domain.RefKeyName, error)
 }
@@ -198,14 +171,6 @@ func (r *referenceRepository) ListEstimationUnits(_ context.Context) ([]domain.R
 
 func (r *referenceRepository) ListPriorityTypes(_ context.Context) ([]domain.RefPriorityType, error) {
 	return PriorityTypes, nil
-}
-
-func (r *referenceRepository) ListSystemTaskFields(_ context.Context) ([]domain.RefSystemField, error) {
-	return SystemTaskFields, nil
-}
-
-func (r *referenceRepository) ListSystemProjectParams(_ context.Context) ([]domain.RefSystemProjectParam, error) {
-	return SystemProjectParams, nil
 }
 
 func (r *referenceRepository) ListPermissionAreas(_ context.Context) ([]domain.RefPermissionArea, error) {

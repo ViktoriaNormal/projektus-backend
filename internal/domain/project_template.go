@@ -25,7 +25,8 @@ type TemplateBoard struct {
 	Order           int32     `json:"order"`
 	PriorityType    string    `json:"priority_type"`
 	EstimationUnit  string    `json:"estimation_unit"`
-	SwimlaneGroupBy string    `json:"swimlane_group_by"`
+	SwimlaneGroupBy string   `json:"swimlane_group_by"`
+	PriorityOptions []string `json:"priority_options,omitempty"`
 
 	Columns      []TemplateBoardColumn      `json:"columns"`
 	Swimlanes    []TemplateBoardSwimlane    `json:"swimlanes"`
@@ -54,25 +55,23 @@ type TemplateBoardSwimlane struct {
 }
 
 type TemplateBoardCustomField struct {
-	ID          uuid.UUID `json:"id"`
-	BoardID     uuid.UUID `json:"board_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	FieldType   string    `json:"field_type"`
-	IsSystem    bool      `json:"is_system"`
-	IsRequired  bool      `json:"is_required"`
-	Options     []string  `json:"options"`
+	ID         uuid.UUID `json:"id"`
+	BoardID    uuid.UUID `json:"board_id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsSystem   bool      `json:"is_system"`
+	IsRequired bool      `json:"is_required"`
+	Options    []string  `json:"options"`
 }
 
 type TemplateProjectParam struct {
-	ID          uuid.UUID `json:"id"`
-	TemplateID  uuid.UUID `json:"template_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	FieldType   string    `json:"field_type"`
-	IsSystem    bool      `json:"is_system"`
-	IsRequired  bool      `json:"is_required"`
-	Options     []string  `json:"options"`
+	ID         uuid.UUID `json:"id"`
+	TemplateID uuid.UUID `json:"template_id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsSystem   bool      `json:"is_system"`
+	IsRequired bool      `json:"is_required"`
+	Options    []string  `json:"options"`
 }
 
 type TemplateRole struct {
@@ -96,18 +95,8 @@ type References struct {
 	EstimationUnits      []RefAvailable
 	PriorityTypeOptions  []RefPriorityType
 	ProjectStatuses      []RefKeyName
-	SystemTaskFields     []RefSystemField
-	SystemProjectParams  []RefSystemProjectParam
 	PermissionAreas      []RefPermissionArea
 	AccessLevels         []RefKeyName
-}
-
-type RefSystemProjectParam struct {
-	Key        string
-	Name       string
-	FieldType  string
-	IsRequired bool
-	Options    []string
 }
 
 type RefColumnSystemType struct {
@@ -141,14 +130,6 @@ type RefPriorityType struct {
 	DefaultValues []string
 }
 
-type RefSystemField struct {
-	Key          string
-	Name         string
-	FieldType    string
-	AvailableFor []string
-	Description  string
-}
-
 // DefaultColumnDef — определение колонки по умолчанию для доски.
 type DefaultColumnDef struct {
 	Name       string
@@ -160,7 +141,6 @@ type DefaultColumnDef struct {
 type DefaultBoardFieldDef struct {
 	Key          string   // "title", "priority", "estimation", "sprint", ...
 	Name         string
-	Description  string
 	FieldType    string
 	IsRequired   bool
 	Options      []string // статические options (для priority/estimation заменяются динамически)

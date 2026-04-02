@@ -66,6 +66,8 @@ tags:
     description: Password policy administration
   - name: AdminTemplates
     description: Project template administration
+  - name: ScrumAnalytics
+    description: Scrum analytics (velocity, burndown)
 
 paths:
   # ─── Auth ───────────────────────────────────────────────────────────
@@ -718,6 +720,8 @@ paths:
     patch:
       tags: [Projects]
       summary: Update project
+      description: |-
+        При смене `owner_id` новый владелец автоматически добавляется в участники проекта с admin-ролью (если ещё не является участником).
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -1057,6 +1061,9 @@ paths:
     post:
       tags: [Sprints]
       summary: Create sprint
+      description: |-
+        Создаёт новый спринт со статусом planned.
+        Серверная валидация: даты нового спринта не должны пересекаться с существующими незавершёнными спринтами (planned/active). При пересечении — 400.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -1077,6 +1084,8 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/SprintResponse'
+        '400':
+          description: Даты спринта пересекаются с существующим незавершённым спринтом
 
   # ─── Backlog ────────────────────────────────────────────────────────
   /projects/{project_id}/backlog/product:
@@ -1104,6 +1113,10 @@ paths:
     post:
       tags: [Backlog]
       summary: Add task to product backlog
+      description: |-
+        Добавляет задачу в product backlog проекта.
+        Если задача находится в каком-либо спринте — автоматически удаляет из sprint_tasks и сбрасывает column_id в NULL.
+        Задача гарантированно будет только в одном месте: либо в product backlog, либо в спринте.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -1199,7 +1212,12 @@ paths:
   /projects/{project_id}/backlog/move-to-sprint:
     post:
       tags: [Backlog]
-      summary: Move tasks from product backlog to sprint
+      summary: Move tasks to sprint
+      description: |-
+        Перемещает задачи в указанный спринт.
+        Если задача находится в другом спринте — автоматически удаляет из него перед добавлением.
+        Если задача в product backlog — удаляет из бэклога.
+        Задача гарантированно будет только в одном спринте.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -1225,6 +1243,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse_Null'
+
+  # ─── Scrum Analytics ────────────────────────────────────────────────
+  /projects/{project_id}/analytics/velocity:
+    get:
+      tags: [ScrumAnalytics]
+      summary: Get velocity report
+      description: Returns velocity data per sprint, aggregate metrics, and textual interpretation.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - name: metricType
+          in: query
+          schema:
+            type: string
+            enum: [task_count, story_points, estimation_hours]
+            default: task_count
+        - name: limit
+          in: query
+          description: Number of sprints to include (0 = all)
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Velocity report
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VelocityResponse'
+
+  /projects/{project_id}/analytics/burndown:
+    get:
+      tags: [ScrumAnalytics]
+      summary: Get burndown chart data
+      description: Returns daily remaining work vs ideal line for a sprint.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - name: metricType
+          in: query
+          schema:
+            type: string
+            enum: [task_count, story_points, estimation_hours]
+            default: task_count
+        - name: sprintId
+          in: query
+          description: Sprint ID (defaults to active sprint)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Burndown report
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BurndownResponse'
 
   # ─── Sprints (standalone) ───────────────────────────────────────────
   /sprints/{sprint_id}:
@@ -1281,6 +1364,13 @@ paths:
     post:
       tags: [Sprints]
       summary: Start sprint
+      description: |-
+        Запускает спринт. Логика при запуске:
+        1. **Валидация**: нельзя запустить, если уже есть active-спринт на проекте (400).
+        2. **start_date** устанавливается = сегодняшняя дата (игнорируя дату из создания).
+        3. **end_date** пересчитывается = start_date + sprint_duration_weeks проекта (fallback 2 недели).
+        4. **Каскадный сдвиг**: все последующие planned-спринты с пересекающимися датами сдвигаются вперёд.
+        5. Задачам без column_id назначается initial-колонка доски.
       parameters:
         - $ref: '#/components/parameters/SprintIdPath'
       responses:
@@ -1295,13 +1385,50 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/SprintResponse'
+        '400':
+          description: |-
+            Ошибки валидации:
+            - Нельзя запустить завершённый спринт
+            - Уже есть активный спринт на проекте
+
+  /sprints/{sprint_id}/tasks:
+    get:
+      tags: [Sprints]
+      summary: Get all tasks for a sprint
+      description: Returns full task details for the given sprint, including completed sprints.
+      parameters:
+        - $ref: '#/components/parameters/SprintIdPath'
+      responses:
+        '200':
+          description: Sprint tasks
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TaskResponse'
 
   /sprints/{sprint_id}/complete:
     post:
       tags: [Sprints]
       summary: Complete sprint
+      description: |-
+        Завершает спринт. Незавершённые задачи обрабатываются согласно `incomplete_tasks_action`:
+        - `backlog` — задачи возвращаются в product backlog, column_id сбрасывается.
+        - `next_sprint` — задачи переносятся в ближайший planned-спринт. Если planned-спринта нет — возвращается 400.
       parameters:
         - $ref: '#/components/parameters/SprintIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteSprintRequest'
       responses:
         '200':
           description: Completed sprint
@@ -1314,6 +1441,8 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/SprintResponse'
+        '400':
+          description: "incomplete_tasks_action=next_sprint, но нет следующего planned-спринта"
 
   # ─── Boards ─────────────────────────────────────────────────────────
   /boards:
@@ -1886,19 +2015,12 @@ paths:
   /tasks:
     get:
       tags: [Tasks]
-      summary: Search tasks
+      summary: My tasks
+      description: |-
+        Возвращает задачи текущего пользователя (по JWT-токену) — где он автор, исполнитель или наблюдатель.
+        Опциональные фильтры позволяют сузить выборку по проекту или колонке.
       parameters:
         - name: project_id
-          in: query
-          schema:
-            type: string
-            format: uuid
-        - name: owner_id
-          in: query
-          schema:
-            type: string
-            format: uuid
-        - name: executor_id
           in: query
           schema:
             type: string
@@ -1987,22 +2109,21 @@ paths:
                         $ref: '#/components/schemas/TaskResponse'
     delete:
       tags: [Tasks]
-      summary: Delete task
+      summary: Delete task (soft delete)
+      description: Soft delete — устанавливает deleted_at. Тело запроса не требуется.
       parameters:
         - $ref: '#/components/parameters/TaskIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DeleteTaskRequest'
       responses:
-        '204':
+        '200':
           description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse_Null'
 
   /tasks/{task_id}/watchers:
     get:
-      tags: [Tasks]
+      tags: [Watchers]
       summary: List task watchers
       parameters:
         - $ref: '#/components/parameters/TaskIdPath'
@@ -2021,7 +2142,7 @@ paths:
                         items:
                           $ref: '#/components/schemas/TaskWatcherResponse'
     post:
-      tags: [Tasks]
+      tags: [Watchers]
       summary: Add watcher
       parameters:
         - $ref: '#/components/parameters/TaskIdPath'
@@ -2034,15 +2155,20 @@ paths:
       responses:
         '200':
           description: Watcher added
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessEnvelope'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/TaskWatcherResponse'
+
+  /tasks/{task_id}/watchers/{member_id}:
+    delete:
+      tags: [Watchers]
+      summary: Remove watcher
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+        - name: member_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Removed
 
   /tasks/{task_id}/dependencies:
     get:
@@ -2132,6 +2258,49 @@ paths:
                       data:
                         $ref: '#/components/schemas/ChecklistResponse'
 
+  /tasks/checklists/{checklist_id}:
+    patch:
+      tags: [Tasks]
+      summary: Update checklist name
+      parameters:
+        - name: checklist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChecklistRequest'
+      responses:
+        '200':
+          description: Updated checklist
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ChecklistResponse'
+    delete:
+      tags: [Tasks]
+      summary: Delete checklist
+      parameters:
+        - name: checklist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse_Null'
+
   /tasks/checklists/{checklist_id}/items:
     post:
       tags: [Tasks]
@@ -2140,9 +2309,7 @@ paths:
         - name: checklist_id
           in: path
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
@@ -2162,6 +2329,49 @@ paths:
                       data:
                         $ref: '#/components/schemas/ChecklistItemResponse'
 
+  /tasks/checklist-items/{item_id}:
+    patch:
+      tags: [Tasks]
+      summary: Update checklist item content
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChecklistItemRequest'
+      responses:
+        '200':
+          description: Updated item
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ChecklistItemResponse'
+    delete:
+      tags: [Tasks]
+      summary: Delete checklist item
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse_Null'
+
   /tasks/checklist-items/{item_id}/status:
     patch:
       tags: [Tasks]
@@ -2170,9 +2380,7 @@ paths:
         - name: item_id
           in: path
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
@@ -2186,6 +2394,189 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse_Null'
+
+  # ─── Task Field Values ──────────────────────────────────────────────
+  /tasks/{task_id}/field-values:
+    get:
+      tags: [Tasks]
+      summary: Get task custom field values
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Field values
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskFieldValueResponse' }
+
+  /tasks/{task_id}/field-values/{field_id}:
+    put:
+      tags: [Tasks]
+      summary: Set task custom field value
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+        - name: field_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetTaskFieldValueRequest'
+      responses:
+        '200':
+          description: Value set
+
+  # ─── Comments ──────────────────────────────────────────────────────
+  /tasks/{task_id}/comments:
+    get:
+      tags: [Comments]
+      summary: List task comments
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Comments list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/CommentResponse' }
+    post:
+      tags: [Comments]
+      summary: Create comment
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                parent_comment_id: { type: string, format: uuid, nullable: true, description: "ID комментария, на который отвечают" }
+      responses:
+        '200':
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CommentResponse' }
+
+  /tasks/comments/{comment_id}:
+    delete:
+      tags: [Comments]
+      summary: Delete comment
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted
+
+  # ─── Attachments ───────────────────────────────────────────────────
+  /tasks/{task_id}/attachments:
+    get:
+      tags: [Attachments]
+      summary: List task attachments
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      responses:
+        '200':
+          description: Attachments list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AttachmentResponse' }
+    post:
+      tags: [Attachments]
+      summary: Upload attachment
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Uploaded attachment
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AttachmentResponse' }
+
+  /tasks/attachments/{attachment_id}/download:
+    get:
+      tags: [Attachments]
+      summary: Download attachment file
+      description: Скачивает файл вложения. Возвращает файл с заголовком Content-Disposition.
+      parameters:
+        - name: attachment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: File content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Attachment not found
+
+  /tasks/attachments/{attachment_id}:
+    delete:
+      tags: [Attachments]
+      summary: Delete attachment
+      parameters:
+        - name: attachment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted
 
   # ─── Tags ──────────────────────────────────────────────────────────
   /boards/{board_id}/tags:
@@ -3675,6 +4066,8 @@ components:
         project_type: { type: string, enum: [scrum, kanban] }
         owner_id: { type: string, format: uuid }
         status: { type: string, enum: [active, archived, paused] }
+        sprint_duration_weeks: { type: integer, enum: [1, 2, 3, 4], description: Длительность спринта в неделях (только Scrum) }
+        incomplete_tasks_action: { type: string, enum: [backlog, next_sprint], default: backlog, description: "Действие с незавершёнными задачами при завершении спринта" }
         created_at: { type: string, format: date-time }
         owner: { $ref: '#/components/schemas/ProjectOwnerResponse' }
 
@@ -3702,6 +4095,8 @@ components:
         description: { type: string, nullable: true }
         status: { type: string, enum: [active, archived, paused] }
         owner_id: { type: string, format: uuid }
+        sprint_duration_weeks: { type: integer, enum: [1, 2, 3, 4] }
+        incomplete_tasks_action: { type: string, enum: [backlog, next_sprint], description: "Действие с незавершёнными задачами при завершении спринта" }
 
     ProjectReferencesResponse:
       type: object
@@ -3807,7 +4202,6 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        description: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_system: { type: boolean }
         is_required: { type: boolean }
@@ -3831,7 +4225,6 @@ components:
         - **user_list** — UUID через запятую, каждый — существующий пользователь
       properties:
         name: { type: string }
-        description: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_required: { type: boolean }
         options:
@@ -3855,7 +4248,6 @@ components:
         Если параметр обязательный, `value` не может быть null или пустой строкой.
       properties:
         name: { type: string }
-        description: { type: string }
         is_required: { type: boolean }
         options:
           type: array
@@ -3875,6 +4267,10 @@ components:
         priority_type: { type: string, enum: [priority, service_class] }
         estimation_unit: { type: string, enum: [story_points, time] }
         swimlane_group_by: { type: string, nullable: true }
+        priority_options:
+          type: array
+          items: { type: string }
+          description: Кастомные опции приоритизации для этой доски
 
     CreateBoardRequest:
       type: object
@@ -3901,6 +4297,10 @@ components:
         priority_type: { type: string }
         estimation_unit: { type: string }
         swimlane_group_by: { type: string }
+        priority_options:
+          type: array
+          items: { type: string }
+          description: Кастомные опции приоритизации
 
     ReorderBoardsRequest:
       type: object
@@ -4022,7 +4422,6 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        description: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
         is_system: { type: boolean }
         is_required: { type: boolean }
@@ -4035,7 +4434,6 @@ components:
       required: [name, field_type]
       properties:
         name: { type: string }
-        description: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_required: { type: boolean }
         options:
@@ -4046,7 +4444,6 @@ components:
       type: object
       properties:
         name: { type: string }
-        description: { type: string, nullable: true }
         is_required: { type: boolean }
         options:
           type: array
@@ -4055,31 +4452,110 @@ components:
     # ── Tasks ──
     TaskResponse:
       type: object
+      description: |-
+        В контексте задач все поля owner/executor используют member_id (участник проекта), а не user_id.
+        Для получения информации о пользователе используйте `owner_user_id` / `executor_user_id`.
+        `column_id` может быть null для задач в бэклоге (до запуска спринта).
+        При запуске спринта задачи получают column_id первой initial-колонки доски.
       properties:
         id: { type: string, format: uuid }
         key: { type: string }
         project_id: { type: string, format: uuid }
-        owner_id: { type: string, format: uuid }
-        executor_id: { type: string, format: uuid, nullable: true }
+        board_id: { type: string, format: uuid }
+        owner_member_id: { type: string, format: uuid, description: "ID участника проекта (members.id), назначившего задачу" }
+        executor_member_id: { type: string, format: uuid, nullable: true, description: "ID участника проекта (members.id), исполнителя задачи" }
+        owner_user_id: { type: string, format: uuid, nullable: true, description: "ID пользователя (users.id) владельца задачи — для GET /users/{id}" }
+        executor_user_id: { type: string, format: uuid, nullable: true, description: "ID пользователя (users.id) исполнителя — для GET /users/{id}" }
         name: { type: string }
         description: { type: string, nullable: true }
         deadline: { type: string, format: date-time, nullable: true }
-        column_id: { type: string, format: uuid }
+        column_id: { type: string, format: uuid, nullable: true }
         swimlane_id: { type: string, format: uuid, nullable: true }
+        priority: { type: string, nullable: true }
+        estimation: { type: string, nullable: true }
         progress: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        column_name: { type: string, nullable: true, description: Название колонки (LEFT JOIN, null если column_id is null) }
+        column_system_type: { type: string, nullable: true, enum: [initial, in_progress, paused, completed, cancelled], description: Системный тип колонки }
+        tags:
+          type: array
+          items: { $ref: '#/components/schemas/TagResponse' }
 
     CreateTaskRequest:
       type: object
-      required: [project_id, owner_member_id, name, column_id]
+      required: [project_id, owner_member_id, name]
+      description: |-
+        Для создания задачи нужен либо `board_id`, либо `column_id`, либо оба.
+        - `board_id` без `column_id` → задача создаётся в начальной колонке доски.
+        - `column_id` без `board_id` → `board_id` определяется автоматически из колонки.
+        - Оба → задача сразу на доске в указанной колонке.
+
+        Опциональные вложенные массивы (checklists, tags, watcher_member_ids, field_values, dependencies)
+        позволяют создать задачу со всеми подсущностями атомарно в одной транзакции.
+        Если массив не передан или пуст — поведение не меняется.
       properties:
         project_id: { type: string, format: uuid }
+        board_id: { type: string, format: uuid, description: Доска для задачи }
         owner_member_id: { type: string, format: uuid }
         executor_member_id: { type: string, format: uuid, nullable: true }
         name: { type: string }
         description: { type: string }
         deadline: { type: string, format: date-time, nullable: true }
-        column_id: { type: string, format: uuid }
+        column_id: { type: string, format: uuid, nullable: true, description: Опционально — колонка (null для бэклога) }
         swimlane_id: { type: string, format: uuid, nullable: true }
+        priority: { type: string, nullable: true }
+        estimation: { type: string, nullable: true }
+        checklists:
+          type: array
+          description: Чек-листы, создаваемые вместе с задачей
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+              items:
+                type: array
+                items:
+                  type: object
+                  required: [content]
+                  properties:
+                    content: { type: string }
+                    is_checked: { type: boolean, default: false }
+                    order: { type: integer }
+        tags:
+          type: array
+          description: Имена тегов (создаются на доске если не существуют)
+          items: { type: string }
+        watcher_member_ids:
+          type: array
+          description: ID участников проекта, добавляемых как наблюдатели
+          items: { type: string, format: uuid }
+        field_values:
+          type: array
+          description: Значения кастомных полей доски
+          items:
+            type: object
+            required: [field_id]
+            properties:
+              field_id: { type: string, format: uuid }
+              value_text: { type: string, nullable: true }
+              value_number: { type: string, nullable: true }
+              value_datetime: { type: string, format: date-time, nullable: true }
+        dependencies:
+          type: array
+          description: Связи с другими задачами
+          items:
+            type: object
+            required: [depends_on_task_id, type]
+            properties:
+              depends_on_task_id: { type: string, format: uuid }
+              type:
+                type: string
+                enum: [blocks, is_blocked_by, relates_to, parent, subtask]
+        add_to_backlog:
+          type: boolean
+          default: false
+          description: Если true — добавить задачу в бэклог продукта проекта после создания
 
     UpdateTaskRequest:
       type: object
@@ -4090,25 +4566,58 @@ components:
         executor_member_id: { type: string, format: uuid, nullable: true }
         column_id: { type: string, format: uuid }
         swimlane_id: { type: string, format: uuid, nullable: true }
+        priority: { type: string, nullable: true }
+        estimation: { type: string, nullable: true }
 
-    DeleteTaskRequest:
-      type: object
-      required: [reason]
-      properties:
-        reason: { type: string }
-
-    TaskWatcherResponse:
+    CommentResponse:
       type: object
       properties:
         id: { type: string, format: uuid }
         task_id: { type: string, format: uuid }
-        project_member_id: { type: string, format: uuid }
+        author_id: { type: string, format: uuid }
+        content: { type: string }
+        parent_comment_id: { type: string, format: uuid, nullable: true, description: "ID родительского комментария (для ответов)" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AttachmentResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        task_id: { type: string, format: uuid, nullable: true }
+        comment_id: { type: string, format: uuid, nullable: true }
+        file_name: { type: string }
+        file_size: { type: integer }
+        content_type: { type: string }
+        uploaded_by: { type: string, format: uuid }
+        uploaded_at: { type: string, format: date-time }
+
+    TaskFieldValueResponse:
+      type: object
+      properties:
+        field_id: { type: string, format: uuid }
+        value_text: { type: string, nullable: true }
+        value_number: { type: number, nullable: true }
+        value_datetime: { type: string, format: date-time, nullable: true }
+
+    SetTaskFieldValueRequest:
+      type: object
+      properties:
+        value_text: { type: string, nullable: true }
+        value_number: { type: number, nullable: true }
+        value_datetime: { type: string, format: date-time, nullable: true }
+
+    TaskWatcherResponse:
+      type: object
+      properties:
+        task_id: { type: string, format: uuid }
+        member_id: { type: string, format: uuid }
 
     AddWatcherRequest:
       type: object
-      required: [project_member_id]
+      required: [member_id]
       properties:
-        project_member_id: { type: string, format: uuid }
+        member_id: { type: string, format: uuid }
 
     TaskDependencyResponse:
       type: object
@@ -4116,14 +4625,14 @@ components:
         id: { type: string, format: uuid }
         task_id: { type: string, format: uuid }
         depends_on_task_id: { type: string, format: uuid }
-        type: { type: string, enum: [blocks, is_blocked_by, relates_to] }
+        type: { type: string, enum: [blocks, is_blocked_by, relates_to, parent, subtask] }
 
     AddDependencyRequest:
       type: object
       required: [depends_on_task_id, type]
       properties:
         depends_on_task_id: { type: string, format: uuid }
-        type: { type: string, enum: [blocks, is_blocked_by, relates_to] }
+        type: { type: string, enum: [blocks, is_blocked_by, relates_to, parent, subtask] }
 
     ChecklistResponse:
       type: object
@@ -4163,6 +4672,18 @@ components:
       properties:
         is_checked: { type: boolean }
 
+    UpdateChecklistRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    UpdateChecklistItemRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+
     # ── Sprints ──
     SprintResponse:
       type: object
@@ -4195,6 +4716,62 @@ components:
         start_date: { type: string, format: date }
         duration_weeks: { type: integer, enum: [1, 2, 3, 4] }
         duration_days: { type: integer, minimum: 1, maximum: 28 }
+
+    CompleteSprintRequest:
+      type: object
+      required: [incomplete_tasks_action]
+      properties:
+        incomplete_tasks_action:
+          type: string
+          enum: [backlog, next_sprint]
+          description: What to do with incomplete tasks
+
+    # ── Scrum Analytics ──
+    VelocityResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/VelocitySprintData'
+        metrics:
+          $ref: '#/components/schemas/VelocityMetrics'
+        interpretation:
+          type: string
+
+    VelocitySprintData:
+      type: object
+      properties:
+        sprint: { type: string }
+        sprint_id: { type: string, format: uuid }
+        planned: { type: integer }
+        completed: { type: integer }
+
+    VelocityMetrics:
+      type: object
+      properties:
+        average_velocity: { type: number }
+        velocity_trend: { type: number }
+        completion_rate: { type: number }
+        average_sprint_scope: { type: number }
+        sprint_count: { type: integer }
+
+    BurndownResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BurndownDayData'
+        sprint_name: { type: string }
+        interpretation: { type: string }
+
+    BurndownDayData:
+      type: object
+      properties:
+        day: { type: string }
+        remaining: { type: number }
+        ideal: { type: number }
 
     # ── Admin: Users ──
     AdminUserResponse:
@@ -4317,6 +4894,9 @@ components:
         priority_type: { type: string, enum: [priority, service_class] }
         estimation_unit: { type: string, enum: [story_points, time] }
         swimlane_group_by: { type: string, nullable: true }
+        priority_options:
+          type: array
+          items: { type: string }
         columns:
           type: array
           items: { $ref: '#/components/schemas/TemplateBoardColumnResponse' }
@@ -4352,7 +4932,6 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        description: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
         is_system: { type: boolean }
         is_required: { type: boolean }
@@ -4365,7 +4944,6 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        description: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
         is_system: { type: boolean }
         is_required: { type: boolean }
@@ -4425,6 +5003,10 @@ components:
         priority_type: { type: string }
         estimation_unit: { type: string }
         swimlane_group_by: { type: string, nullable: true }
+        priority_options:
+          type: array
+          items: { type: string }
+          description: Кастомные опции приоритизации
 
     ReorderRequest:
       type: object
@@ -4574,12 +5156,6 @@ components:
         project_statuses:
           type: array
           items: { $ref: '#/components/schemas/ReferenceKeyName' }
-        system_task_fields:
-          type: array
-          items: { $ref: '#/components/schemas/ReferenceSystemField' }
-        system_project_params:
-          type: array
-          items: { $ref: '#/components/schemas/ReferenceSystemProjectParam' }
         permission_areas:
           type: array
           items: { $ref: '#/components/schemas/ReferencePermissionArea' }
@@ -4631,39 +5207,6 @@ components:
           type: array
           items: { type: string }
         default_values:
-          type: array
-          items: { type: string }
-
-    ReferenceSystemField:
-      type: object
-      properties:
-        key: { type: string }
-        name: { type: string }
-        field_type: { type: string }
-        is_required:
-          type: boolean
-          description: |
-            Whether the field is required when creating a task.
-            Only three system fields are required:
-            - "Название" (title) — must be filled by the user
-            - "Автор" (author) — auto-filled by the system
-            - "Дата создания" (created_at) — auto-filled by the system
-            All other system fields (Описание, Статус задачи, Исполнитель,
-            Наблюдатели, Дедлайн, Приоритизация, Оценка трудозатрат, Спринт)
-            are not required.
-        available_for:
-          type: array
-          items: { type: string }
-        description: { type: string }
-
-    ReferenceSystemProjectParam:
-      type: object
-      properties:
-        key: { type: string }
-        name: { type: string }
-        field_type: { type: string }
-        is_required: { type: boolean }
-        options:
           type: array
           items: { type: string }
 

@@ -10,7 +10,7 @@ import (
 	"projektus-backend/internal/services"
 )
 
-func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, notificationHandler *handlers.NotificationHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, projectRoleHandler *handlers.ProjectRoleHandler, projectParamHandler *handlers.ProjectParamHandler, tagHandler *handlers.TagHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
+func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, notificationHandler *handlers.NotificationHandler, meetingHandler *handlers.MeetingHandler, roleHandler *handlers.RoleHandler, projectHandler *handlers.ProjectHandler, projectMemberHandler *handlers.ProjectMemberHandler, templateHandler *handlers.TemplateHandler, boardHandler *handlers.BoardHandler, taskHandler *handlers.TaskHandler, sprintHandler *handlers.SprintHandler, productBacklogHandler *handlers.ProductBacklogHandler, sprintBacklogHandler *handlers.SprintBacklogHandler, adminUserHandler *handlers.AdminUserHandler, adminPasswordPolicyHandler *handlers.AdminPasswordPolicyHandler, projectRoleHandler *handlers.ProjectRoleHandler, projectParamHandler *handlers.ProjectParamHandler, tagHandler *handlers.TagHandler, scrumAnalyticsHandler *handlers.ScrumAnalyticsHandler, projectService *services.ProjectService, permissionSvc *services.PermissionService) *gin.Engine {
 	r := gin.Default()
 
 	// Раздача статических файлов (аватары, вложения)
@@ -114,6 +114,10 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.GET("/:projectId/backlog/sprint", sprintBacklogHandler.GetSprintBacklog)
 			projects.POST("/:projectId/backlog/move-to-sprint", sprintBacklogHandler.MoveTasksToSprint)
 
+			// Scrum analytics
+			projects.GET("/:projectId/analytics/velocity", scrumAnalyticsHandler.GetVelocity)
+			projects.GET("/:projectId/analytics/burndown", scrumAnalyticsHandler.GetBurndown)
+
 		}
 
 		sprints := v1.Group("/sprints")
@@ -122,6 +126,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			sprints.GET("/:sprintId", sprintHandler.GetSprint)
 			sprints.PATCH("/:sprintId", sprintHandler.UpdateSprint)
 			sprints.DELETE("/:sprintId", sprintHandler.DeleteSprint)
+			sprints.GET("/:sprintId/tasks", sprintHandler.GetSprintTasks)
 			sprints.POST("/:sprintId/start", sprintHandler.StartSprint)
 			sprints.POST("/:sprintId/complete", sprintHandler.CompleteSprint)
 		}
@@ -180,14 +185,34 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			tasks.GET("/:taskId/watchers", taskHandler.ListWatchers)
 			tasks.POST("/:taskId/watchers", taskHandler.AddWatcher)
+			tasks.DELETE("/:taskId/watchers/:memberId", taskHandler.RemoveWatcher)
 
 			tasks.GET("/:taskId/dependencies", taskHandler.ListDependencies)
 			tasks.POST("/:taskId/dependencies", taskHandler.AddDependency)
 
 			tasks.GET("/:taskId/checklists", taskHandler.ListChecklists)
 			tasks.POST("/:taskId/checklists", taskHandler.CreateChecklist)
+			tasks.PATCH("/checklists/:checklistId", taskHandler.UpdateChecklist)
+			tasks.DELETE("/checklists/:checklistId", taskHandler.DeleteChecklist)
 			tasks.POST("/checklists/:checklistId/items", taskHandler.AddChecklistItem)
+			tasks.PATCH("/checklist-items/:itemId", taskHandler.UpdateChecklistItem)
 			tasks.PATCH("/checklist-items/:itemId/status", taskHandler.SetChecklistItemStatus)
+			tasks.DELETE("/checklist-items/:itemId", taskHandler.DeleteChecklistItem)
+
+			// Comments
+			tasks.GET("/:taskId/comments", taskHandler.ListComments)
+			tasks.POST("/:taskId/comments", taskHandler.CreateComment)
+			tasks.DELETE("/comments/:commentId", taskHandler.DeleteComment)
+
+			// Attachments
+			tasks.GET("/:taskId/attachments", taskHandler.ListAttachments)
+			tasks.POST("/:taskId/attachments", taskHandler.UploadAttachment)
+			tasks.GET("/attachments/:attachmentId/download", taskHandler.DownloadAttachment)
+			tasks.DELETE("/attachments/:attachmentId", taskHandler.DeleteAttachment)
+
+			// Field values
+			tasks.GET("/:taskId/field-values", taskHandler.GetTaskFieldValues)
+			tasks.PUT("/:taskId/field-values/:fieldId", taskHandler.SetTaskFieldValue)
 
 			// Tags (task-scoped)
 			tasks.GET("/:taskId/tags", tagHandler.ListTaskTags)

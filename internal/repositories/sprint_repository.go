@@ -18,6 +18,10 @@ type SprintRepository interface {
 	Update(ctx context.Context, s *domain.Sprint) (*domain.Sprint, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetActiveSprint(ctx context.Context, projectID uuid.UUID) (*domain.Sprint, error)
+	GetNextPlannedSprint(ctx context.Context, projectID uuid.UUID) (*domain.Sprint, error)
+	GetPlannedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error)
+	GetNonCompletedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error)
+	GetCompletedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error)
 	UpdateStatuses(ctx context.Context) error
 }
 
@@ -98,6 +102,53 @@ func (r *sprintRepository) GetActiveSprint(ctx context.Context, projectID uuid.U
 		return nil, err
 	}
 	return mapDBSprint(row), nil
+}
+
+func (r *sprintRepository) GetNextPlannedSprint(ctx context.Context, projectID uuid.UUID) (*domain.Sprint, error) {
+	row, err := r.q.GetNextPlannedSprint(ctx, projectID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return mapDBSprint(row), nil
+}
+
+func (r *sprintRepository) GetPlannedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
+	rows, err := r.q.GetPlannedSprintsByProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Sprint, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, *mapDBSprint(row))
+	}
+	return result, nil
+}
+
+func (r *sprintRepository) GetNonCompletedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
+	rows, err := r.q.GetNonCompletedSprintsByProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Sprint, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, *mapDBSprint(row))
+	}
+	return result, nil
+}
+
+func (r *sprintRepository) GetCompletedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
+	rows, err := r.q.GetCompletedSprintsByProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Sprint, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, *mapDBSprint(row))
+	}
+	return result, nil
 }
 
 func (r *sprintRepository) UpdateStatuses(ctx context.Context) error {

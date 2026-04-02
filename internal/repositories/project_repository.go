@@ -29,13 +29,23 @@ func NewProjectRepository(q *db.Queries) ProjectRepository {
 }
 
 func (r *projectRepository) Create(ctx context.Context, p *domain.Project) (*domain.Project, error) {
+	var sprintDuration sql.NullInt32
+	if p.SprintDurationWeeks != nil {
+		sprintDuration = sql.NullInt32{Int32: int32(*p.SprintDurationWeeks), Valid: true}
+	}
+	incompleteAction := p.IncompleteTasksAction
+	if incompleteAction == "" {
+		incompleteAction = "backlog"
+	}
 	row, err := r.q.CreateProject(ctx, db.CreateProjectParams{
-		Key:         p.Key,
-		Name:        p.Name,
-		Description: stringPtrToNullString(p.Description),
-		ProjectType: string(p.Type),
-		OwnerID:     p.OwnerID,
-		Status:      string(p.Status),
+		Key:                   p.Key,
+		Name:                  p.Name,
+		Description:           stringPtrToNullString(p.Description),
+		ProjectType:           string(p.Type),
+		OwnerID:               p.OwnerID,
+		Status:                string(p.Status),
+		SprintDurationWeeks:   sprintDuration,
+		IncompleteTasksAction: incompleteAction,
 	})
 	if err != nil {
 		return nil, err
@@ -119,12 +129,22 @@ func (r *projectRepository) Update(ctx context.Context, p *domain.Project) (*dom
 	if p.OwnerID != uuid.Nil {
 		ownerID = uuid.NullUUID{UUID: p.OwnerID, Valid: true}
 	}
+	var sprintDuration sql.NullInt32
+	if p.SprintDurationWeeks != nil {
+		sprintDuration = sql.NullInt32{Int32: int32(*p.SprintDurationWeeks), Valid: true}
+	}
+	var incompleteAction sql.NullString
+	if p.IncompleteTasksAction != "" {
+		incompleteAction = sql.NullString{String: p.IncompleteTasksAction, Valid: true}
+	}
 	row, err := r.q.UpdateProject(ctx, db.UpdateProjectParams{
-		Name:        stringToNullString(p.Name),
-		Description: stringPtrToNullString(p.Description),
-		Status:      stringToNullString(string(p.Status)),
-		OwnerID:     ownerID,
-		ID:          p.ID,
+		Name:                  stringToNullString(p.Name),
+		Description:           stringPtrToNullString(p.Description),
+		Status:                stringToNullString(string(p.Status)),
+		OwnerID:               ownerID,
+		SprintDurationWeeks:   sprintDuration,
+		IncompleteTasksAction: incompleteAction,
+		ID:                    p.ID,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -140,15 +160,22 @@ func (r *projectRepository) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func mapDBProject(row db.Project) *domain.Project {
+	var sprintDuration *int
+	if row.SprintDurationWeeks.Valid {
+		v := int(row.SprintDurationWeeks.Int32)
+		sprintDuration = &v
+	}
 	return &domain.Project{
-		ID:          row.ID,
-		Key:         row.Key,
-		Name:        row.Name,
-		Description: nullStringToStringPtr(row.Description),
-		Type:        domain.ProjectType(row.ProjectType),
-		OwnerID:     row.OwnerID,
-		Status:      domain.ProjectStatus(row.Status),
-		CreatedAt:   row.CreatedAt,
+		ID:                    row.ID,
+		Key:                   row.Key,
+		Name:                  row.Name,
+		Description:           nullStringToStringPtr(row.Description),
+		Type:                  domain.ProjectType(row.ProjectType),
+		OwnerID:               row.OwnerID,
+		Status:                domain.ProjectStatus(row.Status),
+		SprintDurationWeeks:   sprintDuration,
+		IncompleteTasksAction: row.IncompleteTasksAction,
+		CreatedAt:             row.CreatedAt,
 	}
 }
 

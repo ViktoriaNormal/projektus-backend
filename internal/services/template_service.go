@@ -140,6 +140,19 @@ func (s *TemplateService) CreateBoard(ctx context.Context, templateID uuid.UUID,
 		return domain.TemplateBoard{}, err
 	}
 
+	// Apply type-specific base structure for new boards
+	projectType := string(tmpl.Type)
+	if projectType == "kanban" {
+		priorityType = "service_class"
+		estimationUnit = "time"
+		sgbDefault := domain.SystemBoardFieldIDs["priority"].String()
+		swimlaneGroupBy = &sgbDefault
+	} else {
+		priorityType = "priority"
+		estimationUnit = "story_points"
+		swimlaneGroupBy = nil
+	}
+
 	if isDefault {
 		_ = s.repo.UnsetDefaultBoard(ctx, templateID)
 	}
@@ -173,19 +186,15 @@ func (s *TemplateService) CreateBoard(ctx context.Context, templateID uuid.UUID,
 	// Create swimlanes if grouped
 	var swimlanes []domain.TemplateBoardSwimlane
 	if sgb != "" {
-		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, sgb)
+		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, sgb, priorityType)
 		if err != nil {
 			return domain.TemplateBoard{}, err
 		}
 	}
 
-	// Create system fields
-	fields, err := s.createSystemFields(ctx, board.ID, string(tmpl.Type), priorityType, estimationUnit)
-	if err != nil {
-		return domain.TemplateBoard{}, err
-	}
+	// System fields are generated at runtime from Go constants, not stored in DB.
 
-	return s.buildBoardDomain(board, columns, swimlanes, fields), nil
+	return s.buildBoardDomain(board, columns, swimlanes, nil), nil
 }
 
 func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID uuid.UUID, name, description *string, isDefault *bool, order *int32, priorityType, estimationUnit *string, swimlaneGroupBy *string, clearSwimlaneGroup bool) (domain.TemplateBoard, error) {
@@ -255,7 +264,7 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 	if swimlaneGroupChanged {
 		_ = s.repo.DeleteSwimlanesByBoardID(ctx, boardID)
 		if finalSwimlaneGroupBy != "" {
-			_, _ = s.createSwimlanesForGroup(ctx, boardID, finalSwimlaneGroupBy)
+			_, _ = s.createSwimlanesForGroup(ctx, boardID, finalSwimlaneGroupBy, finalPriorityType)
 		}
 	}
 
@@ -280,7 +289,20 @@ func (s *TemplateService) DeleteBoard(ctx context.Context, templateID, boardID u
 		return fmt.Errorf("LAST_BOARD_DELETE: %w", domain.ErrLastBoard)
 	}
 
-	return s.repo.DeleteBoard(ctx, boardID)
+	if err := s.repo.DeleteBoard(ctx, boardID); err != nil {
+		return err
+	}
+
+	// Recompact board orders for the template.
+	boards, _ := s.repo.ListBoardsByTemplateID(ctx, templateID)
+	sort.Slice(boards, func(i, j int) bool { return boards[i].SortOrder < boards[j].SortOrder })
+	for i, b := range boards {
+		newOrder := int16(i + 1)
+		if b.SortOrder != newOrder {
+			_ = s.repo.UpdateBoardOrder(ctx, b.ID, newOrder)
+		}
+	}
+	return nil
 }
 
 func (s *TemplateService) ReorderBoards(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
@@ -620,10 +642,9 @@ func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boa
 	}
 
 	field, err := s.repo.CreateField(ctx, db.CreateTemplateBoardFieldParams{
-		BoardID:    uuid.NullUUID{UUID: boardID, Valid: true},
+		BoardID:    boardID,
 		Name:       name,
 		FieldType:  fieldType,
-		IsSystem:   false,
 		IsRequired: isRequired,
 		Options:    repositories.OptionsToJSON(options),
 	})
@@ -644,21 +665,11 @@ func (s *TemplateService) UpdateCustomField(ctx context.Context, templateID, boa
 	}
 
 	existing, err := s.repo.GetFieldByID(ctx, fieldID)
-	if err != nil || !existing.BoardID.Valid || existing.BoardID.UUID != boardID {
+	if err != nil || existing.BoardID != boardID {
 		return domain.TemplateBoardCustomField{}, domain.ErrNotFound
 	}
 
-	// Системные поля: запрещено менять name, isRequired.
-	// Исключение: «Приоритизация» и «Оценка трудозатрат» — можно менять options.
-	if existing.IsSystem {
-		configurable := existing.Name == "Приоритизация" || existing.Name == "Оценка трудозатрат"
-		if name != nil || isRequired != nil {
-			return domain.TemplateBoardCustomField{}, domain.ErrSystemField
-		}
-		if !configurable && options != nil {
-			return domain.TemplateBoardCustomField{}, domain.ErrSystemField
-		}
-	}
+	// All DB fields are custom (non-system), so no system field check needed.
 
 	finalName := existing.Name
 	if name != nil {
@@ -693,7 +704,7 @@ func (s *TemplateService) DeleteCustomField(ctx context.Context, templateID, boa
 	}
 
 	existing, err := s.repo.GetFieldByID(ctx, fieldID)
-	if err != nil || !existing.BoardID.Valid || existing.BoardID.UUID != boardID || existing.IsSystem {
+	if err != nil || existing.BoardID != boardID {
 		return domain.ErrNotFound
 	}
 
@@ -722,7 +733,7 @@ func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uui
 	}
 
 	p, err := s.repo.CreateProjectParam(ctx, db.CreateTemplateProjectParamParams{
-		TemplateID: uuid.NullUUID{UUID: templateID, Valid: true}, Name: name, Description: "", FieldType: fieldType, IsRequired: isRequired, Options: repositories.OptionsToJSON(options),
+		TemplateID: uuid.NullUUID{UUID: templateID, Valid: true}, Name: name, FieldType: fieldType, IsRequired: isRequired, Options: repositories.OptionsToJSON(options),
 	})
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
@@ -803,7 +814,7 @@ func (s *TemplateService) UpdateRole(ctx context.Context, templateID, roleID uui
 	if name != nil {
 		finalName = *name
 	}
-	finalDesc := role.Description
+	finalDesc := ""
 	if description != nil {
 		finalDesc = *description
 	}
@@ -840,7 +851,7 @@ func (s *TemplateService) loadRole(ctx context.Context, r db.ListTemplateRolesRo
 		domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.PermissionCode, Access: p.Access.String})
 	}
 	return domain.TemplateRole{
-		ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name, Description: r.Description,
+		ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name,
 		IsAdmin: r.IsAdmin, Permissions: domPerms,
 	}, nil
 }
@@ -871,8 +882,8 @@ func (s *TemplateService) loadProjectParams(ctx context.Context, templateID uuid
 	result := make([]domain.TemplateProjectParam, 0, len(dbParams))
 	for _, p := range dbParams {
 		result = append(result, domain.TemplateProjectParam{
-			ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name, Description: p.Description,
-			FieldType: p.FieldType, IsSystem: p.IsSystem, IsRequired: p.IsRequired,
+			ID: p.ID, TemplateID: p.TemplateID.UUID, Name: p.Name,
+			FieldType: p.FieldType, IsSystem: false, IsRequired: p.IsRequired,
 			Options: repositories.JSONToOptions(p.Options),
 		})
 	}
@@ -895,7 +906,7 @@ func (s *TemplateService) loadRoles(ctx context.Context, templateID uuid.UUID) (
 			domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.PermissionCode, Access: p.Access.String})
 		}
 		result = append(result, domain.TemplateRole{
-			ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name, Description: r.Description,
+			ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name,
 			IsAdmin: r.IsAdmin, Permissions: domPerms,
 		})
 	}
@@ -969,6 +980,7 @@ func (s *TemplateService) buildBoardDomain(b db.ListTemplateBoardsByTemplateIDRo
 		PriorityType:    b.PriorityType,
 		EstimationUnit:  b.EstimationUnit,
 		SwimlaneGroupBy: b.SwimlaneGroupBy,
+		PriorityOptions: repositories.JSONToOptions(b.PriorityOptions),
 		Columns:         columns,
 		Swimlanes:       swimlanes,
 		CustomFields:    fields,
@@ -984,7 +996,7 @@ func (s *TemplateService) createDefaultBoard(ctx context.Context, templateID uui
 		priorityType = "service_class"
 		estimationUnit = "time"
 		description = "Kanban-доска с поддержкой WIP лимитов"
-		swimlaneGroupBy = "service_class"
+		swimlaneGroupBy = domain.SystemBoardFieldIDs["priority"].String()
 	}
 
 	board, err := s.repo.CreateBoard(ctx, db.CreateTemplateBoardParams{
@@ -1009,7 +1021,7 @@ func (s *TemplateService) createDefaultBoard(ctx context.Context, templateID uui
 	// Create swimlanes for Kanban
 	var swimlanes []domain.TemplateBoardSwimlane
 	if swimlaneGroupBy != "" {
-		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, swimlaneGroupBy)
+		swimlanes, err = s.createSwimlanesForGroup(ctx, board.ID, swimlaneGroupBy, priorityType)
 		if err != nil {
 			return domain.TemplateBoard{}, err
 		}
@@ -1040,66 +1052,19 @@ func (s *TemplateService) createDefaultColumns(ctx context.Context, boardID uuid
 	return columns, nil
 }
 
-func (s *TemplateService) createSystemFields(ctx context.Context, boardID uuid.UUID, projectType, priorityType, estimationUnit string) ([]domain.TemplateBoardCustomField, error) {
-	// Дефолтные options для Приоритизации по типу приоритизации
-	var priorityOptions []string
-	for _, pt := range repositories.PriorityTypes {
-		if pt.Key == priorityType {
-			priorityOptions = pt.DefaultValues
-			break
-		}
+// createSystemFields removed: system fields are now generated at runtime from Go constants.
+
+func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID uuid.UUID, groupBy, priorityType string) ([]domain.TemplateBoardSwimlane, error) {
+	// Resolve the lookup key: if swimlane_group_by is the priority system field UUID,
+	// use the board's priority_type to look up default swimlane names.
+	lookupKey := groupBy
+	if groupBy == domain.SystemBoardFieldIDs["priority"].String() {
+		lookupKey = priorityType
 	}
 
-	fields := make([]domain.TemplateBoardCustomField, 0, len(repositories.DefaultBoardFields))
-	for _, def := range repositories.DefaultBoardFields {
-		// Фильтруем по типу проекта
-		available := false
-		for _, af := range def.AvailableFor {
-			if af == projectType {
-				available = true
-				break
-			}
-		}
-		if !available {
-			continue
-		}
-
-		options := def.Options
-		description := def.Description
-
-		switch def.Key {
-		case "priority":
-			options = priorityOptions
-			if desc, ok := repositories.PriorityDescriptions[priorityType]; ok {
-				description = desc
-			}
-		case "estimation":
-			if desc, ok := repositories.EstimationDescriptions[estimationUnit]; ok {
-				description = desc
-			}
-		}
-
-		row, err := s.repo.CreateField(ctx, db.CreateTemplateBoardFieldParams{
-			BoardID:     uuid.NullUUID{UUID: boardID, Valid: true},
-			Name:        def.Name,
-			Description: description,
-			FieldType:   def.FieldType,
-			IsSystem:    true,
-			IsRequired:  def.IsRequired,
-			Options:     repositories.OptionsToJSON(options),
-		})
-		if err != nil {
-			return nil, err
-		}
-		fields = append(fields, mapDBFieldToDomain(row))
-	}
-	return fields, nil
-}
-
-func (s *TemplateService) createSwimlanesForGroup(ctx context.Context, boardID uuid.UUID, groupBy string) ([]domain.TemplateBoardSwimlane, error) {
 	var names []string
 	for _, pt := range repositories.PriorityTypes {
-		if pt.Key == groupBy {
+		if pt.Key == lookupKey {
 			names = pt.DefaultValues
 			break
 		}
@@ -1159,10 +1124,10 @@ func mapDBSwimlaneToDomain(sw db.Swimlane) domain.TemplateBoardSwimlane {
 	}
 }
 
-func mapDBFieldToDomain(f db.ListTemplateBoardFieldsRow) domain.TemplateBoardCustomField {
+func mapDBFieldToDomain(f db.BoardField) domain.TemplateBoardCustomField {
 	return domain.TemplateBoardCustomField{
-		ID: f.ID, BoardID: f.BoardID.UUID, Name: f.Name, Description: f.Description,
-		FieldType: f.FieldType, IsSystem: f.IsSystem, IsRequired: f.IsRequired,
+		ID: f.ID, BoardID: f.BoardID, Name: f.Name,
+		FieldType: f.FieldType, IsSystem: false, IsRequired: f.IsRequired,
 		Options: repositories.JSONToOptions(f.Options),
 	}
 }
@@ -1246,14 +1211,6 @@ func (s *TemplateService) GetReferences(ctx context.Context) (*domain.References
 	if err != nil {
 		return nil, err
 	}
-	systemFields, err := s.refRepo.ListSystemTaskFields(ctx)
-	if err != nil {
-		return nil, err
-	}
-	sysParams, err := s.refRepo.ListSystemProjectParams(ctx)
-	if err != nil {
-		return nil, err
-	}
 	permAreas, err := s.refRepo.ListPermissionAreas(ctx)
 	if err != nil {
 		return nil, err
@@ -1269,8 +1226,6 @@ func (s *TemplateService) GetReferences(ctx context.Context) (*domain.References
 		EstimationUnits:     estimationUnits,
 		PriorityTypeOptions: priorityTypes,
 		ProjectStatuses:     repositories.ProjectStatuses,
-		SystemTaskFields:    systemFields,
-		SystemProjectParams: sysParams,
 		PermissionAreas:     permAreas,
 	}
 

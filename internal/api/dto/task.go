@@ -7,17 +7,26 @@ import (
 )
 
 type TaskResponse struct {
-	ID          uuid.UUID  `json:"id"`
-	Key         string     `json:"key"`
-	ProjectID   uuid.UUID  `json:"project_id"`
-	OwnerID     uuid.UUID  `json:"owner_id"`
-	ExecutorID  *uuid.UUID `json:"executor_id,omitempty"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description,omitempty"`
-	Deadline    *time.Time `json:"deadline,omitempty"`
-	ColumnID    uuid.UUID  `json:"column_id"`
-	SwimlaneID  *uuid.UUID `json:"swimlane_id,omitempty"`
-	Progress    *int       `json:"progress,omitempty"`
+	ID               uuid.UUID     `json:"id"`
+	Key              string        `json:"key"`
+	ProjectID        uuid.UUID     `json:"project_id"`
+	BoardID          uuid.UUID     `json:"board_id"`
+	OwnerMemberID    uuid.UUID     `json:"owner_member_id"`
+	ExecutorMemberID *uuid.UUID    `json:"executor_member_id,omitempty"`
+	OwnerUserID      *uuid.UUID    `json:"owner_user_id,omitempty"`
+	ExecutorUserID   *uuid.UUID    `json:"executor_user_id,omitempty"`
+	Name             string        `json:"name"`
+	Description      *string       `json:"description,omitempty"`
+	Deadline         *time.Time    `json:"deadline,omitempty"`
+	ColumnID         *uuid.UUID    `json:"column_id,omitempty"`
+	SwimlaneID       *uuid.UUID    `json:"swimlane_id,omitempty"`
+	Priority         *string       `json:"priority,omitempty"`
+	Estimation       *string       `json:"estimation,omitempty"`
+	Progress         *int          `json:"progress,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	ColumnName       *string       `json:"column_name,omitempty"`
+	ColumnSystemType *string       `json:"column_system_type,omitempty"`
+	Tags             []TagResponse `json:"tags"`
 }
 
 type CreateTaskRequest struct {
@@ -27,8 +36,42 @@ type CreateTaskRequest struct {
 	Name             string     `json:"name" binding:"required"`
 	Description      string     `json:"description"`
 	Deadline         *time.Time `json:"deadline,omitempty"`
-	ColumnID         uuid.UUID  `json:"column_id" binding:"required"`
+	ColumnID         uuid.UUID  `json:"column_id"`
+	BoardID          *uuid.UUID `json:"board_id,omitempty"`
 	SwimlaneID       *uuid.UUID `json:"swimlane_id,omitempty"`
+	Priority         *string    `json:"priority,omitempty"`
+	Estimation       *string    `json:"estimation,omitempty"`
+
+	// Nested entities (optional, created atomically with the task)
+	Checklists       []CreateTaskChecklist   `json:"checklists,omitempty"`
+	Tags             []string                `json:"tags,omitempty"`
+	WatcherMemberIDs []uuid.UUID             `json:"watcher_member_ids,omitempty"`
+	FieldValues      []CreateTaskFieldValue  `json:"field_values,omitempty"`
+	Dependencies     []CreateTaskDependency  `json:"dependencies,omitempty"`
+	AddToBacklog     bool                    `json:"add_to_backlog,omitempty"`
+}
+
+type CreateTaskChecklist struct {
+	Name  string                    `json:"name" binding:"required"`
+	Items []CreateTaskChecklistItem `json:"items,omitempty"`
+}
+
+type CreateTaskChecklistItem struct {
+	Content   string `json:"content" binding:"required"`
+	IsChecked bool   `json:"is_checked"`
+	Order     int32  `json:"order"`
+}
+
+type CreateTaskFieldValue struct {
+	FieldID       uuid.UUID  `json:"field_id" binding:"required"`
+	ValueText     *string    `json:"value_text,omitempty"`
+	ValueNumber   *string    `json:"value_number,omitempty"`
+	ValueDatetime *time.Time `json:"value_datetime,omitempty"`
+}
+
+type CreateTaskDependency struct {
+	DependsOnTaskID uuid.UUID `json:"depends_on_task_id" binding:"required"`
+	Type            string    `json:"type" binding:"required"`
 }
 
 type UpdateTaskRequest struct {
@@ -38,6 +81,8 @@ type UpdateTaskRequest struct {
 	ExecutorMemberID NullableField[uuid.UUID] `json:"executor_member_id"`
 	ColumnID         *uuid.UUID               `json:"column_id,omitempty"`
 	SwimlaneID       NullableField[uuid.UUID] `json:"swimlane_id"`
+	Priority         NullableField[string]    `json:"priority"`
+	Estimation       NullableField[string]    `json:"estimation"`
 }
 
 type DeleteTaskRequest struct {
@@ -45,20 +90,32 @@ type DeleteTaskRequest struct {
 }
 
 type SearchTasksRequest struct {
-	ProjectID  *uuid.UUID `form:"project_id"`
-	OwnerID    *uuid.UUID `form:"owner_id"`
-	ExecutorID *uuid.UUID `form:"executor_id"`
-	ColumnID   *uuid.UUID `form:"column_id"`
+	ProjectID *uuid.UUID `form:"project_id"`
+	ColumnID  *uuid.UUID `form:"column_id"`
 }
 
 type TaskWatcherResponse struct {
-	ID              uuid.UUID `json:"id"`
-	TaskID          uuid.UUID `json:"task_id"`
-	ProjectMemberID uuid.UUID `json:"project_member_id"`
+	TaskID   uuid.UUID `json:"task_id"`
+	MemberID uuid.UUID `json:"member_id"`
 }
 
 type AddWatcherRequest struct {
-	ProjectMemberID uuid.UUID `json:"project_member_id" binding:"required"`
+	MemberID uuid.UUID `json:"member_id" binding:"required"`
+}
+
+// Field values
+
+type TaskFieldValueResponse struct {
+	FieldID       uuid.UUID  `json:"field_id"`
+	ValueText     *string    `json:"value_text,omitempty"`
+	ValueNumber   *string    `json:"value_number,omitempty"`
+	ValueDatetime *time.Time `json:"value_datetime,omitempty"`
+}
+
+type SetTaskFieldValueRequest struct {
+	ValueText     *string    `json:"value_text,omitempty"`
+	ValueNumber   *string    `json:"value_number,omitempty"`
+	ValueDatetime *time.Time `json:"value_datetime,omitempty"`
 }
 
 type TaskDependencyResponse struct {
@@ -99,4 +156,12 @@ type CreateChecklistItemRequest struct {
 
 type SetChecklistItemStatusRequest struct {
 	IsChecked bool `json:"is_checked" binding:"required"`
+}
+
+type UpdateChecklistRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type UpdateChecklistItemRequest struct {
+	Content string `json:"content" binding:"required"`
 }

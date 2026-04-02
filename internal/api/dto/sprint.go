@@ -18,6 +18,10 @@ type UpdateSprintRequest struct {
 	DurationDays  *int                  `json:"duration_days" binding:"omitempty,min=1,max=28"`
 }
 
+type CompleteSprintRequest struct {
+	IncompleteTasksAction string `json:"incomplete_tasks_action" binding:"required,oneof=backlog next_sprint"`
+}
+
 type SprintResponse struct {
 	ID        uuid.UUID `json:"id"`
 	ProjectID uuid.UUID `json:"project_id"`

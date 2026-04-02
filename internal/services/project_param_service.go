@@ -50,7 +50,6 @@ func (s *ProjectParamService) CreateParam(ctx context.Context, projectID uuid.UU
 		ProjectID:  uuid.NullUUID{UUID: projectID, Valid: true},
 		Name:       name,
 		FieldType:  fieldType,
-		IsSystem:   false,
 		IsRequired: isRequired,
 		Options:    opts,
 		Value:      val,

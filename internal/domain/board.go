@@ -11,27 +11,27 @@ const (
 )
 
 type Board struct {
-	ID              string  `json:"id"`
-	ProjectID       *string `json:"project_id,omitempty"`
-	TemplateID      *string `json:"template_id,omitempty"`
-	Name            string  `json:"name"`
-	Description     *string `json:"description,omitempty"`
-	IsDefault       bool    `json:"is_default"`
-	Order           int16   `json:"order"`
-	PriorityType    string  `json:"priority_type"`
-	EstimationUnit  string  `json:"estimation_unit"`
-	SwimlaneGroupBy string  `json:"swimlane_group_by"`
+	ID              string   `json:"id"`
+	ProjectID       *string  `json:"project_id,omitempty"`
+	TemplateID      *string  `json:"template_id,omitempty"`
+	Name            string   `json:"name"`
+	Description     *string  `json:"description,omitempty"`
+	IsDefault       bool     `json:"is_default"`
+	Order           int16    `json:"order"`
+	PriorityType    string   `json:"priority_type"`
+	EstimationUnit  string   `json:"estimation_unit"`
+	SwimlaneGroupBy string   `json:"swimlane_group_by"`
+	PriorityOptions []string `json:"priority_options,omitempty"`
 }
 
 type BoardCustomField struct {
-	ID          string   `json:"id"`
-	BoardID     string   `json:"board_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	FieldType   string   `json:"field_type"`
-	IsSystem    bool     `json:"is_system"`
-	IsRequired  bool     `json:"is_required"`
-	Options     []string `json:"options"`
+	ID         string   `json:"id"`
+	BoardID    string   `json:"board_id"`
+	Name       string   `json:"name"`
+	FieldType  string   `json:"field_type"`
+	IsSystem   bool     `json:"is_system"`
+	IsRequired bool     `json:"is_required"`
+	Options    []string `json:"options"`
 }
 
 type ProjectRole struct {
@@ -55,15 +55,14 @@ type Tag struct {
 }
 
 type ProjectParam struct {
-	ID          string   `json:"id"`
-	ProjectID   string   `json:"project_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	FieldType   string   `json:"field_type"`
-	IsSystem    bool     `json:"is_system"`
-	IsRequired  bool     `json:"is_required"`
-	Options     []string `json:"options"`
-	Value       *string  `json:"value"`
+	ID         string   `json:"id"`
+	ProjectID  string   `json:"project_id"`
+	Name       string   `json:"name"`
+	FieldType  string   `json:"field_type"`
+	IsSystem   bool     `json:"is_system"`
+	IsRequired bool     `json:"is_required"`
+	Options    []string `json:"options"`
+	Value      *string  `json:"value"`
 }
 
 type Column struct {

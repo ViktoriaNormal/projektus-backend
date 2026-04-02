@@ -14,41 +14,35 @@ import (
 )
 
 const createProjectParam = `-- name: CreateProjectParam :one
-INSERT INTO fields (kind, project_id, name, description, field_type, is_system, is_required, options, value)
-VALUES ('project_param', $1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, project_id, name, description, field_type, is_system, is_required, options, value
+INSERT INTO project_params (project_id, name, field_type, is_required, options, value)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, project_id, name, field_type, is_required, options, value
 `
 
 type CreateProjectParamParams struct {
-	ProjectID   uuid.NullUUID         `json:"project_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-	Value       sql.NullString        `json:"value"`
+	ProjectID  uuid.NullUUID         `json:"project_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Value      sql.NullString        `json:"value"`
 }
 
 type CreateProjectParamRow struct {
-	ID          uuid.UUID             `json:"id"`
-	ProjectID   uuid.NullUUID         `json:"project_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-	Value       sql.NullString        `json:"value"`
+	ID         uuid.UUID             `json:"id"`
+	ProjectID  uuid.NullUUID         `json:"project_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Value      sql.NullString        `json:"value"`
 }
 
 func (q *Queries) CreateProjectParam(ctx context.Context, arg CreateProjectParamParams) (CreateProjectParamRow, error) {
 	row := q.db.QueryRowContext(ctx, createProjectParam,
 		arg.ProjectID,
 		arg.Name,
-		arg.Description,
 		arg.FieldType,
-		arg.IsSystem,
 		arg.IsRequired,
 		arg.Options,
 		arg.Value,
@@ -58,9 +52,7 @@ func (q *Queries) CreateProjectParam(ctx context.Context, arg CreateProjectParam
 		&i.ID,
 		&i.ProjectID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 		&i.Value,
@@ -69,7 +61,7 @@ func (q *Queries) CreateProjectParam(ctx context.Context, arg CreateProjectParam
 }
 
 const deleteProjectParamByID = `-- name: DeleteProjectParamByID :exec
-DELETE FROM fields WHERE id = $1 AND kind = 'project_param'
+DELETE FROM project_params WHERE id = $1
 `
 
 func (q *Queries) DeleteProjectParamByID(ctx context.Context, id uuid.UUID) error {
@@ -78,21 +70,19 @@ func (q *Queries) DeleteProjectParamByID(ctx context.Context, id uuid.UUID) erro
 }
 
 const getProjectParamByID = `-- name: GetProjectParamByID :one
-SELECT id, project_id, name, description, field_type, is_system, is_required, options, value
-FROM fields
-WHERE id = $1 AND kind = 'project_param'
+SELECT id, project_id, name, field_type, is_required, options, value
+FROM project_params
+WHERE id = $1
 `
 
 type GetProjectParamByIDRow struct {
-	ID          uuid.UUID             `json:"id"`
-	ProjectID   uuid.NullUUID         `json:"project_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-	Value       sql.NullString        `json:"value"`
+	ID         uuid.UUID             `json:"id"`
+	ProjectID  uuid.NullUUID         `json:"project_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Value      sql.NullString        `json:"value"`
 }
 
 func (q *Queries) GetProjectParamByID(ctx context.Context, id uuid.UUID) (GetProjectParamByIDRow, error) {
@@ -102,9 +92,7 @@ func (q *Queries) GetProjectParamByID(ctx context.Context, id uuid.UUID) (GetPro
 		&i.ID,
 		&i.ProjectID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 		&i.Value,
@@ -114,24 +102,22 @@ func (q *Queries) GetProjectParamByID(ctx context.Context, id uuid.UUID) (GetPro
 
 const listProjectParams = `-- name: ListProjectParams :many
 
-SELECT id, project_id, name, description, field_type, is_system, is_required, options, value
-FROM fields
-WHERE project_id = $1 AND kind = 'project_param'
+SELECT id, project_id, name, field_type, is_required, options, value
+FROM project_params
+WHERE project_id = $1
 `
 
 type ListProjectParamsRow struct {
-	ID          uuid.UUID             `json:"id"`
-	ProjectID   uuid.NullUUID         `json:"project_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-	Value       sql.NullString        `json:"value"`
+	ID         uuid.UUID             `json:"id"`
+	ProjectID  uuid.NullUUID         `json:"project_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Value      sql.NullString        `json:"value"`
 }
 
-// Project params (stored in unified `fields` table, kind='project_param')
+// Project params (custom only; system params generated from Go constants)
 func (q *Queries) ListProjectParams(ctx context.Context, projectID uuid.NullUUID) ([]ListProjectParamsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectParams, projectID)
 	if err != nil {
@@ -145,9 +131,7 @@ func (q *Queries) ListProjectParams(ctx context.Context, projectID uuid.NullUUID
 			&i.ID,
 			&i.ProjectID,
 			&i.Name,
-			&i.Description,
 			&i.FieldType,
-			&i.IsSystem,
 			&i.IsRequired,
 			&i.Options,
 			&i.Value,
@@ -166,13 +150,13 @@ func (q *Queries) ListProjectParams(ctx context.Context, projectID uuid.NullUUID
 }
 
 const updateProjectParam = `-- name: UpdateProjectParam :one
-UPDATE fields
+UPDATE project_params
 SET name = COALESCE($1, name),
     is_required = COALESCE($2, is_required),
     options = COALESCE($3, options),
     value = $4
-WHERE id = $5 AND kind = 'project_param'
-RETURNING id, project_id, name, description, field_type, is_system, is_required, options, value
+WHERE id = $5
+RETURNING id, project_id, name, field_type, is_required, options, value
 `
 
 type UpdateProjectParamParams struct {
@@ -184,15 +168,13 @@ type UpdateProjectParamParams struct {
 }
 
 type UpdateProjectParamRow struct {
-	ID          uuid.UUID             `json:"id"`
-	ProjectID   uuid.NullUUID         `json:"project_id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	FieldType   string                `json:"field_type"`
-	IsSystem    bool                  `json:"is_system"`
-	IsRequired  bool                  `json:"is_required"`
-	Options     pqtype.NullRawMessage `json:"options"`
-	Value       sql.NullString        `json:"value"`
+	ID         uuid.UUID             `json:"id"`
+	ProjectID  uuid.NullUUID         `json:"project_id"`
+	Name       string                `json:"name"`
+	FieldType  string                `json:"field_type"`
+	IsRequired bool                  `json:"is_required"`
+	Options    pqtype.NullRawMessage `json:"options"`
+	Value      sql.NullString        `json:"value"`
 }
 
 func (q *Queries) UpdateProjectParam(ctx context.Context, arg UpdateProjectParamParams) (UpdateProjectParamRow, error) {
@@ -208,9 +190,7 @@ func (q *Queries) UpdateProjectParam(ctx context.Context, arg UpdateProjectParam
 		&i.ID,
 		&i.ProjectID,
 		&i.Name,
-		&i.Description,
 		&i.FieldType,
-		&i.IsSystem,
 		&i.IsRequired,
 		&i.Options,
 		&i.Value,

@@ -340,7 +340,7 @@ func (h *MeetingHandler) AddParticipants(c *gin.Context) {
 	meetingID := c.Param("meetingId")
 
 	var body struct {
-		UserIDs []string `json:"userIds"`
+		UserIDs []string `json:"user_ids"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")

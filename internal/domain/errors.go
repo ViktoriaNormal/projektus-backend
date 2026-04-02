@@ -40,5 +40,8 @@ var (
 	ErrInvalidFieldType      = errors.New("invalid field type for this context")
 	ErrScrumWipNotAllowed    = errors.New("swimlane WIP limits are not supported in Scrum")
 	ErrCompletedColumnWip   = errors.New("WIP limit cannot be set for completed columns")
+	ErrActiveSprintExists    = errors.New("project already has an active sprint")
+	ErrSprintDatesOverlap    = errors.New("sprint dates overlap with existing sprint")
+	ErrNoNextSprintForMove   = errors.New("no next planned sprint to move incomplete tasks")
 )
 

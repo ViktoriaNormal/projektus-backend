@@ -37,26 +37,26 @@ SELECT EXISTS(SELECT 1 FROM projects WHERE project_type = (SELECT project_type F
 -- Template boards (now in unified boards table, filtered by template_id)
 
 -- name: ListTemplateBoardsByTemplateID :many
-SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by
+SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options
 FROM boards
 WHERE template_id = $1
 ORDER BY sort_order ASC;
 
 -- name: GetTemplateBoardByID :one
-SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by
+SELECT id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options
 FROM boards
 WHERE id = $1;
 
 -- name: CreateTemplateBoard :one
-INSERT INTO boards (template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by;
+INSERT INTO boards (template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options;
 
 -- name: UpdateTemplateBoard :one
 UPDATE boards
-SET name = $2, description = $3, is_default = $4, sort_order = $5, priority_type = $6, estimation_unit = $7, swimlane_group_by = $8
+SET name = $2, description = $3, is_default = $4, sort_order = $5, priority_type = $6, estimation_unit = $7, swimlane_group_by = $8, priority_options = $9
 WHERE id = $1
-RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by;
+RETURNING id, template_id, name, description, is_default, sort_order, priority_type, estimation_unit, swimlane_group_by, priority_options;
 
 -- name: DeleteTemplateBoardByID :exec
 DELETE FROM boards WHERE id = $1;
@@ -139,36 +139,33 @@ UPDATE swimlanes SET sort_order = $2 WHERE id = $1;
 -- Template board custom fields (now in unified fields table)
 
 -- name: ListTemplateBoardFields :many
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE board_id = $1 AND kind = 'board_field';
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
+WHERE board_id = $1;
 
 -- name: ListTemplateBoardCustomFields :many
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
-WHERE board_id = $1 AND kind = 'board_field' AND is_system = false;
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
+WHERE board_id = $1;
 
 -- name: GetTemplateBoardFieldByID :one
-SELECT id, board_id, name, description, field_type, is_system, is_required, options
-FROM fields
+SELECT id, board_id, name, field_type, is_required, options
+FROM board_fields
 WHERE id = $1;
 
 -- name: CreateTemplateBoardField :one
-INSERT INTO fields (kind, board_id, name, description, field_type, is_system, is_required, options)
-VALUES ('board_field', $1, $2, $3, $4, $5, $6, $7)
-RETURNING id, board_id, name, description, field_type, is_system, is_required, options;
+INSERT INTO board_fields (board_id, name, field_type, is_required, options)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, board_id, name, field_type, is_required, options;
 
 -- name: UpdateTemplateBoardField :one
-UPDATE fields
+UPDATE board_fields
 SET name = $2, is_required = $3, options = $4
 WHERE id = $1
-RETURNING id, board_id, name, description, field_type, is_system, is_required, options;
+RETURNING id, board_id, name, field_type, is_required, options;
 
 -- name: DeleteTemplateBoardFieldByID :exec
-DELETE FROM fields WHERE id = $1;
+DELETE FROM board_fields WHERE id = $1;
 
 -- name: DeleteTemplateBoardFieldsByBoardID :exec
-DELETE FROM fields WHERE board_id = $1;
-
--- name: DeleteNonSystemFieldsByBoardID :exec
-DELETE FROM fields WHERE board_id = $1 AND is_system = false;
+DELETE FROM board_fields WHERE board_id = $1;

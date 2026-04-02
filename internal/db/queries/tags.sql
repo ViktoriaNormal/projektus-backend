@@ -46,6 +46,13 @@ WHERE task_id = $1 AND tag_id = $2;
 DELETE FROM task_tags
 WHERE task_id = $1;
 
+-- name: ListTagsByTaskIDs :many
+SELECT tt.task_id, t.id, t.board_id, t.name
+FROM tags t
+JOIN task_tags tt ON tt.tag_id = t.id
+WHERE tt.task_id = ANY($1::uuid[])
+ORDER BY t.name;
+
 -- name: CountTasksWithTag :one
 SELECT COUNT(*)::int AS count
 FROM task_tags

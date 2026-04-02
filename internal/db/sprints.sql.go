@@ -89,6 +89,151 @@ func (q *Queries) GetActiveSprint(ctx context.Context, projectID uuid.UUID) (Spr
 	return i, err
 }
 
+const getCompletedSprintsByProject = `-- name: GetCompletedSprintsByProject :many
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status IN ('completed', 'active')
+ORDER BY start_date ASC
+`
+
+func (q *Queries) GetCompletedSprintsByProject(ctx context.Context, projectID uuid.UUID) ([]Sprint, error) {
+	rows, err := q.db.QueryContext(ctx, getCompletedSprintsByProject, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Sprint{}
+	for rows.Next() {
+		var i Sprint
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Goal,
+			&i.StartDate,
+			&i.EndDate,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNextPlannedSprint = `-- name: GetNextPlannedSprint :one
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status = 'planned'
+ORDER BY start_date ASC
+LIMIT 1
+`
+
+func (q *Queries) GetNextPlannedSprint(ctx context.Context, projectID uuid.UUID) (Sprint, error) {
+	row := q.db.QueryRowContext(ctx, getNextPlannedSprint, projectID)
+	var i Sprint
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Name,
+		&i.Goal,
+		&i.StartDate,
+		&i.EndDate,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getNonCompletedSprintsByProject = `-- name: GetNonCompletedSprintsByProject :many
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status IN ('planned', 'active')
+ORDER BY start_date ASC
+`
+
+func (q *Queries) GetNonCompletedSprintsByProject(ctx context.Context, projectID uuid.UUID) ([]Sprint, error) {
+	rows, err := q.db.QueryContext(ctx, getNonCompletedSprintsByProject, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Sprint{}
+	for rows.Next() {
+		var i Sprint
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Goal,
+			&i.StartDate,
+			&i.EndDate,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPlannedSprintsByProject = `-- name: GetPlannedSprintsByProject :many
+SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
+FROM sprints
+WHERE project_id = $1 AND status = 'planned'
+ORDER BY start_date ASC
+`
+
+func (q *Queries) GetPlannedSprintsByProject(ctx context.Context, projectID uuid.UUID) ([]Sprint, error) {
+	rows, err := q.db.QueryContext(ctx, getPlannedSprintsByProject, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Sprint{}
+	for rows.Next() {
+		var i Sprint
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Goal,
+			&i.StartDate,
+			&i.EndDate,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProjectSprints = `-- name: GetProjectSprints :many
 SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
 FROM sprints

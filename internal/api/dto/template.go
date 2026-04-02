@@ -25,13 +25,12 @@ type ProjectTemplateResponse struct {
 }
 
 type TemplateProjectParamResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	FieldType   string    `json:"field_type"`
-	IsSystem    bool      `json:"is_system"`
-	IsRequired  bool      `json:"is_required"`
-	Options     []string  `json:"options"`
+	ID         uuid.UUID `json:"id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsSystem   bool      `json:"is_system"`
+	IsRequired bool      `json:"is_required"`
+	Options    []string  `json:"options"`
 }
 
 type TemplateRoleResponse struct {
@@ -80,13 +79,12 @@ type TemplateBoardSwimlaneResponse struct {
 }
 
 type TemplateBoardCustomFieldResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	FieldType   string    `json:"field_type"`
-	IsSystem    bool      `json:"is_system"`
-	IsRequired  bool      `json:"is_required"`
-	Options     []string  `json:"options"`
+	ID         uuid.UUID `json:"id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsSystem   bool      `json:"is_system"`
+	IsRequired bool      `json:"is_required"`
+	Options    []string  `json:"options"`
 }
 
 // --- Requests ---
@@ -106,8 +104,8 @@ type CreateTemplateBoardRequest struct {
 	Name            string  `json:"name" binding:"required"`
 	Description     string  `json:"description"`
 	IsDefault       bool    `json:"is_default"`
-	PriorityType    string  `json:"priority_type" binding:"required,oneof=priority service_class"`
-	EstimationUnit  string  `json:"estimation_unit" binding:"required,oneof=story_points time"`
+	PriorityType    string  `json:"priority_type" binding:"omitempty,oneof=priority service_class"`
+	EstimationUnit  string  `json:"estimation_unit" binding:"omitempty,oneof=story_points time"`
 	SwimlaneGroupBy *string `json:"swimlane_group_by"`
 }
 
@@ -229,18 +227,8 @@ type ReferencesResponse struct {
 	EstimationUnits             []ReferenceAvailable                 `json:"estimation_units"`
 	PriorityTypeOptions         []ReferencePriorityType              `json:"priority_type_options"`
 	ProjectStatuses             []ReferenceKeyName                   `json:"project_statuses"`
-	SystemTaskFields            []ReferenceSystemField               `json:"system_task_fields"`
-	SystemProjectParams         []ReferenceSystemProjectParam        `json:"system_project_params"`
 	PermissionAreas             []ReferencePermissionArea             `json:"permission_areas"`
 	AccessLevels                []ReferenceKeyName                   `json:"access_levels"`
-}
-
-type ReferenceSystemProjectParam struct {
-	Key        string   `json:"key"`
-	Name       string   `json:"name"`
-	FieldType  string   `json:"field_type"`
-	IsRequired bool     `json:"is_required"`
-	Options    []string `json:"options"`
 }
 
 type ReferencePermissionArea struct {
@@ -281,10 +269,3 @@ type ReferencePriorityType struct {
 	DefaultValues []string `json:"default_values"`
 }
 
-type ReferenceSystemField struct {
-	Key          string   `json:"key"`
-	Name         string   `json:"name"`
-	FieldType    string   `json:"field_type"`
-	AvailableFor []string `json:"available_for"`
-	Description  string   `json:"description,omitempty"`
-}

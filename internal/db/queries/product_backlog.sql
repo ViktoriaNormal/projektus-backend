@@ -10,10 +10,11 @@ DELETE FROM backlog
 WHERE project_id = $1 AND task_id = $2;
 
 -- name: GetProductBacklog :many
-SELECT project_id, task_id, sort_order
-FROM backlog
-WHERE project_id = $1
-ORDER BY sort_order;
+SELECT b.project_id, b.task_id, b.sort_order
+FROM backlog b
+JOIN tasks t ON t.id = b.task_id
+WHERE b.project_id = $1 AND t.deleted_at IS NULL
+ORDER BY b.sort_order;
 
 -- name: UpdateProductBacklogOrder :exec
 UPDATE backlog
