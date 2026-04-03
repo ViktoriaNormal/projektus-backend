@@ -13,6 +13,7 @@ type NotificationService interface {
 	GetFeed(ctx context.Context, userID string, unreadOnly bool, limit, offset int32) ([]domain.Notification, int, error)
 	MarkAsRead(ctx context.Context, userID, notificationID string) error
 	MarkAllAsRead(ctx context.Context, userID string) error
+	DeleteAll(ctx context.Context, userID string) error
 	// SendEvent создает уведомления по заданному событию с учетом пользовательских настроек.
 	SendEvent(ctx context.Context, eventType domain.EventType, userIDs []string, title, body string, payload []byte) error
 	// GetSetting возвращает настройку уведомлений пользователя для конкретного события.
@@ -34,12 +35,6 @@ func (s *notificationService) GetSettings(ctx context.Context, userID string) ([
 func (s *notificationService) UpdateSettings(ctx context.Context, userID string, settings []domain.NotificationSetting) error {
 	for _, st := range settings {
 		st.UserID = userID
-		// Дефолтное значение для напоминаний о встречах — 30 минут,
-		// если пользователь не указал свой offset.
-		if st.EventType == domain.EventMeetingReminder && st.ReminderOffsetMinutes == nil {
-			def := 30
-			st.ReminderOffsetMinutes = &def
-		}
 		if err := s.repo.UpsertSetting(ctx, st); err != nil {
 			return err
 		}
@@ -65,6 +60,10 @@ func (s *notificationService) MarkAsRead(ctx context.Context, userID, notificati
 
 func (s *notificationService) MarkAllAsRead(ctx context.Context, userID string) error {
 	return s.repo.MarkAllNotificationsAsRead(ctx, userID)
+}
+
+func (s *notificationService) DeleteAll(ctx context.Context, userID string) error {
+	return s.repo.DeleteAllNotifications(ctx, userID)
 }
 
 // SendEvent смотрит настройки пользователя и создает уведомления по включенным каналам.

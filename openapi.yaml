@@ -387,15 +387,20 @@ paths:
       tags: [Notifications]
       summary: Mark all notifications as read
       responses:
-        '200':
+        '204':
           description: All marked as read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse_Null'
+
+  /notifications/delete-all:
+    post:
+      tags: [Notifications]
+      summary: Delete all notifications
+      description: Permanently deletes all notifications for the current user.
+      responses:
+        '204':
+          description: All notifications deleted
 
   /notifications/{notification_id}/read:
-    patch:
+    post:
       tags: [Notifications]
       summary: Mark single notification as read
       parameters:
@@ -406,12 +411,8 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        '204':
           description: Marked as read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse_Null'
 
   /notifications/settings:
     get:
@@ -835,6 +836,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse_Null'
+
+  # ─── Project Permissions ────────────────────────────────────────────
+  /projects/{project_id}/my-permissions:
+    get:
+      tags: [ProjectRoles]
+      summary: Get my effective permissions for a project
+      description: |-
+        Returns the effective permissions of the current user for the given project.
+
+        Logic:
+        - If the user has system permission `system.projects.manage` with access `full`, all 7 areas return `full`.
+        - If `view`, all 7 areas return `view`.
+        - Otherwise, returns permissions from the user's project role.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+      responses:
+        '200':
+          description: Effective project permissions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProjectPermission'
 
   # ─── Project Roles ──────────────────────────────────────────────────
   /projects/{project_id}/roles:
@@ -4278,14 +4308,22 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        user_id: { type: string, format: uuid }
-        event_type: { type: string }
-        channel: { type: string }
-        title: { type: string }
-        body: { type: string, nullable: true }
-        is_read: { type: boolean }
+        type:
+          type: string
+          enum: [task_assigned, comment_mention, task_status_change_author, task_status_change_assignee, task_status_change_watcher, meeting_invite, meeting_change, meeting_cancel]
+        message: { type: string }
+        read: { type: boolean }
         created_at: { type: string, format: date-time }
-        read_at: { type: string, format: date-time, nullable: true }
+        task_id: { type: string, format: uuid, nullable: true }
+        task_key: { type: string, nullable: true, description: "e.g. ECOM-105" }
+        meeting_id: { type: string, format: uuid, nullable: true }
+        meeting_name: { type: string, nullable: true }
+        meeting_start_time: { type: string, format: date-time, nullable: true, description: "Meeting start time (ISO). Present only for meeting_* notifications." }
+        participant_status:
+          type: string
+          nullable: true
+          enum: [pending, accepted, declined]
+          description: "Current participation status. Present only for meeting_invite notifications."
 
     NotificationFeedResponse:
       type: object
@@ -4298,21 +4336,15 @@ components:
     NotificationSettingResponse:
       type: object
       properties:
-        id: { type: string, format: uuid }
-        user_id: { type: string, format: uuid }
         event_type: { type: string }
-        in_system: { type: boolean }
-        in_email: { type: boolean }
-        reminder_offset_minutes: { type: integer, nullable: true }
+        enabled: { type: boolean }
 
     UpdateNotificationSettingItem:
       type: object
       required: [event_type]
       properties:
         event_type: { type: string }
-        in_system: { type: boolean }
-        in_email: { type: boolean }
-        reminder_offset_minutes: { type: integer }
+        enabled: { type: boolean }
 
     # ── Meetings ──
     MeetingResponse:
@@ -4511,6 +4543,14 @@ components:
       required: [area, access]
       properties:
         area: { type: string }
+        access: { type: string, enum: [full, view, none] }
+
+    ProjectPermission:
+      type: object
+      properties:
+        area:
+          type: string
+          enum: [project.boards, project.tasks, project.sprints, project.settings, project.members, project.roles, project.analytics]
         access: { type: string, enum: [full, view, none] }
 
     # ── Project Params ──

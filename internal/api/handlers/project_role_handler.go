@@ -12,11 +12,12 @@ import (
 )
 
 type ProjectRoleHandler struct {
-	service *services.ProjectRoleService
+	service       *services.ProjectRoleService
+	permissionSvc *services.PermissionService
 }
 
-func NewProjectRoleHandler(service *services.ProjectRoleService) *ProjectRoleHandler {
-	return &ProjectRoleHandler{service: service}
+func NewProjectRoleHandler(service *services.ProjectRoleService, permissionSvc *services.PermissionService) *ProjectRoleHandler {
+	return &ProjectRoleHandler{service: service, permissionSvc: permissionSvc}
 }
 
 func (h *ProjectRoleHandler) ListRoles(c *gin.Context) {
@@ -128,6 +129,31 @@ if err == domain.ErrRoleHasMembers {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *ProjectRoleHandler) GetMyPermissions(c *gin.Context) {
+	userID, err := uuid.Parse(c.GetString("userID"))
+	if err != nil {
+		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+		return
+	}
+	projectID, err := uuid.Parse(c.Param("projectId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+		return
+	}
+
+	perms, err := h.permissionSvc.GetMyPermissions(c.Request.Context(), userID, projectID)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить права доступа")
+		return
+	}
+
+	resp := make([]dto.ProjectRoleDefPermissionResponse, len(perms))
+	for i, p := range perms {
+		resp[i] = dto.ProjectRoleDefPermissionResponse{Area: p.Area, Access: p.Access}
+	}
+	writeSuccess(c, resp)
 }
 
 func mapProjectRoleToDTO(r domain.ProjectRole) dto.ProjectRoleDefinitionResponse {

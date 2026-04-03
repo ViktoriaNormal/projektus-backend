@@ -1,17 +1,17 @@
 package dto
 
-import "time"
-
 type NotificationResponse struct {
-	ID        string     `json:"id"`
-	UserID    string     `json:"user_id"`
-	EventType string     `json:"event_type"`
-	Channel   string     `json:"channel"`
-	Title     string     `json:"title"`
-	Body      *string    `json:"body,omitempty"`
-	IsRead    bool       `json:"is_read"`
-	CreatedAt time.Time  `json:"created_at"`
-	ReadAt    *time.Time `json:"read_at,omitempty"`
+	ID                string  `json:"id"`
+	Type              string  `json:"type"`
+	Message           string  `json:"message"`
+	Read              bool    `json:"read"`
+	CreatedAt         string  `json:"created_at"`
+	TaskID            *string `json:"task_id"`
+	TaskKey           *string `json:"task_key"`
+	MeetingID         *string `json:"meeting_id"`
+	MeetingName       *string `json:"meeting_name"`
+	MeetingStartTime  *string `json:"meeting_start_time,omitempty"`
+	ParticipantStatus *string `json:"participant_status,omitempty"`
 }
 
 type NotificationFeedResponse struct {
@@ -20,17 +20,11 @@ type NotificationFeedResponse struct {
 }
 
 type NotificationSettingResponse struct {
-	ID                    string `json:"id"`
-	UserID                string `json:"user_id"`
-	EventType             string `json:"event_type"`
-	InSystem              bool   `json:"in_system"`
-	InEmail               bool   `json:"in_email"`
-	ReminderOffsetMinutes *int   `json:"reminder_offset_minutes,omitempty"`
+	EventType string `json:"event_type"`
+	Enabled   bool   `json:"enabled"`
 }
 
 type UpdateNotificationSettingItem struct {
-	EventType             string `json:"event_type" binding:"required"`
-	InSystem              *bool  `json:"in_system"`
-	InEmail               *bool  `json:"in_email"`
-	ReminderOffsetMinutes *int   `json:"reminder_offset_minutes"`
+	EventType string `json:"event_type" binding:"required"`
+	Enabled   *bool  `json:"enabled"`
 }

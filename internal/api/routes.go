@@ -57,7 +57,8 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 		{
 			notifications.GET("", notificationHandler.GetFeed)
 			notifications.POST("/read-all", notificationHandler.MarkAllAsRead)
-			notifications.PATCH("/:notificationId/read", notificationHandler.MarkAsRead)
+			notifications.POST("/delete-all", notificationHandler.DeleteAll)
+			notifications.POST("/:notificationId/read", notificationHandler.MarkAsRead)
 			notifications.GET("/settings", notificationHandler.GetSettings)
 			notifications.PUT("/settings", notificationHandler.UpdateSettings)
 		}
@@ -90,6 +91,9 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			projects.POST("/:projectId/members", projectMemberHandler.AddMember)
 			projects.DELETE("/:projectId/members/:memberId", projectMemberHandler.RemoveMember)
 			projects.PATCH("/:projectId/members/:memberId", projectMemberHandler.UpdateMemberRoles)
+
+			// Project permissions
+			projects.GET("/:projectId/my-permissions", projectRoleHandler.GetMyPermissions)
 
 			// Project roles
 			projects.GET("/:projectId/roles", projectRoleHandler.ListRoles)

@@ -36,6 +36,7 @@ SELECT m.id, m.project_id, m.name, m.description, m.meeting_type, m.start_time, 
 FROM meetings m
 JOIN meeting_participants mp ON mp.meeting_id = m.id
 WHERE mp.user_id = $1
+  AND mp.status = 'accepted'
   AND (sqlc.narg(from_time)::timestamptz IS NULL OR m.start_time >= sqlc.narg(from_time))
   AND (sqlc.narg(to_time)::timestamptz IS NULL OR m.start_time <= sqlc.narg(to_time))
 ORDER BY m.start_time;
@@ -64,3 +65,8 @@ WHERE meeting_id = $1 AND user_id = $2;
 SELECT id, meeting_id, user_id, status
 FROM meeting_participants
 WHERE meeting_id = $1;
+
+-- name: GetParticipantStatus :one
+SELECT status
+FROM meeting_participants
+WHERE meeting_id = $1 AND user_id = $2;

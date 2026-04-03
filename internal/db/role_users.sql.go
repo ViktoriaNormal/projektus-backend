@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
@@ -59,6 +60,30 @@ WHERE user_id = $1
 func (q *Queries) DeleteUserSystemRoles(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.ExecContext(ctx, deleteUserSystemRoles, userID)
 	return err
+}
+
+const getSystemPermissionAccess = `-- name: GetSystemPermissionAccess :one
+SELECT rp.access
+FROM user_roles ur
+JOIN roles r ON r.id = ur.role_id
+JOIN role_permissions rp ON rp.role_id = r.id
+WHERE ur.user_id = $1
+  AND r.scope = 'system'
+  AND rp.permission_code = $2
+ORDER BY CASE rp.access WHEN 'full' THEN 1 WHEN 'view' THEN 2 ELSE 3 END
+LIMIT 1
+`
+
+type GetSystemPermissionAccessParams struct {
+	UserID         uuid.UUID `json:"user_id"`
+	PermissionCode string    `json:"permission_code"`
+}
+
+func (q *Queries) GetSystemPermissionAccess(ctx context.Context, arg GetSystemPermissionAccessParams) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getSystemPermissionAccess, arg.UserID, arg.PermissionCode)
+	var access sql.NullString
+	err := row.Scan(&access)
+	return access, err
 }
 
 const listUserSystemRoles = `-- name: ListUserSystemRoles :many

@@ -6,18 +6,15 @@ type EventType string
 
 const (
 	// Task-related events
-	EventTaskAssigned              EventType = "task_assigned"
-	EventTaskMentionedInComment    EventType = "task_mentioned_in_comment"
-	EventTaskStatusChangedAuthor   EventType = "task_status_changed_author"
-	EventTaskStatusChangedAssignee EventType = "task_status_changed_assignee"
-	EventTaskStatusChangedWatcher  EventType = "task_status_changed_watcher"
-	EventTaskDeadlineApproaching   EventType = "task_deadline_approaching"
-	EventTaskDeadlineReached       EventType = "task_deadline_reached"
+	EventTaskAssigned            EventType = "task_assigned"
+	EventCommentMention          EventType = "comment_mention"
+	EventTaskStatusChangeAuthor  EventType = "task_status_change_author"
+	EventTaskStatusChangeAssignee EventType = "task_status_change_assignee"
+	EventTaskStatusChangeWatcher EventType = "task_status_change_watcher"
 	// Meeting-related events
-	EventMeetingInvitationReceived EventType = "meeting_invitation_received"
-	EventMeetingUpdated            EventType = "meeting_updated"
-	EventMeetingCancelled          EventType = "meeting_cancelled"
-	EventMeetingReminder           EventType = "meeting_reminder"
+	EventMeetingInvite EventType = "meeting_invite"
+	EventMeetingChange EventType = "meeting_change"
+	EventMeetingCancel EventType = "meeting_cancel"
 )
 
 type ChannelType string
@@ -28,12 +25,11 @@ const (
 )
 
 type NotificationSetting struct {
-	ID                    string    `json:"id"`
-	UserID                string    `json:"user_id"`
-	EventType             EventType `json:"event_type"`
-	InSystem              bool      `json:"in_system"`
-	InEmail               bool      `json:"in_email"`
-	ReminderOffsetMinutes *int      `json:"reminder_offset_minutes,omitempty"`
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	EventType EventType `json:"event_type"`
+	InSystem  bool      `json:"in_system"`
+	InEmail   bool      `json:"in_email"`
 }
 
 type Notification struct {
@@ -46,4 +42,13 @@ type Notification struct {
 	PayloadJSON []byte      `json:"-"`
 	IsRead      bool        `json:"is_read"`
 	CreatedAt   time.Time   `json:"created_at"`
+}
+
+// NotificationPayload is the structured data stored in the notifications.payload JSONB column.
+type NotificationPayload struct {
+	TaskID           *string `json:"task_id,omitempty"`
+	TaskKey          *string `json:"task_key,omitempty"`
+	MeetingID        *string `json:"meeting_id,omitempty"`
+	MeetingName      *string `json:"meeting_name,omitempty"`
+	MeetingStartTime *string `json:"meeting_start_time,omitempty"`
 }

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"projektus-backend/internal/domain"
@@ -17,12 +18,11 @@ type MeetingService interface {
 	CancelMeeting(ctx context.Context, userID, meetingID string) (*domain.Meeting, error)
 	AddParticipants(ctx context.Context, userID, meetingID string, participantIDs []string) ([]domain.MeetingParticipant, error)
 	RespondToInvitation(ctx context.Context, userID, meetingID string, status domain.ParticipantStatus) error
-	CheckAndSendMeetingRemindersForUser(ctx context.Context, userID string, now time.Time, tick time.Duration) error
 }
 
 type meetingService struct {
-	meetings       repositories.MeetingRepository
-	notifications  NotificationService
+	meetings      repositories.MeetingRepository
+	notifications NotificationService
 }
 
 func NewMeetingService(meetings repositories.MeetingRepository, notifications NotificationService) MeetingService {
@@ -88,7 +88,7 @@ func (s *meetingService) CreateMeeting(ctx context.Context, creatorID string, m 
 		if len(recipients) > 0 {
 			title := "Приглашение на встречу: " + created.Name
 			body := "Вы приглашены на встречу."
-			_ = s.notifications.SendEvent(ctx, domain.EventMeetingInvitationReceived, recipients, title, body, nil)
+			_ = s.notifications.SendEvent(ctx, domain.EventMeetingInvite, recipients, title, body, meetingPayload(created.ID, created.Name, created.StartTime))
 		}
 	}
 
@@ -167,7 +167,7 @@ func (s *meetingService) UpdateMeeting(ctx context.Context, userID string, m dom
 		if len(recipients) > 0 {
 			title := "Изменена встреча: " + updated.Name
 			body := "Параметры встречи были обновлены."
-			_ = s.notifications.SendEvent(ctx, domain.EventMeetingUpdated, recipients, title, body, nil)
+			_ = s.notifications.SendEvent(ctx, domain.EventMeetingChange, recipients, title, body, meetingPayload(updated.ID, updated.Name, updated.StartTime))
 		}
 	}
 
@@ -202,7 +202,7 @@ func (s *meetingService) CancelMeeting(ctx context.Context, userID, meetingID st
 		if len(recipients) > 0 {
 			title := "Отменена встреча: " + m.Name
 			body := "Встреча была отменена."
-			_ = s.notifications.SendEvent(ctx, domain.EventMeetingCancelled, recipients, title, body, nil)
+			_ = s.notifications.SendEvent(ctx, domain.EventMeetingCancel, recipients, title, body, meetingPayload(m.ID, m.Name, m.StartTime))
 		}
 	}
 
@@ -236,10 +236,10 @@ func (s *meetingService) RespondToInvitation(ctx context.Context, userID, meetin
 	return s.meetings.UpdateParticipantStatus(ctx, meetingID, userID, status)
 }
 
-// CheckAndSendMeetingRemindersForUser проверяет, не пора ли напомнить пользователю о предстоящих встречах.
-// now – текущий момент (в UTC), tick – ширина окна (например, 5 минут).
-func (s *meetingService) CheckAndSendMeetingRemindersForUser(_ context.Context, _ string, _ time.Time, _ time.Duration) error {
-	// meeting reminders removed in schema redesign
-	return nil
+func meetingPayload(id, name string, startTime time.Time) []byte {
+	st := startTime.Format(time.RFC3339)
+	data, _ := json.Marshal(domain.NotificationPayload{MeetingID: &id, MeetingName: &name, MeetingStartTime: &st})
+	return data
 }
+
 

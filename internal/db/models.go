@@ -152,12 +152,11 @@ type Notification struct {
 }
 
 type NotificationSetting struct {
-	ID                    uuid.UUID     `json:"id"`
-	UserID                uuid.UUID     `json:"user_id"`
-	EventType             string        `json:"event_type"`
-	InSystem              bool          `json:"in_system"`
-	InEmail               bool          `json:"in_email"`
-	ReminderOffsetMinutes sql.NullInt32 `json:"reminder_offset_minutes"`
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	EventType string    `json:"event_type"`
+	InSystem  bool      `json:"in_system"`
+	InEmail   bool      `json:"in_email"`
 }
 
 type PasswordHistory struct {

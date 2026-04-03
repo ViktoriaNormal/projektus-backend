@@ -1,21 +1,20 @@
 -- Notification settings
 
 -- name: GetNotificationSettingsByUser :many
-SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes
+SELECT id, user_id, event_type, in_system, in_email
 FROM notification_settings
 WHERE user_id = $1
 ORDER BY event_type;
 
 -- name: UpsertNotificationSetting :exec
-INSERT INTO notification_settings (user_id, event_type, in_system, in_email, reminder_offset_minutes)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO notification_settings (user_id, event_type, in_system, in_email)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (user_id, event_type) DO UPDATE
 SET in_system = EXCLUDED.in_system,
-    in_email = EXCLUDED.in_email,
-    reminder_offset_minutes = EXCLUDED.reminder_offset_minutes;
+    in_email = EXCLUDED.in_email;
 
 -- name: GetNotificationSetting :one
-SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes
+SELECT id, user_id, event_type, in_system, in_email
 FROM notification_settings
 WHERE user_id = $1 AND event_type = $2;
 
@@ -51,3 +50,7 @@ SELECT COUNT(*)::INT
 FROM notifications
 WHERE user_id = $1
   AND is_read = FALSE;
+
+-- name: DeleteAllNotifications :exec
+DELETE FROM notifications
+WHERE user_id = $1;

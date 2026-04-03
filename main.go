@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"log"
-	"time"
 
 	_ "github.com/lib/pq"
 
@@ -47,7 +46,7 @@ func main() {
 	adminUserRepo := repositories.NewAdminUserRepository(queries)
 	passwordPolicyRepo := repositories.NewPasswordPolicyRepository(queries)
 	roleSvc := services.NewRoleService(roleRepo)
-	permissionSvc := services.NewPermissionService(roleSvc)
+	permissionSvc := services.NewPermissionService(roleSvc, queries)
 	passwordSvc := services.NewPasswordService()
 	passwordPolicySvc := services.NewPasswordPolicyService(passwordPolicyRepo)
 	rateLimitSvc := services.NewRateLimitService(cfg, authRepo)
@@ -57,7 +56,7 @@ func main() {
 	userSvc := services.NewUserService(userRepo)
 	userHandler := handlers.NewUserHandler(userSvc, projectMemberRepo, roleRepo)
 	notificationSvc := services.NewNotificationService(notificationRepo)
-	notificationHandler := handlers.NewNotificationHandler(notificationSvc)
+	notificationHandler := handlers.NewNotificationHandler(notificationSvc, queries)
 	meetingSvc := services.NewMeetingService(meetingRepo, notificationSvc)
 	meetingHandler := handlers.NewMeetingHandler(meetingSvc)
 
@@ -65,7 +64,7 @@ func main() {
 
 	projectRoleRepo := repositories.NewProjectRoleRepository(queries)
 	projectRoleSvc := services.NewProjectRoleService(projectRoleRepo)
-	projectRoleHandler := handlers.NewProjectRoleHandler(projectRoleSvc)
+	projectRoleHandler := handlers.NewProjectRoleHandler(projectRoleSvc, permissionSvc)
 
 	projectParamRepo := repositories.NewProjectParamRepository(queries)
 	projectParamSvc := services.NewProjectParamService(projectParamRepo, userRepo)
@@ -76,7 +75,7 @@ func main() {
 
 	boardSvc := services.NewBoardService(boardRepo)
 
-	taskSvc := services.NewTaskService(taskRepo, projectRepo, tagRepo, conn, queries)
+	taskSvc := services.NewTaskService(taskRepo, projectRepo, tagRepo, conn, queries, notificationSvc)
 
 	adminUserSvc := services.NewAdminUserService(userRepo, adminUserRepo, roleSvc, passwordSvc, passwordPolicySvc)
 	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc)
@@ -97,8 +96,8 @@ func main() {
 
 	projectSvc := services.NewProjectService(projectRepo, templateSvc, boardRepo, projectRoleRepo, projectParamRepo, projectMemberRepo)
 	taskHandler := handlers.NewTaskHandler(taskSvc, boardSvc, projectSvc)
-	projectHandler := handlers.NewProjectHandler(projectSvc, templateSvc)
-	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc)
+	projectHandler := handlers.NewProjectHandler(projectSvc, templateSvc, permissionSvc)
+	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc, permissionSvc)
 	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc, projectSvc)
 	sprintHandler := handlers.NewSprintHandler(sprintSvc, projectSvc)
 
@@ -110,27 +109,6 @@ func main() {
 
 	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, projectSvc, permissionSvc)
 
-	// Фоновый воркер для напоминаний о встречах.
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-
-		for now := range ticker.C {
-			ctx := context.Background()
-
-			userIDs, err := userRepo.ListAllUserIDs(ctx)
-			if err != nil {
-				log.Printf("failed to list user ids for reminders: %v", err)
-				continue
-			}
-
-			for _, uid := range userIDs {
-				if err := meetingSvc.CheckAndSendMeetingRemindersForUser(ctx, uid, now.UTC(), 5*time.Minute); err != nil {
-					log.Printf("failed to send meeting reminders for user %s: %v", uid, err)
-				}
-			}
-		}
-	}()
 
 	_ = boardSvc // used indirectly via boardHandler
 
@@ -138,3 +116,4 @@ func main() {
 		log.Fatalf("server error: %v", err)
 	}
 }
+

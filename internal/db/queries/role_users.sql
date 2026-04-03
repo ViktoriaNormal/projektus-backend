@@ -40,3 +40,14 @@ SELECT EXISTS (
       AND r.scope = 'system'
       AND rp.permission_code = $2
 ) AS has_permission;
+
+-- name: GetSystemPermissionAccess :one
+SELECT rp.access
+FROM user_roles ur
+JOIN roles r ON r.id = ur.role_id
+JOIN role_permissions rp ON rp.role_id = r.id
+WHERE ur.user_id = $1
+  AND r.scope = 'system'
+  AND rp.permission_code = $2
+ORDER BY CASE rp.access WHEN 'full' THEN 1 WHEN 'view' THEN 2 ELSE 3 END
+LIMIT 1;

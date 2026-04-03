@@ -117,6 +117,76 @@ func (q *Queries) GetProjectByKey(ctx context.Context, key string) (Project, err
 	return i, err
 }
 
+const listAllProjects = `-- name: ListAllProjects :many
+SELECT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status, p.created_at,
+       u.full_name AS owner_full_name, u.avatar_url AS owner_avatar_url, u.email AS owner_email
+FROM projects p
+JOIN users u ON u.id = p.owner_id
+WHERE ($1::text IS NULL OR p.status = $1)
+  AND ($2::text IS NULL OR p.project_type = $2)
+  AND ($3::text IS NULL OR $3::text = '' OR (
+       p.name ILIKE '%' || $3 || '%'
+       OR p.key ILIKE '%' || $3 || '%'
+       OR COALESCE(p.description, '') ILIKE '%' || $3 || '%'
+       OR u.full_name ILIKE '%' || $3 || '%'))
+ORDER BY p.created_at DESC
+`
+
+type ListAllProjectsParams struct {
+	StatusFilter sql.NullString `json:"status_filter"`
+	TypeFilter   sql.NullString `json:"type_filter"`
+	SearchQuery  sql.NullString `json:"search_query"`
+}
+
+type ListAllProjectsRow struct {
+	ID             uuid.UUID      `json:"id"`
+	Key            string         `json:"key"`
+	Name           string         `json:"name"`
+	Description    sql.NullString `json:"description"`
+	ProjectType    string         `json:"project_type"`
+	OwnerID        uuid.UUID      `json:"owner_id"`
+	Status         string         `json:"status"`
+	CreatedAt      time.Time      `json:"created_at"`
+	OwnerFullName  string         `json:"owner_full_name"`
+	OwnerAvatarUrl sql.NullString `json:"owner_avatar_url"`
+	OwnerEmail     string         `json:"owner_email"`
+}
+
+func (q *Queries) ListAllProjects(ctx context.Context, arg ListAllProjectsParams) ([]ListAllProjectsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllProjects, arg.StatusFilter, arg.TypeFilter, arg.SearchQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllProjectsRow{}
+	for rows.Next() {
+		var i ListAllProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Description,
+			&i.ProjectType,
+			&i.OwnerID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.OwnerFullName,
+			&i.OwnerAvatarUrl,
+			&i.OwnerEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserProjects = `-- name: ListUserProjects :many
 SELECT DISTINCT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status, p.created_at,
        u.full_name AS owner_full_name, u.avatar_url AS owner_avatar_url, u.email AS owner_email

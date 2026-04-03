@@ -3,8 +3,11 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,15 +20,16 @@ import (
 )
 
 type TaskService struct {
-	taskRepo    repositories.TaskRepository
-	projectRepo repositories.ProjectRepository
-	tagRepo     repositories.TagRepository
-	queries     *db.Queries
-	conn        *sql.DB
+	taskRepo        repositories.TaskRepository
+	projectRepo     repositories.ProjectRepository
+	tagRepo         repositories.TagRepository
+	queries         *db.Queries
+	conn            *sql.DB
+	notificationSvc NotificationService
 }
 
-func NewTaskService(taskRepo repositories.TaskRepository, projectRepo repositories.ProjectRepository, tagRepo repositories.TagRepository, conn *sql.DB, queries *db.Queries) *TaskService {
-	return &TaskService{taskRepo: taskRepo, projectRepo: projectRepo, tagRepo: tagRepo, conn: conn, queries: queries}
+func NewTaskService(taskRepo repositories.TaskRepository, projectRepo repositories.ProjectRepository, tagRepo repositories.TagRepository, conn *sql.DB, queries *db.Queries, notificationSvc NotificationService) *TaskService {
+	return &TaskService{taskRepo: taskRepo, projectRepo: projectRepo, tagRepo: tagRepo, conn: conn, queries: queries, notificationSvc: notificationSvc}
 }
 
 func (s *TaskService) generateTaskKey(ctx context.Context, projectID uuid.UUID) (string, error) {
@@ -108,6 +112,16 @@ func (s *TaskService) CreateTask(ctx context.Context, projectID, ownerMemberID u
 	// Записываем начальную запись в историю
 	if columnID != uuid.Nil {
 		s.recordColumnChange(ctx, uuid.MustParse(created.ID), columnID)
+	}
+
+	// Уведомление при назначении исполнителя
+	if executorMemberID != nil {
+		ownerMember, _ := s.queries.GetProjectMember(ctx, ownerMemberID)
+		actorUID := ""
+		if ownerMember.UserID != uuid.Nil {
+			actorUID = ownerMember.UserID.String()
+		}
+		s.notifyTaskAssigned(ctx, created, *executorMemberID, actorUID)
 	}
 
 	return created, nil
@@ -328,6 +342,16 @@ func (s *TaskService) CreateTaskFull(ctx context.Context, p CreateTaskFullParams
 		return nil, err
 	}
 
+	// Уведомление при назначении исполнителя
+	if p.ExecutorMemberID != nil {
+		ownerMember, _ := s.queries.GetProjectMember(ctx, p.OwnerMemberID)
+		actorUID := ""
+		if ownerMember.UserID != uuid.Nil {
+			actorUID = ownerMember.UserID.String()
+		}
+		s.notifyTaskAssigned(ctx, task, *p.ExecutorMemberID, actorUID)
+	}
+
 	return task, nil
 }
 
@@ -385,14 +409,15 @@ func (s *TaskService) enrichTasksWithTags(ctx context.Context, tasks []domain.Ta
 	return tasks, nil
 }
 
-func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task) (*domain.Task, error) {
+func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task, actorUserID string) (*domain.Task, error) {
 	if t.ID == "" {
 		return nil, domain.ErrInvalidInput
 	}
 
 	taskID := uuid.MustParse(t.ID)
 
-	// Получаем текущую задачу для сравнения column_id
+	// Получаем текущую задачу для сравнения column_id и executor_id.
+	// existing имеет OwnerUserID/ExecutorUserID (из JOIN), а updated — нет.
 	existing, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -412,8 +437,27 @@ func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task) (*domain.T
 	if updated.ColumnID != nil {
 		newCol = *updated.ColumnID
 	}
-	if newCol != "" && newCol != oldCol {
+	columnChanged := newCol != "" && newCol != oldCol
+	if columnChanged {
 		s.recordColumnChange(ctx, taskID, uuid.MustParse(newCol))
+	}
+
+	// Уведомление при смене исполнителя
+	oldExec := ""
+	if existing.ExecutorID != nil {
+		oldExec = *existing.ExecutorID
+	}
+	newExec := ""
+	if updated.ExecutorID != nil {
+		newExec = *updated.ExecutorID
+	}
+	if newExec != "" && newExec != oldExec {
+		s.notifyTaskAssigned(ctx, existing, uuid.MustParse(newExec), actorUserID)
+	}
+
+	// Уведомления при смене колонки (статуса) — используем existing для user IDs
+	if columnChanged {
+		s.notifyStatusChange(ctx, existing, newCol, actorUserID)
 	}
 
 	return updated, nil
@@ -462,7 +506,15 @@ func (s *TaskService) CreateComment(ctx context.Context, taskID, authorID uuid.U
 	if content == "" {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.taskRepo.CreateComment(ctx, taskID, authorID, content, parentCommentID)
+	comment, err := s.taskRepo.CreateComment(ctx, taskID, authorID, content, parentCommentID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Уведомления об @-упоминаниях
+	s.notifyMentions(ctx, taskID, authorID, content)
+
+	return comment, nil
 }
 
 func (s *TaskService) GetCommentByID(ctx context.Context, commentID uuid.UUID) (*domain.Comment, error) {
@@ -671,5 +723,136 @@ func uuidToStringPtr(id uuid.UUID) *string {
 	}
 	s := id.String()
 	return &s
+}
+
+// ── Notification helpers ────────────────────────────────────
+
+func (s *TaskService) taskPayload(task *domain.Task) []byte {
+	p := domain.NotificationPayload{TaskID: &task.ID, TaskKey: &task.Key}
+	data, _ := json.Marshal(p)
+	return data
+}
+
+// notifyTaskAssigned sends a task_assigned notification to the executor.
+// actorUserID is the user_id of the person who made the assignment — they are excluded.
+func (s *TaskService) notifyTaskAssigned(ctx context.Context, task *domain.Task, executorMemberID uuid.UUID, actorUserID string) {
+	member, err := s.queries.GetProjectMember(ctx, executorMemberID)
+	if err != nil {
+		log.Printf("[NOTIFY] task_assigned: GetProjectMember(%s) error: %v", executorMemberID, err)
+		return
+	}
+	executorUserID := member.UserID.String()
+	if executorUserID == actorUserID {
+		return
+	}
+	title := fmt.Sprintf("Вам назначена задача %s", task.Key)
+	if err := s.notificationSvc.SendEvent(ctx, domain.EventTaskAssigned, []string{executorUserID}, title, "", s.taskPayload(task)); err != nil {
+		log.Printf("[NOTIFY] task_assigned: SendEvent error: %v", err)
+	}
+}
+
+// notifyStatusChange sends task_status_change_* notifications to author, executor, and watchers.
+// actorUserID is the user who moved the task — they are excluded from all notifications.
+func (s *TaskService) notifyStatusChange(ctx context.Context, task *domain.Task, newColumnID string, actorUserID string) {
+	colID, err := uuid.Parse(newColumnID)
+	if err != nil {
+		log.Printf("[NOTIFY] status_change: parse column_id error: %v", err)
+		return
+	}
+	col, err := s.queries.GetColumnByID(ctx, colID)
+	if err != nil {
+		log.Printf("[NOTIFY] status_change: GetColumnByID(%s) error: %v", newColumnID, err)
+		return
+	}
+
+	payload := s.taskPayload(task)
+	title := fmt.Sprintf("Задача %s перемещена в «%s»", task.Key, col.Name)
+
+	// Notify author (if not the actor)
+	if task.OwnerUserID != nil && *task.OwnerUserID != actorUserID {
+		_ = s.notificationSvc.SendEvent(ctx, domain.EventTaskStatusChangeAuthor, []string{*task.OwnerUserID}, title, "", payload)
+	}
+
+	// Notify executor (if assigned, not the actor, and not the author)
+	if task.ExecutorUserID != nil && *task.ExecutorUserID != actorUserID &&
+		(task.OwnerUserID == nil || *task.ExecutorUserID != *task.OwnerUserID) {
+		_ = s.notificationSvc.SendEvent(ctx, domain.EventTaskStatusChangeAssignee, []string{*task.ExecutorUserID}, title, "", payload)
+	}
+
+	// Notify watchers
+	taskID, err := uuid.Parse(task.ID)
+	if err != nil {
+		return
+	}
+	watchers, err := s.taskRepo.ListWatchers(ctx, taskID)
+	if err != nil || len(watchers) == 0 {
+		return
+	}
+	// Resolve watcher member_ids → user_ids, excluding author, executor, and actor
+	exclude := make(map[string]bool)
+	exclude[actorUserID] = true
+	if task.OwnerUserID != nil {
+		exclude[*task.OwnerUserID] = true
+	}
+	if task.ExecutorUserID != nil {
+		exclude[*task.ExecutorUserID] = true
+	}
+	var watcherUserIDs []string
+	for _, w := range watchers {
+		mid, err := uuid.Parse(w.MemberID)
+		if err != nil {
+			continue
+		}
+		m, err := s.queries.GetProjectMember(ctx, mid)
+		if err != nil {
+			continue
+		}
+		uid := m.UserID.String()
+		if !exclude[uid] {
+			watcherUserIDs = append(watcherUserIDs, uid)
+		}
+	}
+	if len(watcherUserIDs) > 0 {
+		_ = s.notificationSvc.SendEvent(ctx, domain.EventTaskStatusChangeWatcher, watcherUserIDs, title, "", payload)
+	}
+}
+
+var mentionRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
+
+// notifyMentions parses @username mentions from comment text and sends notifications.
+func (s *TaskService) notifyMentions(ctx context.Context, taskID, authorID uuid.UUID, content string) {
+	matches := mentionRegex.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return
+	}
+
+	task, err := s.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return
+	}
+
+	authorStr := authorID.String()
+	seen := make(map[string]bool)
+	var userIDs []string
+	for _, m := range matches {
+		username := m[1]
+		if seen[username] {
+			continue
+		}
+		seen[username] = true
+		user, err := s.queries.GetUserByUsername(ctx, username)
+		if err != nil {
+			continue
+		}
+		uid := user.ID.String()
+		if uid != authorStr {
+			userIDs = append(userIDs, uid)
+		}
+	}
+
+	if len(userIDs) > 0 {
+		title := fmt.Sprintf("Вас упомянули в комментарии к задаче %s", task.Key)
+		_ = s.notificationSvc.SendEvent(ctx, domain.EventCommentMention, userIDs, title, "", s.taskPayload(task))
+	}
 }
 

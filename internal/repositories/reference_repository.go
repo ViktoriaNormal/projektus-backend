@@ -28,29 +28,29 @@ var AllPermissions = []domain.PermissionDefinition{
 	// Системные права
 	{Code: "system.roles.manage", Scope: "system", Name: "Управление ролями", Description: "Создание, редактирование и удаление системных ролей"},
 	{Code: "system.users.manage", Scope: "system", Name: "Управление пользователями", Description: "Создание, редактирование и удаление пользователей"},
-	{Code: "system.projects.manage", Scope: "system", Name: "Управление проектами", Description: "Просмотр, создание, редактирование, удаление, архивация и разархивация всех проектов"},
+	{Code: "system.projects.manage", Scope: "system", Name: "Управление всеми проектами", Description: "Просмотр, создание, редактирование, удаление всех проектов"},
 	{Code: "system.password_policy.manage", Scope: "system", Name: "Управление парольной политикой", Description: "Настройка требований к паролям"},
 	{Code: "system.project_templates.manage", Scope: "system", Name: "Управление шаблонами проектов", Description: "Создание, редактирование и удаление шаблонов проектов"},
 
 	// Проектные права
-	{Code: "project.boards.manage", Scope: "project", Name: "Управление досками", Description: "Настройка досок, колонок и дорожек"},
-	{Code: "project.tasks.manage", Scope: "project", Name: "Управление задачами", Description: "Создание, редактирование и удаление задач"},
-	{Code: "project.project_settings.manage", Scope: "project", Name: "Настройки проекта", Description: "Управление настройками и параметрами проекта"},
-	{Code: "project.sprints.manage", Scope: "project", Name: "Управление спринтами", Description: "Создание, редактирование и удаление спринтов"},
-	{Code: "project.backlog.manage", Scope: "project", Name: "Управление бэклогом", Description: "Управление продуктовым бэклогом"},
-	{Code: "project.analytics.manage", Scope: "project", Name: "Аналитика", Description: "Доступ к аналитике и отчётам проекта"},
-	{Code: "project.wip_limits.manage", Scope: "project", Name: "WIP-лимиты", Description: "Настройка лимитов незавершённой работы"},
+	{Code: "project.boards", Scope: "project", Name: "Управление досками", Description: "Настройка досок, колонок и дорожек"},
+	{Code: "project.tasks", Scope: "project", Name: "Управление задачами", Description: "Создание, редактирование и удаление задач"},
+	{Code: "project.sprints", Scope: "project", Name: "Управление спринтами", Description: "Создание, редактирование и удаление спринтов"},
+	{Code: "project.settings", Scope: "project", Name: "Настройки проекта", Description: "Управление настройками и параметрами проекта"},
+	{Code: "project.members", Scope: "project", Name: "Управление участниками", Description: "Добавление и удаление участников проекта"},
+	{Code: "project.roles", Scope: "project", Name: "Управление ролями проекта", Description: "Создание и настройка ролей проекта"},
+	{Code: "project.analytics", Scope: "project", Name: "Аналитика и прогнозирование", Description: "Доступ к аналитике и отчётам проекта"},
 }
 
 // ProjectPermissionAreas — проектные области прав с привязкой к типу проекта (для UI назначения ролей).
 var ProjectPermissionAreas = []domain.RefPermissionArea{
-	{Area: "project.boards.manage", Name: "Доски", Description: "Управление досками проекта", AvailableFor: []string{"scrum", "kanban"}},
-	{Area: "project.tasks.manage", Name: "Задачи", Description: "Управление задачами", AvailableFor: []string{"scrum", "kanban"}},
-	{Area: "project.project_settings.manage", Name: "Настройки проекта", Description: "Управление настройками проекта", AvailableFor: []string{"scrum", "kanban"}},
-	{Area: "project.sprints.manage", Name: "Спринты", Description: "Управление спринтами", AvailableFor: []string{"scrum"}},
-	{Area: "project.backlog.manage", Name: "Бэклог", Description: "Управление бэклогом продукта", AvailableFor: []string{"scrum"}},
-	{Area: "project.analytics.manage", Name: "Аналитика", Description: "Доступ к аналитике и отчётам", AvailableFor: []string{"scrum", "kanban"}},
-	{Area: "project.wip_limits.manage", Name: "WIP-лимиты", Description: "Настройка лимитов незавершённой работы", AvailableFor: []string{"kanban"}},
+	{Area: "project.boards", Name: "Управление досками", Description: "Настройка досок, колонок и дорожек", AvailableFor: []string{"scrum", "kanban"}},
+	{Area: "project.tasks", Name: "Управление задачами", Description: "Создание, редактирование и удаление задач", AvailableFor: []string{"scrum", "kanban"}},
+	{Area: "project.sprints", Name: "Управление спринтами", Description: "Создание, редактирование и удаление спринтов", AvailableFor: []string{"scrum"}},
+	{Area: "project.settings", Name: "Настройки проекта", Description: "Управление настройками и параметрами проекта", AvailableFor: []string{"scrum", "kanban"}},
+	{Area: "project.members", Name: "Управление участниками", Description: "Добавление и удаление участников проекта", AvailableFor: []string{"scrum", "kanban"}},
+	{Area: "project.roles", Name: "Управление ролями проекта", Description: "Создание и настройка ролей проекта", AvailableFor: []string{"scrum", "kanban"}},
+	{Area: "project.analytics", Name: "Аналитика и прогнозирование", Description: "Доступ к аналитике и отчётам проекта", AvailableFor: []string{"scrum", "kanban"}},
 }
 
 // AccessLevels — уровни доступа для проектных прав.

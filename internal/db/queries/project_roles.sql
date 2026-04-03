@@ -55,3 +55,10 @@ ON CONFLICT (role_id, permission_code) DO UPDATE SET access = EXCLUDED.access;
 
 -- name: DeleteProjRoleDefPermissionsByRoleID :exec
 DELETE FROM role_permissions WHERE role_id = $1;
+
+-- name: GetMemberProjectPermissions :many
+SELECT rp.permission_code, rp.access
+FROM members m
+JOIN member_roles mr ON mr.member_id = m.id
+JOIN role_permissions rp ON rp.role_id = mr.role_id
+WHERE m.project_id = $1 AND m.user_id = $2;

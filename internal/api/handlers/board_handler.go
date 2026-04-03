@@ -14,12 +14,13 @@ import (
 )
 
 type BoardHandler struct {
-	service       *services.BoardService
+	service        *services.BoardService
 	projectService *services.ProjectService
+	permissionSvc  *services.PermissionService
 }
 
-func NewBoardHandler(service *services.BoardService, projectService *services.ProjectService) *BoardHandler {
-	return &BoardHandler{service: service, projectService: projectService}
+func NewBoardHandler(service *services.BoardService, projectService *services.ProjectService, permissionSvc *services.PermissionService) *BoardHandler {
+	return &BoardHandler{service: service, projectService: projectService, permissionSvc: permissionSvc}
 }
 
 func (h *BoardHandler) ListBoards(c *gin.Context) {
@@ -41,16 +42,15 @@ func (h *BoardHandler) ListBoards(c *gin.Context) {
 		return
 	}
 
-	project, err := h.projectService.GetProject(c.Request.Context(), projectID)
-	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Проект не найден")
-			return
+	perms, _ := h.permissionSvc.GetMyPermissions(c.Request.Context(), userID, projectID)
+	hasAccess := false
+	for _, p := range perms {
+		if p.Area == "project.boards" && p.Access != "none" {
+			hasAccess = true
+			break
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
-		return
 	}
-	if project.OwnerID != userID {
+	if !hasAccess {
 		writeError(c, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав для работы с досками проекта")
 		return
 	}
@@ -80,17 +80,22 @@ func (h *BoardHandler) CreateBoard(c *gin.Context) {
 		return
 	}
 
-	project, err := h.projectService.GetProject(c.Request.Context(), req.ProjectID)
-	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Проект не найден")
-			return
+	perms, _ := h.permissionSvc.GetMyPermissions(c.Request.Context(), userID, req.ProjectID)
+	hasAccess := false
+	for _, p := range perms {
+		if p.Area == "project.boards" && p.Access == "full" {
+			hasAccess = true
+			break
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
+	}
+	if !hasAccess {
+		writeError(c, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав для работы с досками проекта")
 		return
 	}
-	if project.OwnerID != userID {
-		writeError(c, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав для работы с досками проекта")
+
+	project, err := h.projectService.GetProject(c.Request.Context(), req.ProjectID)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
 		return
 	}
 

@@ -261,6 +261,10 @@ func (s *ProjectService) ListProjects(ctx context.Context, userID uuid.UUID, que
 	return s.repo.ListUserProjects(ctx, userID, query, status, projectType)
 }
 
+func (s *ProjectService) ListAllProjects(ctx context.Context, query *string, status, projectType *string) ([]domain.Project, error) {
+	return s.repo.ListAllProjects(ctx, query, status, projectType)
+}
+
 func (s *ProjectService) UpdateProject(ctx context.Context, p *domain.Project, newOwnerID *uuid.UUID) (*domain.Project, error) {
 	updated, err := s.repo.Update(ctx, p)
 	if err != nil {

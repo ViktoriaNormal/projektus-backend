@@ -112,6 +112,47 @@ func (q *Queries) DeleteProjRoleDefinitionByID(ctx context.Context, id uuid.UUID
 	return err
 }
 
+const getMemberProjectPermissions = `-- name: GetMemberProjectPermissions :many
+SELECT rp.permission_code, rp.access
+FROM members m
+JOIN member_roles mr ON mr.member_id = m.id
+JOIN role_permissions rp ON rp.role_id = mr.role_id
+WHERE m.project_id = $1 AND m.user_id = $2
+`
+
+type GetMemberProjectPermissionsParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
+type GetMemberProjectPermissionsRow struct {
+	PermissionCode string         `json:"permission_code"`
+	Access         sql.NullString `json:"access"`
+}
+
+func (q *Queries) GetMemberProjectPermissions(ctx context.Context, arg GetMemberProjectPermissionsParams) ([]GetMemberProjectPermissionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMemberProjectPermissions, arg.ProjectID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetMemberProjectPermissionsRow{}
+	for rows.Next() {
+		var i GetMemberProjectPermissionsRow
+		if err := rows.Scan(&i.PermissionCode, &i.Access); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProjRoleDefinitionByID = `-- name: GetProjRoleDefinitionByID :one
 SELECT id, project_id, name, description, is_admin
 FROM roles

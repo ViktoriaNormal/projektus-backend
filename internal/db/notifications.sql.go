@@ -51,8 +51,18 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	return i, err
 }
 
+const deleteAllNotifications = `-- name: DeleteAllNotifications :exec
+DELETE FROM notifications
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteAllNotifications(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteAllNotifications, userID)
+	return err
+}
+
 const getNotificationSetting = `-- name: GetNotificationSetting :one
-SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes
+SELECT id, user_id, event_type, in_system, in_email
 FROM notification_settings
 WHERE user_id = $1 AND event_type = $2
 `
@@ -71,14 +81,13 @@ func (q *Queries) GetNotificationSetting(ctx context.Context, arg GetNotificatio
 		&i.EventType,
 		&i.InSystem,
 		&i.InEmail,
-		&i.ReminderOffsetMinutes,
 	)
 	return i, err
 }
 
 const getNotificationSettingsByUser = `-- name: GetNotificationSettingsByUser :many
 
-SELECT id, user_id, event_type, in_system, in_email, reminder_offset_minutes
+SELECT id, user_id, event_type, in_system, in_email
 FROM notification_settings
 WHERE user_id = $1
 ORDER BY event_type
@@ -100,7 +109,6 @@ func (q *Queries) GetNotificationSettingsByUser(ctx context.Context, userID uuid
 			&i.EventType,
 			&i.InSystem,
 			&i.InEmail,
-			&i.ReminderOffsetMinutes,
 		); err != nil {
 			return nil, err
 		}
@@ -212,20 +220,18 @@ func (q *Queries) MarkNotificationAsRead(ctx context.Context, arg MarkNotificati
 }
 
 const upsertNotificationSetting = `-- name: UpsertNotificationSetting :exec
-INSERT INTO notification_settings (user_id, event_type, in_system, in_email, reminder_offset_minutes)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO notification_settings (user_id, event_type, in_system, in_email)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (user_id, event_type) DO UPDATE
 SET in_system = EXCLUDED.in_system,
-    in_email = EXCLUDED.in_email,
-    reminder_offset_minutes = EXCLUDED.reminder_offset_minutes
+    in_email = EXCLUDED.in_email
 `
 
 type UpsertNotificationSettingParams struct {
-	UserID                uuid.UUID     `json:"user_id"`
-	EventType             string        `json:"event_type"`
-	InSystem              bool          `json:"in_system"`
-	InEmail               bool          `json:"in_email"`
-	ReminderOffsetMinutes sql.NullInt32 `json:"reminder_offset_minutes"`
+	UserID    uuid.UUID `json:"user_id"`
+	EventType string    `json:"event_type"`
+	InSystem  bool      `json:"in_system"`
+	InEmail   bool      `json:"in_email"`
 }
 
 func (q *Queries) UpsertNotificationSetting(ctx context.Context, arg UpsertNotificationSettingParams) error {
@@ -234,7 +240,6 @@ func (q *Queries) UpsertNotificationSetting(ctx context.Context, arg UpsertNotif
 		arg.EventType,
 		arg.InSystem,
 		arg.InEmail,
-		arg.ReminderOffsetMinutes,
 	)
 	return err
 }

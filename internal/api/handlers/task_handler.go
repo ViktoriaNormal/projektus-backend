@@ -261,7 +261,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		}
 	}
 
-	updated, err := h.service.UpdateTask(c.Request.Context(), task)
+	updated, err := h.service.UpdateTask(c.Request.Context(), task, c.GetString("userID"))
 	if err != nil {
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры задачи")
@@ -702,7 +702,7 @@ func (h *TaskHandler) SetChecklistItemStatus(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
 		return
 	}
-	item, err := h.service.SetChecklistItemStatus(c.Request.Context(), itemID, req.IsChecked)
+	item, err := h.service.SetChecklistItemStatus(c.Request.Context(), itemID, *req.IsChecked)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить статус пункта чек-листа")
 		return

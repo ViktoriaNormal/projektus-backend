@@ -21,6 +21,7 @@ type NotificationRepository interface {
 	GetUserNotifications(ctx context.Context, userID string, unreadOnly bool, limit, offset int32) ([]domain.Notification, error)
 	MarkNotificationAsRead(ctx context.Context, userID, notificationID string) error
 	MarkAllNotificationsAsRead(ctx context.Context, userID string) error
+	DeleteAllNotifications(ctx context.Context, userID string) error
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
 	GetPendingEmailNotifications(ctx context.Context) ([]domain.Notification, error)
 }
@@ -54,16 +55,11 @@ func (r *notificationRepository) UpsertSetting(ctx context.Context, setting doma
 	if err != nil {
 		return err
 	}
-	var offset sql.NullInt32
-	if setting.ReminderOffsetMinutes != nil {
-		offset = sql.NullInt32{Int32: int32(*setting.ReminderOffsetMinutes), Valid: true}
-	}
 	return r.q.UpsertNotificationSetting(ctx, db.UpsertNotificationSettingParams{
-		UserID:                uid,
-		EventType:             string(setting.EventType),
-		InSystem:              setting.InSystem,
-		InEmail:               setting.InEmail,
-		ReminderOffsetMinutes: offset,
+		UserID:    uid,
+		EventType: string(setting.EventType),
+		InSystem:  setting.InSystem,
+		InEmail:   setting.InEmail,
 	})
 }
 
@@ -157,6 +153,14 @@ func (r *notificationRepository) MarkAllNotificationsAsRead(ctx context.Context,
 	return r.q.MarkAllNotificationsAsRead(ctx, uid)
 }
 
+func (r *notificationRepository) DeleteAllNotifications(ctx context.Context, userID string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	return r.q.DeleteAllNotifications(ctx, uid)
+}
+
 func (r *notificationRepository) GetUnreadCount(ctx context.Context, userID string) (int, error) {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
@@ -172,18 +176,12 @@ func (r *notificationRepository) GetPendingEmailNotifications(_ context.Context)
 }
 
 func mapDBNotificationSettingToDomain(s db.NotificationSetting) domain.NotificationSetting {
-	var offset *int
-	if s.ReminderOffsetMinutes.Valid {
-		v := int(s.ReminderOffsetMinutes.Int32)
-		offset = &v
-	}
 	return domain.NotificationSetting{
-		ID:                    s.ID.String(),
-		UserID:                s.UserID.String(),
-		EventType:             domain.EventType(s.EventType),
-		InSystem:              s.InSystem,
-		InEmail:               s.InEmail,
-		ReminderOffsetMinutes: offset,
+		ID:        s.ID.String(),
+		UserID:    s.UserID.String(),
+		EventType: domain.EventType(s.EventType),
+		InSystem:  s.InSystem,
+		InEmail:   s.InEmail,
 	}
 }
 

@@ -155,7 +155,7 @@ type CreateChecklistItemRequest struct {
 }
 
 type SetChecklistItemStatusRequest struct {
-	IsChecked bool `json:"is_checked" binding:"required"`
+	IsChecked *bool `json:"is_checked" binding:"required"`
 }
 
 type UpdateChecklistRequest struct {

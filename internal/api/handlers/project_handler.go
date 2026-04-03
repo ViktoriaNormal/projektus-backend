@@ -13,12 +13,13 @@ import (
 )
 
 type ProjectHandler struct {
-	service     *services.ProjectService
-	templateSvc *services.TemplateService
+	service       *services.ProjectService
+	templateSvc   *services.TemplateService
+	permissionSvc *services.PermissionService
 }
 
-func NewProjectHandler(service *services.ProjectService, templateSvc *services.TemplateService) *ProjectHandler {
-	return &ProjectHandler{service: service, templateSvc: templateSvc}
+func NewProjectHandler(service *services.ProjectService, templateSvc *services.TemplateService, permissionSvc *services.PermissionService) *ProjectHandler {
+	return &ProjectHandler{service: service, templateSvc: templateSvc, permissionSvc: permissionSvc}
 }
 
 func (h *ProjectHandler) GetReferences(c *gin.Context) {
@@ -71,7 +72,7 @@ func (h *ProjectHandler) GetReferences(c *gin.Context) {
 
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	userIDStr := c.GetString("userID")
-	ownerID, err := uuid.Parse(userIDStr)
+	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
 		return
@@ -93,7 +94,15 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 		typePtr = &projectType
 	}
 
-	projects, err := h.service.ListProjects(c.Request.Context(), ownerID, queryPtr, statusPtr, typePtr)
+	// system.projects.manage = full/view → все проекты; none → только свои
+	sysAccess := h.permissionSvc.GetProjectManageAccess(c.Request.Context(), userID)
+
+	var projects []domain.Project
+	if sysAccess == "full" || sysAccess == "view" {
+		projects, err = h.service.ListAllProjects(c.Request.Context(), queryPtr, statusPtr, typePtr)
+	} else {
+		projects, err = h.service.ListProjects(c.Request.Context(), userID, queryPtr, statusPtr, typePtr)
+	}
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список проектов")
 		return

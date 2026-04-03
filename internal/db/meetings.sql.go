@@ -180,6 +180,24 @@ func (q *Queries) GetMeetingParticipants(ctx context.Context, meetingID uuid.UUI
 	return items, nil
 }
 
+const getParticipantStatus = `-- name: GetParticipantStatus :one
+SELECT status
+FROM meeting_participants
+WHERE meeting_id = $1 AND user_id = $2
+`
+
+type GetParticipantStatusParams struct {
+	MeetingID uuid.UUID `json:"meeting_id"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetParticipantStatus(ctx context.Context, arg GetParticipantStatusParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getParticipantStatus, arg.MeetingID, arg.UserID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const listProjectMeetings = `-- name: ListProjectMeetings :many
 SELECT id, project_id, name, description, meeting_type, start_time, end_time, created_by, location, status
 FROM meetings
@@ -226,6 +244,7 @@ SELECT m.id, m.project_id, m.name, m.description, m.meeting_type, m.start_time, 
 FROM meetings m
 JOIN meeting_participants mp ON mp.meeting_id = m.id
 WHERE mp.user_id = $1
+  AND mp.status = 'accepted'
   AND ($2::timestamptz IS NULL OR m.start_time >= $2)
   AND ($3::timestamptz IS NULL OR m.start_time <= $3)
 ORDER BY m.start_time
