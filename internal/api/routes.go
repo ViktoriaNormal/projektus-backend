@@ -130,6 +130,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 				kanban.GET("/wip", kanbanAnalyticsHandler.GetWipHistory)
 				kanban.GET("/cycle-time-distribution", kanbanAnalyticsHandler.GetCycleTimeDistribution)
 				kanban.GET("/throughput-distribution", kanbanAnalyticsHandler.GetThroughputDistribution)
+				kanban.GET("/monte-carlo", kanbanAnalyticsHandler.GetMonteCarlo)
 			}
 
 		}

@@ -1547,6 +1547,54 @@ paths:
                       data:
                         $ref: '#/components/schemas/DistributionResponse'
 
+  /projects/{project_id}/analytics/kanban/monte-carlo:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Monte Carlo forecast
+      description: |-
+        Throughput-based Monte Carlo simulation (10 000 iterations).
+        Predicts when a given number of tasks will be completed based on historical weekly throughput.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+        - name: task_count
+          in: query
+          required: true
+          description: Number of tasks to forecast completion for
+          schema:
+            type: integer
+            minimum: 1
+        - name: weeks
+          in: query
+          required: false
+          description: Number of historical weeks to sample throughput from (default 12, minimum 2)
+          schema:
+            type: integer
+            minimum: 2
+            default: 12
+        - name: target_date
+          in: query
+          required: false
+          description: Target date to calculate completion probability for (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Monte Carlo forecast
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MonteCarloResponse'
+
   # ─── Sprints (standalone) ───────────────────────────────────────────
   /sprints/{sprint_id}:
     get:
@@ -5169,6 +5217,34 @@ components:
       properties:
         range: { type: string, description: "Range label (e.g. '0-2', '2-4')" }
         count: { type: integer }
+
+    MonteCarloResponse:
+      type: object
+      properties:
+        percentiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonteCarloPercentile'
+        chart:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonteCarloChartPoint'
+        target_date_probability:
+          type: integer
+          nullable: true
+          description: Probability (0–100) of completing all tasks by the target date. Present only when target_date is provided.
+
+    MonteCarloPercentile:
+      type: object
+      properties:
+        percentile: { type: integer, description: "Percentile value (50, 75, 85, 90, 95)" }
+        date: { type: string, format: date, description: "Predicted completion date (YYYY-MM-DD)" }
+
+    MonteCarloChartPoint:
+      type: object
+      properties:
+        date: { type: string, description: "Formatted date for X axis (DD.MM)" }
+        probability: { type: integer, description: "Cumulative probability 0–100" }
 
     # ── Admin: Users ──
     AdminUserResponse:

@@ -1,19 +1,17 @@
 package dto
 
-type MonteCarloForecastRequest struct {
-	WorkItemCount    int       `json:"work_item_count" binding:"required,min=1"`
-	Simulations      int       `json:"simulations" binding:"required,min=100,max=10000"`
-	ConfidenceLevels []float64 `json:"confidence_levels,omitempty"`
+type MonteCarloPercentileDTO struct {
+	Percentile int    `json:"percentile"`
+	Date       string `json:"date"` // YYYY-MM-DD
 }
 
-type ForecastPointDTO struct {
-	Date        string  `json:"date"`
-	Probability float64 `json:"probability"`
+type MonteCarloChartPointDTO struct {
+	Date        string `json:"date"`        // DD.MM
+	Probability int    `json:"probability"` // 0–100 cumulative
 }
 
-type MonteCarloForecastResultDTO struct {
-	ProjectID     string            `json:"project_id"`
-	WorkItemCount int              `json:"work_item_count"`
-	Points        []ForecastPointDTO `json:"points"`
-	GeneratedAt   string            `json:"generated_at"`
+type MonteCarloResponse struct {
+	Percentiles           []MonteCarloPercentileDTO `json:"percentiles"`
+	Chart                 []MonteCarloChartPointDTO  `json:"chart"`
+	TargetDateProbability *int                       `json:"target_date_probability,omitempty"`
 }

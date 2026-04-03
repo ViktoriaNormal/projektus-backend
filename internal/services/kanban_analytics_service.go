@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
 
 	"projektus-backend/internal/db"
+	"projektus-backend/internal/domain"
 )
 
 type KanbanAnalyticsService struct {
@@ -1259,4 +1261,160 @@ func (s *KanbanAnalyticsService) generateThroughputDistInterpretation(values []f
 		pluralForm(int(math.Round(p15)), "задача", "задачи", "задач"))
 
 	return result
+}
+
+// ========== GetMonteCarlo ==========
+
+const monteCarloSimulations = 10000
+const monteCarloDefaultWeeks = 12
+
+func (s *KanbanAnalyticsService) GetMonteCarlo(
+	ctx context.Context, projectID uuid.UUID, boardID *uuid.UUID,
+	fieldFilters map[string][]string,
+	taskCount int, weeks int, targetDate *time.Time,
+) (*domain.MonteCarloReport, error) {
+	bid, _, err := s.resolveBoard(ctx, projectID, boardID)
+	if err != nil {
+		return nil, err
+	}
+
+	var filterSet map[uuid.UUID]struct{}
+	if len(fieldFilters) > 0 {
+		filterSet, err = BuildTaskFilter(ctx, s.dbtx, projectID, bid, fieldFilters)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	tasks, err := s.getCompletedTasks(ctx, projectID, bid)
+	if err != nil {
+		return nil, err
+	}
+	if filterSet != nil {
+		tasks = filterCompletedTasks(tasks, filterSet)
+	}
+
+	if weeks < 2 {
+		weeks = monteCarloDefaultWeeks
+	}
+
+	// Build weekly throughput samples (last N weeks, including zero-weeks).
+	samples := s.weeklyThroughputSamples(tasks, weeks)
+	if len(samples) < 2 {
+		return &domain.MonteCarloReport{}, nil
+	}
+
+	// Check that at least one week has non-zero throughput,
+	// otherwise simulation would loop forever.
+	hasNonZero := false
+	for _, v := range samples {
+		if v > 0 {
+			hasNonZero = true
+			break
+		}
+	}
+	if !hasNonZero {
+		return &domain.MonteCarloReport{}, nil
+	}
+
+	// Run simulation.
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	completionDates := make([]time.Time, monteCarloSimulations)
+
+	for i := 0; i < monteCarloSimulations; i++ {
+		remaining := taskCount
+		current := today
+		for remaining > 0 {
+			tp := samples[rand.Intn(len(samples))]
+			if tp <= 0 {
+				current = current.AddDate(0, 0, 7)
+				continue
+			}
+			if tp >= remaining {
+				// Interpolate partial week.
+				days := int(math.Ceil(float64(remaining) / float64(tp) * 7))
+				current = current.AddDate(0, 0, days)
+				remaining = 0
+			} else {
+				remaining -= tp
+				current = current.AddDate(0, 0, 7)
+			}
+		}
+		completionDates[i] = current
+	}
+
+	sort.Slice(completionDates, func(i, j int) bool {
+		return completionDates[i].Before(completionDates[j])
+	})
+
+	// Extract percentiles.
+	percentiles := []int{50, 75, 85, 90, 95}
+	report := &domain.MonteCarloReport{}
+	for _, p := range percentiles {
+		idx := p * monteCarloSimulations / 100
+		if idx >= monteCarloSimulations {
+			idx = monteCarloSimulations - 1
+		}
+		report.Percentiles = append(report.Percentiles, domain.MonteCarloPercentile{
+			Percentile: p,
+			Date:       completionDates[idx],
+		})
+	}
+
+	// Build chart: step through weekly from min to max date.
+	minDate := completionDates[0]
+	maxDate := completionDates[monteCarloSimulations-1]
+	for d := minDate; !d.After(maxDate); d = d.AddDate(0, 0, 7) {
+		count := sort.Search(monteCarloSimulations, func(i int) bool {
+			return completionDates[i].After(d)
+		})
+		prob := count * 100 / monteCarloSimulations
+		report.ChartPoints = append(report.ChartPoints, domain.MonteCarloChartPoint{
+			Date:        d,
+			Probability: prob,
+		})
+	}
+	// Ensure last point reaches the max.
+	if len(report.ChartPoints) > 0 && report.ChartPoints[len(report.ChartPoints)-1].Probability < 100 {
+		report.ChartPoints = append(report.ChartPoints, domain.MonteCarloChartPoint{
+			Date:        maxDate,
+			Probability: 100,
+		})
+	}
+
+	// Target date probability.
+	if targetDate != nil {
+		td := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 23, 59, 59, 0, targetDate.Location())
+		count := sort.Search(monteCarloSimulations, func(i int) bool {
+			return completionDates[i].After(td)
+		})
+		prob := count * 100 / monteCarloSimulations
+		report.TargetDateProbability = &prob
+	}
+
+	return report, nil
+}
+
+// weeklyThroughputSamples returns the number of completed tasks per ISO week
+// for the last maxWeeks weeks, including zero-count weeks.
+func (s *KanbanAnalyticsService) weeklyThroughputSamples(tasks []completedTask, maxWeeks int) []int {
+	now := time.Now()
+	weekCounts := make(map[string]int)
+	for _, t := range tasks {
+		weekCounts[weekKey(t.CompletedAt)]++
+	}
+
+	seen := make(map[string]bool)
+	samples := make([]int, 0, maxWeeks)
+	for i := 0; i < maxWeeks; i++ {
+		d := now.AddDate(0, 0, -(maxWeeks-1-i)*7)
+		key := weekKey(d)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		samples = append(samples, weekCounts[key])
+	}
+	return samples
 }

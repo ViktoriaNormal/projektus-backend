@@ -3,7 +3,9 @@ package handlers
 import (
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -303,4 +305,69 @@ func (h *KanbanAnalyticsHandler) GetThroughputDistribution(c *gin.Context) {
 		Data:           data,
 		Interpretation: report.Interpretation,
 	})
+}
+
+func (h *KanbanAnalyticsHandler) GetMonteCarlo(c *gin.Context) {
+	projectID, err := uuid.Parse(c.Param("projectId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+		return
+	}
+
+	taskCountStr := c.Query("task_count")
+	if taskCountStr == "" {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Параметр task_count обязателен")
+		return
+	}
+	taskCount, err := strconv.Atoi(taskCountStr)
+	if err != nil || taskCount < 1 {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "task_count должен быть положительным целым числом")
+		return
+	}
+
+	weeks := 0
+	if w := c.Query("weeks"); w != "" {
+		if parsed, err := strconv.Atoi(w); err == nil && parsed >= 2 {
+			weeks = parsed
+		}
+	}
+
+	var targetDate *time.Time
+	if s := c.Query("target_date"); s != "" {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "target_date должен быть в формате YYYY-MM-DD")
+			return
+		}
+		targetDate = &t
+	}
+
+	report, err := h.analyticsSvc.GetMonteCarlo(
+		c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c),
+		taskCount, weeks, targetDate,
+	)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось выполнить прогнозирование Монте-Карло")
+		return
+	}
+
+	resp := dto.MonteCarloResponse{
+		Percentiles:           make([]dto.MonteCarloPercentileDTO, 0, len(report.Percentiles)),
+		Chart:                 make([]dto.MonteCarloChartPointDTO, 0, len(report.ChartPoints)),
+		TargetDateProbability: report.TargetDateProbability,
+	}
+	for _, p := range report.Percentiles {
+		resp.Percentiles = append(resp.Percentiles, dto.MonteCarloPercentileDTO{
+			Percentile: p.Percentile,
+			Date:       p.Date.Format("2006-01-02"),
+		})
+	}
+	for _, cp := range report.ChartPoints {
+		resp.Chart = append(resp.Chart, dto.MonteCarloChartPointDTO{
+			Date:        cp.Date.Format("02.01"),
+			Probability: cp.Probability,
+		})
+	}
+
+	writeSuccess(c, resp)
 }
