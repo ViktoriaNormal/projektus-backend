@@ -129,6 +129,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 			PriorityType:    tb.PriorityType,
 			EstimationUnit:  tb.EstimationUnit,
 			SwimlaneGroupBy: tb.SwimlaneGroupBy,
+			PriorityOptions: tb.PriorityOptions,
 		})
 		if err != nil {
 			return uuid.Nil, err

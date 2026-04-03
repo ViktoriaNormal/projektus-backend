@@ -13,6 +13,23 @@ import (
 	"github.com/google/uuid"
 )
 
+const closeTaskStatusHistory = `-- name: CloseTaskStatusHistory :exec
+UPDATE task_status_history
+SET left_at = $2
+WHERE task_id = $1
+  AND left_at IS NULL
+`
+
+type CloseTaskStatusHistoryParams struct {
+	TaskID uuid.UUID    `json:"task_id"`
+	LeftAt sql.NullTime `json:"left_at"`
+}
+
+func (q *Queries) CloseTaskStatusHistory(ctx context.Context, arg CloseTaskStatusHistoryParams) error {
+	_, err := q.db.ExecContext(ctx, closeTaskStatusHistory, arg.TaskID, arg.LeftAt)
+	return err
+}
+
 const getCompletedTasksCycleTime = `-- name: GetCompletedTasksCycleTime :many
 SELECT
     h.task_id,

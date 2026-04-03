@@ -21,6 +21,12 @@ FROM task_status_history
 WHERE task_id = $1
 ORDER BY entered_at;
 
+-- name: CloseTaskStatusHistory :exec
+UPDATE task_status_history
+SET left_at = $2
+WHERE task_id = $1
+  AND left_at IS NULL;
+
 -- name: GetCompletedTasksCycleTime :many
 SELECT
     h.task_id,

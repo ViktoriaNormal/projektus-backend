@@ -36,6 +36,7 @@ type BoardRepository interface {
 	DeleteSwimlane(ctx context.Context, id string) error
 	UpdateSwimlaneOrder(ctx context.Context, id string, order int16) error
 	CountTasksInSwimlane(ctx context.Context, id string) (int, error)
+	ClearSwimlaneFromTasks(ctx context.Context, swimlaneID string) error
 
 	ListNotes(ctx context.Context, boardID string) ([]domain.Note, error)
 	GetNoteByID(ctx context.Context, id string) (*domain.Note, error)
@@ -475,6 +476,14 @@ func (r *boardRepository) CountTasksInSwimlane(ctx context.Context, id string) (
 		return 0, err
 	}
 	return int(count), nil
+}
+
+func (r *boardRepository) ClearSwimlaneFromTasks(ctx context.Context, swimlaneID string) error {
+	uid, err := uuid.Parse(swimlaneID)
+	if err != nil {
+		return err
+	}
+	return r.q.ClearSwimlaneFromTasks(ctx, uuid.NullUUID{UUID: uid, Valid: true})
 }
 
 func (r *boardRepository) GetNoteByID(ctx context.Context, id string) (*domain.Note, error) {

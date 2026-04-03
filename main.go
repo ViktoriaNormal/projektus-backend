@@ -76,7 +76,7 @@ func main() {
 
 	boardSvc := services.NewBoardService(boardRepo)
 
-	taskSvc := services.NewTaskService(taskRepo, projectRepo, tagRepo, conn)
+	taskSvc := services.NewTaskService(taskRepo, projectRepo, tagRepo, conn, queries)
 
 	adminUserSvc := services.NewAdminUserService(userRepo, adminUserRepo, roleSvc, passwordSvc, passwordPolicySvc)
 	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc)
@@ -102,10 +102,13 @@ func main() {
 	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc, projectSvc)
 	sprintHandler := handlers.NewSprintHandler(sprintSvc, projectSvc)
 
-	scrumAnalyticsSvc := services.NewScrumAnalyticsService(sprintRepo, queries)
+	scrumAnalyticsSvc := services.NewScrumAnalyticsService(sprintRepo, queries, conn)
 	scrumAnalyticsHandler := handlers.NewScrumAnalyticsHandler(scrumAnalyticsSvc)
 
-	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, scrumAnalyticsHandler, projectSvc, permissionSvc)
+	kanbanAnalyticsSvc := services.NewKanbanAnalyticsService(queries, conn)
+	kanbanAnalyticsHandler := handlers.NewKanbanAnalyticsHandler(kanbanAnalyticsSvc)
+
+	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, projectSvc, permissionSvc)
 
 	// Фоновый воркер для напоминаний о встречах.
 	go func() {

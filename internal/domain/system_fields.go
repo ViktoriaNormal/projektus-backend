@@ -58,8 +58,12 @@ func GenerateSystemBoardFields(projectType, priorityType, estimationUnit string,
 			continue
 		}
 		options := def.Options
-		if def.Key == "priority" && len(priorityOptions) > 0 {
-			options = priorityOptions
+		if def.Key == "priority" {
+			if len(priorityOptions) > 0 {
+				options = priorityOptions
+			} else if len(options) == 0 {
+				options = defaultPriorityOptionsForType(priorityType)
+			}
 		}
 		result = append(result, BoardCustomField{
 			ID:         id.String(),
@@ -123,6 +127,16 @@ func GenerateSystemProjectParamsForTemplate() []ProjectParam {
 		})
 	}
 	return result
+}
+
+func defaultPriorityOptionsForType(priorityType string) []string {
+	switch priorityType {
+	case "priority":
+		return []string{"Низкий", "Средний", "Высокий", "Критичный"}
+	case "service_class":
+		return []string{"Ускоренный", "С фиксированной датой", "Стандартный", "Нематериальный"}
+	}
+	return nil
 }
 
 func isAvailableFor(availableFor []string, projectType string) bool {

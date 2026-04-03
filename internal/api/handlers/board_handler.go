@@ -171,6 +171,9 @@ func (h *BoardHandler) UpdateBoard(c *gin.Context) {
 			board.SwimlaneGroupBy = req.SwimlaneGroupBy.Value
 		}
 	}
+	if req.PriorityOptions != nil {
+		board.PriorityOptions = req.PriorityOptions
+	}
 	updated, err := h.service.UpdateBoard(c.Request.Context(), board)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить доску")
@@ -774,6 +777,10 @@ func mapBoardToDTO(b *domain.Board) dto.BoardResponse {
 	if b.SwimlaneGroupBy != "" {
 		sgb = &b.SwimlaneGroupBy
 	}
+	priorityOptions := b.PriorityOptions
+	if priorityOptions == nil {
+		priorityOptions = []string{}
+	}
 	return dto.BoardResponse{
 		ID:              uuid.MustParse(b.ID),
 		ProjectID:       projectID,
@@ -784,6 +791,7 @@ func mapBoardToDTO(b *domain.Board) dto.BoardResponse {
 		PriorityType:    b.PriorityType,
 		EstimationUnit:  b.EstimationUnit,
 		SwimlaneGroupBy: sgb,
+		PriorityOptions: priorityOptions,
 	}
 }
 

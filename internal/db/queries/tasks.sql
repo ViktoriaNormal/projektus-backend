@@ -70,6 +70,9 @@ UPDATE tasks
 SET deleted_at = NOW()
 WHERE id = $1;
 
+-- name: ClearSwimlaneFromTasks :exec
+UPDATE tasks SET swimlane_id = NULL WHERE swimlane_id = $1;
+
 -- name: AssignColumnToTask :exec
 UPDATE tasks SET column_id = $2 WHERE id = $1;
 

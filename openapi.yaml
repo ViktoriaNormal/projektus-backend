@@ -68,6 +68,8 @@ tags:
     description: Project template administration
   - name: ScrumAnalytics
     description: Scrum analytics (velocity, burndown)
+  - name: KanbanAnalytics
+    description: Kanban analytics (CFD, cycle time, throughput, WIP)
 
 paths:
   # ─── Auth ───────────────────────────────────────────────────────────
@@ -1249,9 +1251,14 @@ paths:
     get:
       tags: [ScrumAnalytics]
       summary: Get velocity report
-      description: Returns velocity data per sprint, aggregate metrics, and textual interpretation.
+      description: |-
+        Returns velocity data per sprint, aggregate metrics, and textual interpretation.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
         - name: metricType
           in: query
           schema:
@@ -1281,9 +1288,14 @@ paths:
     get:
       tags: [ScrumAnalytics]
       summary: Get burndown chart data
-      description: Returns daily remaining work vs ideal line for a sprint.
+      description: |-
+        Returns daily remaining work vs ideal line for a sprint.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
         - name: metricType
           in: query
           schema:
@@ -1308,6 +1320,232 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/BurndownResponse'
+
+  # ─── Kanban Analytics ───────────────────────────────────────────────
+  /projects/{project_id}/analytics/kanban/summary:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get Kanban summary metrics
+      description: |-
+        Returns aggregated Kanban metrics (velocity, cycle time, throughput, WIP) with trends and interpretation.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Kanban summary
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/KanbanSummaryResponse'
+
+  /projects/{project_id}/analytics/kanban/cumulative-flow:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get cumulative flow diagram data
+      description: |-
+        Returns daily snapshots of task counts per board column for the last 30 days.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Cumulative flow data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CumulativeFlowResponse'
+
+  /projects/{project_id}/analytics/kanban/cycle-time-scatter:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get cycle time scatter plot data
+      description: |-
+        Returns cycle time (days) for each completed task.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Cycle time scatter data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CycleTimeScatterResponse'
+
+  /projects/{project_id}/analytics/kanban/throughput:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get weekly throughput
+      description: |-
+        Returns count of completed tasks per week for the last 8 weeks.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Throughput data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThroughputResponse'
+
+  /projects/{project_id}/analytics/kanban/avg-cycle-time:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get average cycle time per week
+      description: |-
+        Returns weekly avg, p50, and p85 cycle time for completed tasks.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Average cycle time data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AvgCycleTimeResponse'
+
+  /projects/{project_id}/analytics/kanban/throughput-trend:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get throughput with trend line
+      description: |-
+        Returns weekly throughput with linear regression trend values.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Throughput trend data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThroughputTrendResponse'
+
+  /projects/{project_id}/analytics/kanban/wip:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get WIP history
+      description: |-
+        Returns daily WIP count and limit for the last 30 days.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: WIP history data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WipHistoryResponse'
+
+  /projects/{project_id}/analytics/kanban/cycle-time-distribution:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get cycle time distribution
+      description: |-
+        Returns histogram of cycle times across completed tasks.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Cycle time distribution
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DistributionResponse'
+
+  /projects/{project_id}/analytics/kanban/throughput-distribution:
+    get:
+      tags: [KanbanAnalytics]
+      summary: Get throughput distribution
+      description: |-
+        Returns histogram of weekly throughput values.
+
+        Supports optional task filtering — see **Analytics filter parameters** below.
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/BoardIdQuery'
+        - $ref: '#/components/parameters/AnalyticsFieldFilter'
+      responses:
+        '200':
+          description: Throughput distribution
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DistributionResponse'
 
   # ─── Sprints (standalone) ───────────────────────────────────────────
   /sprints/{sprint_id}:
@@ -3711,6 +3949,36 @@ components:
       schema:
         type: string
         format: uuid
+    BoardIdQuery:
+      name: board_id
+      in: query
+      description: Board ID (defaults to the project's default board)
+      required: false
+      schema:
+        type: string
+        format: uuid
+    AnalyticsFieldFilter:
+      name: filter_{fieldId}
+      in: query
+      required: false
+      description: |-
+        **Analytics filter parameters.** Zero or more query parameters of the form
+        `filter_{fieldId}=value1,value2` where `fieldId` is a UUID of a board field
+        or the virtual key `__tags__`.
+
+        - Comma-separated values are ORed (task matches if its field equals any listed value).
+        - Multiple `filter_*` parameters are ANDed.
+        - For multiselect / user_list / tags fields the task matches if at least one of its
+          stored values overlaps with the filter values.
+        - `filter___tags__=bug,feature` — filter by tag names.
+        - When combined with `board_id`, tasks are first limited to the board, then filtered.
+        - When absent, all tasks of the project are included (default behaviour).
+
+        Example: `?filter_00000000-0000-0000-0001-000000000008=high,medium&filter___tags__=bug`
+      schema:
+        type: string
+      style: form
+      explode: true
 
   responses:
     ValidationError:
@@ -4773,6 +5041,134 @@ components:
         day: { type: string }
         remaining: { type: number }
         ideal: { type: number }
+
+    # ── Kanban Analytics ──
+    KanbanSummaryResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            average_velocity: { type: number }
+            average_velocity_unit: { type: string }
+            velocity_trend: { type: number, description: Percentage change }
+            cycle_time: { type: number, description: Average cycle time in days }
+            cycle_time_trend: { type: number, description: Percentage change }
+            throughput: { type: number, description: Tasks per week }
+            throughput_trend: { type: number, description: Percentage change }
+            wip: { type: integer, description: Current WIP count }
+            wip_change: { type: integer, description: Absolute change from previous week }
+        interpretation: { type: string }
+
+    CumulativeFlowResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          description: Daily snapshots with dynamic column keys
+          items:
+            type: object
+            properties:
+              date: { type: string }
+            additionalProperties:
+              type: integer
+        interpretation: { type: string }
+
+    CycleTimeScatterResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CycleTimeScatterPoint'
+        interpretation: { type: string }
+
+    CycleTimeScatterPoint:
+      type: object
+      properties:
+        task: { type: string, description: Task key (e.g. PROJ-95) }
+        time: { type: number, description: Cycle time in days }
+
+    ThroughputResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThroughputWeek'
+        interpretation: { type: string }
+
+    ThroughputWeek:
+      type: object
+      properties:
+        week: { type: string }
+        count: { type: integer }
+
+    AvgCycleTimeResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvgCycleTimeWeek'
+        interpretation: { type: string }
+
+    AvgCycleTimeWeek:
+      type: object
+      properties:
+        week: { type: string }
+        avg: { type: number }
+        p50: { type: number }
+        p85: { type: number }
+
+    ThroughputTrendResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThroughputTrendPoint'
+        interpretation: { type: string }
+
+    ThroughputTrendPoint:
+      type: object
+      properties:
+        week: { type: string }
+        actual: { type: integer }
+        trend: { type: number }
+
+    WipHistoryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WipHistoryPoint'
+        interpretation: { type: string }
+
+    WipHistoryPoint:
+      type: object
+      properties:
+        date: { type: string }
+        wip: { type: integer }
+        limit:
+          type: integer
+          nullable: true
+
+    DistributionResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DistributionBucket'
+        interpretation: { type: string }
+
+    DistributionBucket:
+      type: object
+      properties:
+        range: { type: string, description: "Range label (e.g. '0-2', '2-4')" }
+        count: { type: integer }
 
     # ── Admin: Users ──
     AdminUserResponse:

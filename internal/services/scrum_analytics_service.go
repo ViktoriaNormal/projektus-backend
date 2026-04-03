@@ -18,10 +18,11 @@ import (
 type ScrumAnalyticsService struct {
 	sprintRepo repositories.SprintRepository
 	queries    *db.Queries
+	dbtx       db.DBTX
 }
 
-func NewScrumAnalyticsService(sprintRepo repositories.SprintRepository, queries *db.Queries) *ScrumAnalyticsService {
-	return &ScrumAnalyticsService{sprintRepo: sprintRepo, queries: queries}
+func NewScrumAnalyticsService(sprintRepo repositories.SprintRepository, queries *db.Queries, dbtx db.DBTX) *ScrumAnalyticsService {
+	return &ScrumAnalyticsService{sprintRepo: sprintRepo, queries: queries, dbtx: dbtx}
 }
 
 type MetricType string
@@ -51,7 +52,12 @@ type VelocityReport struct {
 	Interpretation     string
 }
 
-func (s *ScrumAnalyticsService) GetVelocity(ctx context.Context, projectID uuid.UUID, metricType MetricType, limit int) (*VelocityReport, error) {
+func (s *ScrumAnalyticsService) GetVelocity(ctx context.Context, projectID uuid.UUID, metricType MetricType, limit int, boardID *uuid.UUID, fieldFilters map[string][]string) (*VelocityReport, error) {
+	filterSet, err := s.buildScrumFilter(ctx, projectID, boardID, fieldFilters)
+	if err != nil {
+		return nil, err
+	}
+
 	sprints, err := s.sprintRepo.GetCompletedSprints(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -78,6 +84,9 @@ func (s *ScrumAnalyticsService) GetVelocity(ctx context.Context, projectID uuid.
 		if err != nil {
 			return nil, err
 		}
+		if filterSet != nil {
+			tasks = filterSprintTaskRows(tasks, filterSet)
+		}
 
 		planned, completed := s.calculateMetrics(tasks, metricType)
 
@@ -99,7 +108,7 @@ func (s *ScrumAnalyticsService) GetVelocity(ctx context.Context, projectID uuid.
 		report.CompletionRate = math.Round(totalCompleted / totalPlanned * 100)
 	}
 	report.VelocityTrend = s.calculateTrend(report.Data)
-	report.Interpretation = s.generateVelocityInterpretation(report)
+	report.Interpretation = s.generateVelocityInterpretation(report, metricType)
 
 	return report, nil
 }
@@ -170,72 +179,108 @@ func (s *ScrumAnalyticsService) calculateTrend(data []VelocityResult) float64 {
 	return math.Round(slope*100) / 100
 }
 
-func (s *ScrumAnalyticsService) generateVelocityInterpretation(report *VelocityReport) string {
+// formatValue форматирует число: целое без дробной части, дробное с 1 знаком
+func formatValue(v float64) string {
+	if v == math.Trunc(v) {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.1f", v)
+}
+
+// metricUnitName возвращает название единицы измерения для отображения в интерпретациях
+func metricUnitName(mt MetricType) string {
+	switch mt {
+	case MetricStoryPoints:
+		return "SP"
+	case MetricEstimationHours:
+		return "ч."
+	default:
+		return "задач"
+	}
+}
+
+// pluralForm выбирает правильную форму слова по числу (русская грамматика)
+func pluralForm(n int, form1, form2, form5 string) string {
+	mod10 := n % 10
+	mod100 := n % 100
+	if mod100 >= 11 && mod100 <= 19 {
+		return form5
+	}
+	if mod10 == 1 {
+		return form1
+	}
+	if mod10 >= 2 && mod10 <= 4 {
+		return form2
+	}
+	return form5
+}
+
+func (s *ScrumAnalyticsService) generateVelocityInterpretation(report *VelocityReport, metricType MetricType) string {
 	if report.SprintCount == 0 {
 		return "Нет данных для анализа velocity."
 	}
+
+	unit := metricUnitName(metricType)
+
+	intro := "Диаграмма показывает запланированный и выполненный объём работы по спринтам."
+
 	if report.SprintCount == 1 {
-		return fmt.Sprintf("Данные за 1 спринт. Средняя скорость: %.0f. Процент выполнения: %.0f%%.",
-			report.AverageVelocity, report.CompletionRate)
+		result := fmt.Sprintf("%s За 1 спринт команда выполнила %s %s из %s запланированных (%.0f%%).",
+			intro, formatValue(report.AverageVelocity), unit, formatValue(report.AverageSprintScope), report.CompletionRate)
+		if report.CompletionRate >= 80 {
+			result += " Хороший результат."
+		}
+		result += " Для выявления тенденций нужно завершить ещё 2–3 спринта."
+		return result
 	}
 
-	// Стандартное отклонение
+	// Расчёт стабильности
 	var sumSq float64
 	for _, d := range report.Data {
 		diff := d.Completed - report.AverageVelocity
 		sumSq += diff * diff
 	}
-	stdDev := math.Sqrt(sumSq / float64(report.SprintCount))
 	cv := float64(0)
 	if report.AverageVelocity > 0 {
+		stdDev := math.Sqrt(sumSq / float64(report.SprintCount))
 		cv = stdDev / report.AverageVelocity * 100
 	}
 
-	// Сравнение последних спринтов с предыдущими
-	var recentTrend string
-	if report.SprintCount >= 3 {
-		mid := report.SprintCount / 2
-		var firstHalf, secondHalf float64
-		for i, d := range report.Data {
-			if i < mid {
-				firstHalf += d.Completed
-			} else {
-				secondHalf += d.Completed
-			}
-		}
-		firstAvg := firstHalf / float64(mid)
-		secondAvg := secondHalf / float64(report.SprintCount-mid)
-		if secondAvg > firstAvg*1.1 {
-			recentTrend = " Последние спринты показывают рост скорости."
-		} else if secondAvg < firstAvg*0.9 {
-			recentTrend = " Последние спринты показывают снижение скорости."
-		} else {
-			recentTrend = " Скорость остаётся стабильной."
-		}
+	sprintWord := pluralForm(report.SprintCount, "спринт", "спринта", "спринтов")
+
+	result := fmt.Sprintf("%s За %d %s команда в среднем выполняет %s %s из %s запланированных (%.0f%%).",
+		intro, report.SprintCount, sprintWord, formatValue(report.AverageVelocity), unit, formatValue(report.AverageSprintScope), report.CompletionRate)
+
+	// Тренд
+	if report.VelocityTrend > 0.5 {
+		result += fmt.Sprintf(" Скорость растёт (+%.1f %s за спринт).", report.VelocityTrend, unit)
+	} else if report.VelocityTrend < -0.5 {
+		result += fmt.Sprintf(" Скорость снижается (%.1f %s за спринт).", report.VelocityTrend, unit)
 	}
 
 	// Стабильность
-	var stability string
-	if cv < 15 {
-		stability = "стабильна"
-	} else if cv < 30 {
-		stability = "умеренно стабильна"
+	if cv >= 30 {
+		result += fmt.Sprintf(" Результаты нестабильны (разброс %.0f%%).", cv)
+	} else if cv >= 15 {
+		result += " Результаты умеренно стабильны."
 	} else {
-		stability = "нестабильна"
+		result += " Результаты стабильны."
 	}
 
-	trendDir := ""
-	if report.VelocityTrend > 0.5 {
-		trendDir = fmt.Sprintf(" с тенденцией к росту (+%.1f за спринт)", report.VelocityTrend)
+	// Оценка и рекомендация
+	if report.CompletionRate < 60 {
+		result += fmt.Sprintf(" Выполнение (%.0f%%) значительно ниже нормы (≥ 80%%) — команда систематически берёт больше, чем успевает. Рекомендация: сократите объём на 30–50%% и наращивайте постепенно.", report.CompletionRate)
+	} else if report.CompletionRate < 80 {
+		result += fmt.Sprintf(" Выполнение (%.0f%%) ниже нормы (≥ 80%%). Рекомендация: планируйте меньше, ориентируясь на фактическую скорость команды.", report.CompletionRate)
+	} else if cv >= 30 {
+		result += " Планирование хорошее, но скорость нестабильна. Рекомендация: проверьте, не различаются ли задачи слишком сильно по сложности."
 	} else if report.VelocityTrend < -0.5 {
-		trendDir = fmt.Sprintf(" с тенденцией к снижению (%.1f за спринт)", report.VelocityTrend)
+		result += " Скорость падает — возможен рост технического долга или усталость команды. Стоит обсудить на ретроспективе."
+	} else {
+		result += " Команда работает стабильно и предсказуемо — используйте среднюю скорость для планирования."
 	}
 
-	return fmt.Sprintf(
-		"Скорость команды %s%s. Средняя velocity: %.0f (σ=%.1f, CV=%.0f%%). Процент выполнения: %.0f%%. Средний scope спринта: %.0f.%s",
-		stability, trendDir, report.AverageVelocity, stdDev, cv,
-		report.CompletionRate, report.AverageSprintScope, recentTrend,
-	)
+	return result
 }
 
 type statusEntry struct {
@@ -258,9 +303,13 @@ type BurndownReport struct {
 	Interpretation string
 }
 
-func (s *ScrumAnalyticsService) GetBurndown(ctx context.Context, projectID uuid.UUID, metricType MetricType, sprintID *uuid.UUID) (*BurndownReport, error) {
+func (s *ScrumAnalyticsService) GetBurndown(ctx context.Context, projectID uuid.UUID, metricType MetricType, sprintID *uuid.UUID, boardID *uuid.UUID, fieldFilters map[string][]string) (*BurndownReport, error) {
+	filterSet, err := s.buildScrumFilter(ctx, projectID, boardID, fieldFilters)
+	if err != nil {
+		return nil, err
+	}
+
 	var sprint *domain.Sprint
-	var err error
 
 	if sprintID != nil {
 		sprint, err = s.sprintRepo.GetByID(ctx, *sprintID)
@@ -275,6 +324,9 @@ func (s *ScrumAnalyticsService) GetBurndown(ctx context.Context, projectID uuid.
 	tasks, err := s.queries.GetSprintTasksForAnalytics(ctx, sprint.ID)
 	if err != nil {
 		return nil, err
+	}
+	if filterSet != nil {
+		tasks = filterSprintTaskRows(tasks, filterSet)
 	}
 
 	// Считаем начальный объём
@@ -298,6 +350,9 @@ func (s *ScrumAnalyticsService) GetBurndown(ctx context.Context, projectID uuid.
 	history, err := s.queries.GetSprintTaskStatusHistory(ctx, sprint.ID)
 	if err != nil {
 		return nil, err
+	}
+	if filterSet != nil {
+		history = filterSprintHistoryRows(history, filterSet)
 	}
 
 	// Определяем временные рамки
@@ -371,7 +426,7 @@ func (s *ScrumAnalyticsService) GetBurndown(ctx context.Context, projectID uuid.
 		})
 	}
 
-	report.Interpretation = s.generateBurndownInterpretation(report, totalWork)
+	report.Interpretation = s.generateBurndownInterpretation(report, totalWork, metricType)
 	return report, nil
 }
 
@@ -390,40 +445,54 @@ func isTaskCompletedAtTime(entries []statusEntry, t time.Time) bool {
 	return false
 }
 
-func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownReport, totalWork float64) string {
+func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownReport, totalWork float64, metricType MetricType) string {
 	if len(report.Data) == 0 {
 		return "Нет данных для анализа burndown."
 	}
+
+	unit := metricUnitName(metricType)
 
 	last := report.Data[len(report.Data)-1]
 	completedPercent := float64(0)
 	if totalWork > 0 {
 		completedPercent = math.Round((totalWork - last.Remaining) / totalWork * 100)
 	}
+	completed := totalWork - last.Remaining
 
-	var status string
+	result := fmt.Sprintf("Диаграмма показывает остаток работы по дням спринта: пунктир — идеальный темп, линия — факт. В «%s» из %s %s выполнено %s (%.0f%%).",
+		report.SprintName, formatValue(totalWork), unit, formatValue(completed), completedPercent)
+
 	if last.Remaining <= last.Ideal {
-		status = "Команда опережает идеальный график"
+		result += " Команда опережает идеальный график."
 	} else {
-		status = "Команда отстаёт от идеального графика"
+		diff := last.Remaining - last.Ideal
+		result += fmt.Sprintf(" Команда отстаёт от идеального графика на %s %s.", formatValue(diff), unit)
 	}
 
-	// Проверяем скачки (scope changes)
+	// Скачки объёма
 	var scopeChanges int
 	for i := 1; i < len(report.Data); i++ {
-		diff := report.Data[i].Remaining - report.Data[i-1].Remaining
-		if diff > 0 {
+		if report.Data[i].Remaining > report.Data[i-1].Remaining {
 			scopeChanges++
 		}
 	}
-
-	scopeNote := ""
 	if scopeChanges > 0 {
-		scopeNote = fmt.Sprintf(" Обнаружено %d увеличение(й) объёма работы — возможно, задачи добавлялись в спринт после запуска.", scopeChanges)
+		scopeNote := pluralForm(scopeChanges, "раз", "раза", "раз")
+		result += fmt.Sprintf(" Объём работы увеличивался %d %s — в спринт добавлялись задачи.", scopeChanges, scopeNote)
 	}
 
-	return fmt.Sprintf(
-		"%s. Выполнено %.0f%% от общего объёма (осталось %.0f из %.0f).%s",
-		status, completedPercent, last.Remaining, totalWork, scopeNote,
-	)
+	// Рекомендация
+	if last.Remaining <= last.Ideal {
+		result += " Если темп сохранится, спринт будет завершён в срок. Следите за равномерностью — скачки в конце спринта говорят о проблемах с декомпозицией."
+	} else if completedPercent < 30 && len(report.Data) > 2 {
+		result += " Прогресс низкий — стоит обсудить на дейли, есть ли блокеры, и при необходимости снять второстепенные задачи."
+	} else {
+		result += " Рекомендация: обсудите прогресс на дейли и сфокусируйтесь на приоритетных задачах."
+	}
+
+	if scopeChanges > 1 {
+		result += " Частое добавление задач в спринт снижает предсказуемость — фиксируйте объём при планировании."
+	}
+
+	return result
 }

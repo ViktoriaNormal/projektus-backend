@@ -36,7 +36,24 @@ func (h *TaskHandler) SearchTasks(c *gin.Context) {
 		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Не удалось определить пользователя")
 		return
 	}
-	tasks, err := h.service.SearchTasks(c.Request.Context(), userID, req.ProjectID, req.ColumnID)
+	var projectID, columnID *uuid.UUID
+	if req.ProjectID != nil {
+		id, err := uuid.Parse(*req.ProjectID)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+			return
+		}
+		projectID = &id
+	}
+	if req.ColumnID != nil {
+		id, err := uuid.Parse(*req.ColumnID)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор колонки")
+			return
+		}
+		columnID = &id
+	}
+	tasks, err := h.service.SearchTasks(c.Request.Context(), userID, projectID, columnID)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список задач")
 		return
@@ -227,6 +244,20 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		} else {
 			idStr := req.SwimlaneID.Value.String()
 			task.SwimlaneID = &idStr
+		}
+	}
+	if req.Priority.Set {
+		if req.Priority.Null {
+			task.Priority = nil
+		} else {
+			task.Priority = &req.Priority.Value
+		}
+	}
+	if req.Estimation.Set {
+		if req.Estimation.Null {
+			task.Estimation = nil
+		} else {
+			task.Estimation = &req.Estimation.Value
 		}
 	}
 

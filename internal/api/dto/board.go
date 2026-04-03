@@ -12,6 +12,7 @@ type BoardResponse struct {
 	PriorityType    string     `json:"priority_type"`
 	EstimationUnit  string     `json:"estimation_unit"`
 	SwimlaneGroupBy *string    `json:"swimlane_group_by,omitempty"`
+	PriorityOptions []string   `json:"priority_options"`
 }
 
 type CreateBoardRequest struct {
@@ -32,6 +33,7 @@ type UpdateBoardRequest struct {
 	PriorityType    *string               `json:"priority_type,omitempty"`
 	EstimationUnit  *string               `json:"estimation_unit,omitempty"`
 	SwimlaneGroupBy NullableField[string] `json:"swimlane_group_by"`
+	PriorityOptions []string              `json:"priority_options,omitempty"`
 }
 
 type ColumnResponse struct {

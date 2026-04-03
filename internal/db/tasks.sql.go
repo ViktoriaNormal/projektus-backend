@@ -63,6 +63,15 @@ func (q *Queries) ClearColumnFromTask(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const clearSwimlaneFromTasks = `-- name: ClearSwimlaneFromTasks :exec
+UPDATE tasks SET swimlane_id = NULL WHERE swimlane_id = $1
+`
+
+func (q *Queries) ClearSwimlaneFromTasks(ctx context.Context, swimlaneID uuid.NullUUID) error {
+	_, err := q.db.ExecContext(ctx, clearSwimlaneFromTasks, swimlaneID)
+	return err
+}
+
 const createTask = `-- name: CreateTask :one
 
 INSERT INTO tasks (key, project_id, owner_id, executor_id, name, description, deadline, column_id, swimlane_id, priority, estimation, board_id)

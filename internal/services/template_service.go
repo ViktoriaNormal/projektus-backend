@@ -172,6 +172,7 @@ func (s *TemplateService) CreateBoard(ctx context.Context, templateID uuid.UUID,
 		PriorityType:    priorityType,
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: sgb,
+		PriorityOptions: repositories.OptionsToJSON(defaultPriorityOptions(priorityType)),
 	})
 	if err != nil {
 		return domain.TemplateBoard{}, err
@@ -1008,6 +1009,7 @@ func (s *TemplateService) createDefaultBoard(ctx context.Context, templateID uui
 		PriorityType:    priorityType,
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: swimlaneGroupBy,
+		PriorityOptions: repositories.OptionsToJSON(defaultPriorityOptions(priorityType)),
 	})
 	if err != nil {
 		return domain.TemplateBoard{}, err

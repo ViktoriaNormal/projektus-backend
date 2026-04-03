@@ -37,7 +37,7 @@ func (h *ScrumAnalyticsHandler) GetVelocity(c *gin.Context) {
 		}
 	}
 
-	report, err := h.analyticsSvc.GetVelocity(c.Request.Context(), projectID, metricType, limit)
+	report, err := h.analyticsSvc.GetVelocity(c.Request.Context(), projectID, metricType, limit, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные velocity")
 		return
@@ -86,7 +86,7 @@ func (h *ScrumAnalyticsHandler) GetBurndown(c *gin.Context) {
 		sprintIDPtr = &sprintID
 	}
 
-	report, err := h.analyticsSvc.GetBurndown(c.Request.Context(), projectID, metricType, sprintIDPtr)
+	report, err := h.analyticsSvc.GetBurndown(c.Request.Context(), projectID, metricType, sprintIDPtr, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
 		if err == domain.ErrNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Активный спринт не найден")

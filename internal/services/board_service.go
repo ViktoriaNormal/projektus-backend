@@ -55,6 +55,7 @@ func (s *BoardService) CreateBoard(ctx context.Context, projectID uuid.UUID, pro
 		PriorityType:    priorityType,
 		EstimationUnit:  estimationUnit,
 		SwimlaneGroupBy: swimlaneGroupBy,
+		PriorityOptions: defaultPriorityOptions(priorityType),
 	}
 	created, err := s.repo.CreateBoard(ctx, board)
 	if err != nil {
@@ -372,12 +373,8 @@ func (s *BoardService) GetSwimlaneByID(ctx context.Context, id uuid.UUID) (*doma
 }
 
 func (s *BoardService) DeleteSwimlaneSafe(ctx context.Context, id uuid.UUID) error {
-	count, err := s.repo.CountTasksInSwimlane(ctx, id.String())
-	if err != nil {
+	if err := s.repo.ClearSwimlaneFromTasks(ctx, id.String()); err != nil {
 		return err
-	}
-	if count > 0 {
-		return domain.ErrSwimlaneHasTasks
 	}
 	return s.repo.DeleteSwimlane(ctx, id.String())
 }
@@ -543,6 +540,15 @@ func validateMinColumnTypes(columns []domain.Column, excludeID string) error {
 	for st, cnt := range counts {
 		if cnt < 1 {
 			return fmt.Errorf("INVALID_COLUMN_ORDER: на доске должна быть хотя бы одна колонка типа %s: %w", st, domain.ErrInvalidColumnOrder)
+		}
+	}
+	return nil
+}
+
+func defaultPriorityOptions(priorityType string) []string {
+	for _, pt := range repositories.PriorityTypes {
+		if pt.Key == priorityType {
+			return pt.DefaultValues
 		}
 	}
 	return nil

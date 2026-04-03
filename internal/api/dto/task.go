@@ -90,8 +90,8 @@ type DeleteTaskRequest struct {
 }
 
 type SearchTasksRequest struct {
-	ProjectID *uuid.UUID `form:"project_id"`
-	ColumnID  *uuid.UUID `form:"column_id"`
+	ProjectID *string `form:"project_id"`
+	ColumnID  *string `form:"column_id"`
 }
 
 type TaskWatcherResponse struct {

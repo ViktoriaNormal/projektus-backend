@@ -20,11 +20,12 @@ type TaskService struct {
 	taskRepo    repositories.TaskRepository
 	projectRepo repositories.ProjectRepository
 	tagRepo     repositories.TagRepository
+	queries     *db.Queries
 	conn        *sql.DB
 }
 
-func NewTaskService(taskRepo repositories.TaskRepository, projectRepo repositories.ProjectRepository, tagRepo repositories.TagRepository, conn *sql.DB) *TaskService {
-	return &TaskService{taskRepo: taskRepo, projectRepo: projectRepo, tagRepo: tagRepo, conn: conn}
+func NewTaskService(taskRepo repositories.TaskRepository, projectRepo repositories.ProjectRepository, tagRepo repositories.TagRepository, conn *sql.DB, queries *db.Queries) *TaskService {
+	return &TaskService{taskRepo: taskRepo, projectRepo: projectRepo, tagRepo: tagRepo, conn: conn, queries: queries}
 }
 
 func (s *TaskService) generateTaskKey(ctx context.Context, projectID uuid.UUID) (string, error) {
@@ -99,7 +100,17 @@ func (s *TaskService) CreateTask(ctx context.Context, projectID, ownerMemberID u
 	}
 	t.Key = key
 
-	return s.taskRepo.Create(ctx, t)
+	created, err := s.taskRepo.Create(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+
+	// Записываем начальную запись в историю
+	if columnID != uuid.Nil {
+		s.recordColumnChange(ctx, uuid.MustParse(created.ID), columnID)
+	}
+
+	return created, nil
 }
 
 // CreateTaskFullParams содержит все параметры для создания задачи с вложенными сущностями.
@@ -222,6 +233,11 @@ func (s *TaskService) CreateTaskFull(ctx context.Context, p CreateTaskFullParams
 		return nil, fmt.Errorf("task: %w", err)
 	}
 	taskID := uuid.MustParse(task.ID)
+
+	// Записываем начальную запись в историю
+	if p.ColumnID != uuid.Nil {
+		s.recordColumnChange(ctx, taskID, p.ColumnID)
+	}
 
 	// 2. Checklists
 	for i, cl := range p.Checklists {
@@ -374,8 +390,10 @@ func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task) (*domain.T
 		return nil, domain.ErrInvalidInput
 	}
 
-	// Получаем текущую задачу
-	_, err := s.taskRepo.GetByID(ctx, uuid.MustParse(t.ID))
+	taskID := uuid.MustParse(t.ID)
+
+	// Получаем текущую задачу для сравнения column_id
+	existing, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +403,36 @@ func (s *TaskService) UpdateTask(ctx context.Context, t *domain.Task) (*domain.T
 		return nil, err
 	}
 
+	// Записываем историю при смене колонки
+	oldCol := ""
+	if existing.ColumnID != nil {
+		oldCol = *existing.ColumnID
+	}
+	newCol := ""
+	if updated.ColumnID != nil {
+		newCol = *updated.ColumnID
+	}
+	if newCol != "" && newCol != oldCol {
+		s.recordColumnChange(ctx, taskID, uuid.MustParse(newCol))
+	}
+
 	return updated, nil
+}
+
+// recordColumnChange закрывает текущую запись в task_status_history и создаёт новую
+func (s *TaskService) recordColumnChange(ctx context.Context, taskID, newColumnID uuid.UUID) {
+	now := time.Now()
+	// Закрываем предыдущую открытую запись
+	_ = s.queries.CloseTaskStatusHistory(ctx, db.CloseTaskStatusHistoryParams{
+		TaskID: taskID,
+		LeftAt: sql.NullTime{Time: now, Valid: true},
+	})
+	// Создаём новую запись
+	_, _ = s.queries.RecordTaskStatusChange(ctx, db.RecordTaskStatusChangeParams{
+		TaskID:    taskID,
+		ColumnID:  newColumnID,
+		EnteredAt: now,
+	})
 }
 
 func (s *TaskService) DeleteTask(ctx context.Context, id uuid.UUID) error {
