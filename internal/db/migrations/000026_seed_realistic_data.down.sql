@@ -1,0 +1,30 @@
+-- Откат seed-данных НоваСофт
+SET client_encoding = 'UTF8';
+
+DELETE FROM notifications WHERE id LIKE 'b0000000-%';
+DELETE FROM checklist_items WHERE id LIKE 'b2000000-%';
+DELETE FROM checklists WHERE id LIKE 'b1000000-%';
+DELETE FROM task_dependencies WHERE id LIKE 'b3000000-%';
+DELETE FROM meeting_participants WHERE id LIKE 'af000000-%';
+DELETE FROM meetings WHERE id LIKE 'ae000000-%';
+DELETE FROM comments WHERE id LIKE 'ad000000-%';
+DELETE FROM sprint_tasks WHERE sprint_id LIKE 'ab000000-%';
+DELETE FROM task_status_history WHERE task_id LIKE 'aa000000-%';
+DELETE FROM task_tags WHERE task_id LIKE 'aa000000-%';
+DELETE FROM task_watchers WHERE task_id LIKE 'aa000000-%';
+DELETE FROM backlog WHERE task_id LIKE 'aa000000-%';
+DELETE FROM tasks WHERE id LIKE 'aa000000-%';
+DELETE FROM sprints WHERE id LIKE 'ab000000-%';
+DELETE FROM tags WHERE id LIKE 'a9000000-%';
+DELETE FROM member_roles WHERE member_id LIKE 'a8000000-%';
+DELETE FROM members WHERE id LIKE 'a8000000-%';
+DELETE FROM role_permissions WHERE role_id LIKE 'a7000000-%';
+DELETE FROM roles WHERE id LIKE 'a7000000-%';
+DELETE FROM swimlanes WHERE id LIKE 'a6000000-%';
+DELETE FROM columns WHERE id LIKE 'a5000000-%';
+DELETE FROM boards WHERE id LIKE 'a4000000-%';
+DELETE FROM projects WHERE id LIKE 'a3000000-%';
+DELETE FROM role_permissions WHERE role_id LIKE 'a2000000-%';
+DELETE FROM user_roles WHERE user_id LIKE 'a1000000-%';
+DELETE FROM roles WHERE id LIKE 'a2000000-%';
+DELETE FROM users WHERE id LIKE 'a1000000-%';
