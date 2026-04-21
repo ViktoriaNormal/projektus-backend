@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type TaskPriority string
 
@@ -13,19 +17,19 @@ const (
 type TaskStatus string
 
 type Task struct {
-	ID               string      `json:"id"`
+	ID               uuid.UUID   `json:"id"`
 	Key              string      `json:"key"`
-	ProjectID        string      `json:"project_id"`
-	BoardID          string      `json:"board_id"`
-	OwnerID          string      `json:"owner_id"`
-	ExecutorID       *string     `json:"executor_id,omitempty"`
-	OwnerUserID      *string     `json:"owner_user_id,omitempty"`
-	ExecutorUserID   *string     `json:"executor_user_id,omitempty"`
+	ProjectID        uuid.UUID   `json:"project_id"`
+	BoardID          uuid.UUID   `json:"board_id"`
+	OwnerID          uuid.UUID   `json:"owner_id"`
+	ExecutorID       *uuid.UUID  `json:"executor_id,omitempty"`
+	OwnerUserID      *uuid.UUID  `json:"owner_user_id,omitempty"`
+	ExecutorUserID   *uuid.UUID  `json:"executor_user_id,omitempty"`
 	Name             string      `json:"name"`
 	Description      *string     `json:"description,omitempty"`
 	Deadline         *time.Time  `json:"deadline,omitempty"`
-	ColumnID         *string     `json:"column_id,omitempty"`
-	SwimlaneID       *string     `json:"swimlane_id,omitempty"`
+	ColumnID         *uuid.UUID  `json:"column_id,omitempty"`
+	SwimlaneID       *uuid.UUID  `json:"swimlane_id,omitempty"`
 	DeletedAt        *time.Time  `json:"-"`
 	CreatedAt        time.Time   `json:"created_at"`
 	Priority         *string     `json:"priority,omitempty"`
@@ -55,42 +59,42 @@ const (
 )
 
 type TaskWatcher struct {
-	TaskID   string `json:"task_id"`
-	MemberID string `json:"member_id"`
+	TaskID   uuid.UUID `json:"task_id"`
+	MemberID uuid.UUID `json:"member_id"`
 }
 
 type TaskFieldValue struct {
-	TaskID        string     `json:"task_id"`
-	FieldID       string     `json:"field_id"`
+	TaskID        uuid.UUID  `json:"task_id"`
+	FieldID       uuid.UUID  `json:"field_id"`
 	ValueText     *string    `json:"value_text,omitempty"`
 	ValueNumber   *string    `json:"value_number,omitempty"`
 	ValueDatetime *time.Time `json:"value_datetime,omitempty"`
 }
 
 type TaskDependency struct {
-	ID              string             `json:"id"`
-	TaskID          string             `json:"task_id"`
-	DependsOnTaskID string             `json:"depends_on_task_id"`
+	ID              uuid.UUID          `json:"id"`
+	TaskID          uuid.UUID          `json:"task_id"`
+	DependsOnTaskID uuid.UUID          `json:"depends_on_task_id"`
 	Type            TaskDependencyType `json:"type"`
 	CreatedAt       time.Time          `json:"created_at"`
 }
 
 type Checklist struct {
-	ID     string          `json:"id"`
-	TaskID string          `json:"task_id"`
+	ID     uuid.UUID       `json:"id"`
+	TaskID uuid.UUID       `json:"task_id"`
 	Name   string          `json:"name"`
 	Items  []ChecklistItem `json:"items,omitempty"`
 }
 
 type ChecklistItem struct {
-	ID          string `json:"id"`
-	ChecklistID string `json:"checklist_id"`
-	Content     string `json:"content"`
-	IsChecked   bool   `json:"is_checked"`
-	Order       int16  `json:"order"`
+	ID          uuid.UUID `json:"id"`
+	ChecklistID uuid.UUID `json:"checklist_id"`
+	Content     string    `json:"content"`
+	IsChecked   bool      `json:"is_checked"`
+	Order       int16     `json:"order"`
 }
 
 type SprintTaskWithoutColumn struct {
-	TaskID  string
-	BoardID string
+	TaskID  uuid.UUID
+	BoardID uuid.UUID
 }

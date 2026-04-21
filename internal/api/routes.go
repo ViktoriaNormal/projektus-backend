@@ -208,6 +208,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 			tasks.GET("/:taskId/dependencies", taskHandler.ListDependencies)
 			tasks.POST("/:taskId/dependencies", taskHandler.AddDependency)
+			tasks.DELETE("/:taskId/dependencies/:dependencyId", taskHandler.RemoveDependency)
 
 			tasks.GET("/:taskId/checklists", taskHandler.ListChecklists)
 			tasks.POST("/:taskId/checklists", taskHandler.CreateChecklist)
@@ -312,6 +313,7 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 
 				// Roles
 				templates.POST("/:templateId/roles", templateHandler.CreateRole)
+				templates.PATCH("/:templateId/roles/reorder", templateHandler.ReorderRoles)
 				templates.PATCH("/:templateId/roles/:roleId", templateHandler.UpdateRole)
 				templates.DELETE("/:templateId/roles/:roleId", templateHandler.DeleteRole)
 			}

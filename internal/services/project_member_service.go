@@ -34,7 +34,7 @@ func (s *ProjectMemberService) ListMembers(ctx context.Context, projectID uuid.U
 
 func (s *ProjectMemberService) AddMember(ctx context.Context, projectID, userID uuid.UUID, roleIDs []string) (*domain.ProjectMember, error) {
 	// Проверяем, что пользователь существует
-	if _, err := s.users.GetUserByID(ctx, userID.String()); err != nil {
+	if _, err := s.users.GetUserByID(ctx, userID); err != nil {
 		return nil, err
 	}
 	member, err := s.members.AddMember(ctx, projectID, userID)
@@ -58,8 +58,8 @@ func (s *ProjectMemberService) RemoveMember(ctx context.Context, memberID uuid.U
 	if s.projectRoleRepo != nil {
 		adminRoleID, err := s.projectRoleRepo.GetProjectAdminRoleID(ctx, member.ProjectID)
 		if err == nil {
-			for _, roleID := range member.Roles {
-				if roleID == adminRoleID.String() {
+			for _, r := range member.Roles {
+				if r.ID == adminRoleID {
 					count, _ := s.projectRoleRepo.CountMembersWithRole(ctx, member.ProjectID, adminRoleID)
 					if count <= 1 {
 						return domain.ErrLastProjectAdmin
@@ -101,8 +101,8 @@ func (s *ProjectMemberService) setMemberRoles(ctx context.Context, memberID, pro
 			member, merr := s.members.GetByID(ctx, memberID)
 			if merr == nil {
 				hasAdmin := false
-				for _, rid := range member.Roles {
-					if rid == adminRoleID.String() {
+				for _, r := range member.Roles {
+					if r.ID == adminRoleID {
 						hasAdmin = true
 						break
 					}

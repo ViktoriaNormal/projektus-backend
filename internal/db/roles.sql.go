@@ -29,6 +29,38 @@ func (q *Queries) AddPermissionToRole(ctx context.Context, arg AddPermissionToRo
 	return err
 }
 
+const createAdminSystemRole = `-- name: CreateAdminSystemRole :one
+INSERT INTO roles (name, description, scope, is_admin)
+VALUES ($1, $2, 'system', TRUE)
+RETURNING id, name, description, scope, is_admin
+`
+
+type CreateAdminSystemRoleParams struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type CreateAdminSystemRoleRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+func (q *Queries) CreateAdminSystemRole(ctx context.Context, arg CreateAdminSystemRoleParams) (CreateAdminSystemRoleRow, error) {
+	row := q.db.QueryRowContext(ctx, createAdminSystemRole, arg.Name, arg.Description)
+	var i CreateAdminSystemRoleRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Scope,
+		&i.IsAdmin,
+	)
+	return i, err
+}
+
 const createProjectRole = `-- name: CreateProjectRole :one
 INSERT INTO roles (name, description, scope, project_id)
 VALUES ($1, $2, 'project', $3)
@@ -120,6 +152,35 @@ type GetRoleByIDRow struct {
 func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (GetRoleByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getRoleByID, id)
 	var i GetRoleByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Scope,
+		&i.IsAdmin,
+	)
+	return i, err
+}
+
+const getSystemAdminRole = `-- name: GetSystemAdminRole :one
+SELECT id, name, description, scope, is_admin
+FROM roles
+WHERE scope = 'system' AND is_admin = TRUE
+ORDER BY name
+LIMIT 1
+`
+
+type GetSystemAdminRoleRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Scope       string    `json:"scope"`
+	IsAdmin     bool      `json:"is_admin"`
+}
+
+func (q *Queries) GetSystemAdminRole(ctx context.Context) (GetSystemAdminRoleRow, error) {
+	row := q.db.QueryRowContext(ctx, getSystemAdminRole)
+	var i GetSystemAdminRoleRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,

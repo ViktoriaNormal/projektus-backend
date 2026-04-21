@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type EventType string
 
@@ -25,16 +29,16 @@ const (
 )
 
 type NotificationSetting struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
 	EventType EventType `json:"event_type"`
 	InSystem  bool      `json:"in_system"`
 	InEmail   bool      `json:"in_email"`
 }
 
 type Notification struct {
-	ID          string      `json:"id"`
-	UserID      string      `json:"user_id"`
+	ID          uuid.UUID   `json:"id"`
+	UserID      uuid.UUID   `json:"user_id"`
 	EventType   EventType   `json:"event_type"`
 	Channel     ChannelType `json:"channel"`
 	Title       string      `json:"title"`

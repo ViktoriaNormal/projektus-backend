@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -21,121 +20,100 @@ func NewTagHandler(service *services.TagService) *TagHandler {
 
 // GET /boards/:boardId/tags — список тегов доски (для автокомплита)
 func (h *TagHandler) ListBoardTags(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-
 	tags, err := h.service.ListBoardTags(c.Request.Context(), boardID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить теги")
+		respondInternal(c, err, "Не удалось получить теги")
 		return
 	}
-
 	writeSuccess(c, mapTagsToDTO(tags))
 }
 
 // GET /tasks/:taskId/tags — теги задачи
 func (h *TagHandler) ListTaskTags(c *gin.Context) {
-	taskID, err := uuid.Parse(c.Param("taskId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-
 	tags, err := h.service.ListTaskTags(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить теги задачи")
+		respondInternal(c, err, "Не удалось получить теги задачи")
 		return
 	}
-
 	writeSuccess(c, mapTagsToDTO(tags))
 }
 
 // POST /boards/:boardId/tasks/:taskId/tags — добавить тег к задаче
 func (h *TagHandler) AddTagToTask(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	taskID, err := uuid.Parse(c.Param("taskId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-
-	var req dto.AddTagRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AddTagRequest](c)
+	if !ok {
 		return
 	}
 
 	tag, err := h.service.AddTagToTask(c.Request.Context(), boardID, taskID, req.Name)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя тега не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось добавить тег")
+		respondInternal(c, err, "Не удалось добавить тег")
 		return
 	}
-
 	writeSuccess(c, mapTagToDTO(*tag))
 }
 
 // DELETE /tasks/:taskId/tags/:tagId — убрать тег с задачи
 func (h *TagHandler) RemoveTagFromTask(c *gin.Context) {
-	taskID, err := uuid.Parse(c.Param("taskId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	tagID, err := uuid.Parse(c.Param("tagId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор тега")
+	tagID, ok := paramUUID(c, "tagId")
+	if !ok {
 		return
 	}
-
 	if err := h.service.RemoveTagFromTask(c.Request.Context(), taskID, tagID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить тег")
+		respondInternal(c, err, "Не удалось удалить тег")
 		return
 	}
-
 	c.Status(http.StatusNoContent)
 }
 
 // PUT /boards/:boardId/tasks/:taskId/tags — заменить все теги задачи
 func (h *TagHandler) SetTaskTags(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	taskID, err := uuid.Parse(c.Param("taskId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-
-	var req dto.SetTaskTagsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.SetTaskTagsRequest](c)
+	if !ok {
 		return
 	}
 
 	tags, err := h.service.SetTaskTags(c.Request.Context(), boardID, taskID, req.Tags)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить теги")
+		respondInternal(c, err, "Не удалось обновить теги")
 		return
 	}
-
 	writeSuccess(c, mapTagsToDTO(tags))
 }
 
 func mapTagToDTO(t domain.Tag) dto.TagResponse {
-	return dto.TagResponse{ID: t.ID, BoardID: t.BoardID, Name: t.Name}
+	return dto.TagResponse{ID: t.ID.String(), BoardID: t.BoardID.String(), Name: t.Name}
 }
 
 func mapTagsToDTO(tags []domain.Tag) []dto.TagResponse {

@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -15,9 +14,9 @@ import (
 )
 
 type UserHandler struct {
-	users      services.UserService
-	members    repositories.ProjectMemberRepository
-	roleRepo   repositories.RoleRepository
+	users    services.UserService
+	members  repositories.ProjectMemberRepository
+	roleRepo repositories.RoleRepository
 }
 
 func NewUserHandler(users services.UserService, members repositories.ProjectMemberRepository, roleRepo repositories.RoleRepository) *UserHandler {
@@ -26,7 +25,7 @@ func NewUserHandler(users services.UserService, members repositories.ProjectMemb
 
 func mapUserToResponse(u *domain.User) dto.UserResponse {
 	return dto.UserResponse{
-		ID:                        u.ID,
+		ID:                        u.ID.String(),
 		Username:                  u.Username,
 		Email:                     u.Email,
 		FullName:                  u.FullName,
@@ -40,23 +39,44 @@ func mapUserToResponse(u *domain.User) dto.UserResponse {
 }
 
 // GET /api/v1/users?q=&limit=&offset=
+//
+// Формат ответа:
+//
+//	{ "users": [...], "total": <int> }
+//
+// `total` — полное число записей под фильтр `q` (без учёта limit/offset), чтобы
+// фронт мог показывать «Всего сотрудников: N» / «Найдено: M» без полного обхода
+// страниц. `limit=0` возвращает только `total` с пустым массивом — полезно для
+// дешёвого запроса счётчика.
 func (h *UserHandler) SearchUsers(c *gin.Context) {
 	q := c.Query("q")
 	limitStr := c.DefaultQuery("limit", "20")
 	offsetStr := c.DefaultQuery("offset", "0")
 
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		limit = 20
+	// limit = 0 — это отдельный валидный случай «хочу только total». Различаем
+	// его от отсутствия параметра / неразборной строки: тогда ставим дефолт 20.
+	limit := 20
+	if n, err := strconv.Atoi(limitStr); err == nil {
+		switch {
+		case n == 0:
+			limit = 0
+		case n < 0:
+			limit = 20
+		default:
+			limit = n
+		}
 	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil || offset < 0 {
 		offset = 0
 	}
 
-	users, err := h.users.SearchUsers(c.Request.Context(), q, int32(limit), int32(offset))
+	users, total, err := h.users.SearchUsers(c.Request.Context(), q, int32(limit), int32(offset))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -67,6 +87,7 @@ func (h *UserHandler) SearchUsers(c *gin.Context) {
 
 	writeSuccess(c, gin.H{
 		"users": resp,
+		"total": total,
 	})
 }
 
@@ -79,7 +100,10 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 	writeSuccess(c, mapUserToResponse(u))
@@ -87,16 +111,15 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 
 // PATCH /api/v1/users/:id
 func (h *UserHandler) UpdateUser(c *gin.Context) {
-	currentUserID := c.GetString("userID")
-	if currentUserID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	currentUserUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	currentUserID := currentUserUUID.String()
 	targetUserID := c.Param("id")
 
-	var req dto.UpdateUserProfileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateUserProfileRequest](c)
+	if !ok {
 		return
 	}
 
@@ -110,7 +133,10 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -138,14 +164,14 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	u, err := h.users.UpdateProfile(c.Request.Context(), currentUserID, targetUserID, req.FullName, req.Email, position, onVacation, isSick, altContactChannel, altContactInfo, isAdmin)
 	if err != nil {
-		switch err {
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Недостаточно прав для изменения профиля")
-		case domain.ErrUserNotFound:
+		if err == domain.ErrUserNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+			return
 		}
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -154,11 +180,11 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 // PUT /api/v1/users/:id/avatar
 func (h *UserHandler) UpdateAvatar(c *gin.Context) {
-	currentUserID := c.GetString("userID")
-	if currentUserID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	currentUserUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	currentUserID := currentUserUUID.String()
 	targetUserID := c.Param("id")
 
 	file, header, err := c.Request.FormFile("file")
@@ -181,16 +207,18 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 
 	u, err := h.users.UpdateAvatar(c.Request.Context(), currentUserID, targetUserID, header.Filename, data, isAdmin)
 	if err != nil {
-		switch err {
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Недостаточно прав для изменения аватара")
-		case domain.ErrUserNotFound:
+		if err == domain.ErrUserNotFound {
 			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
-		case domain.ErrInvalidInput:
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Допустимые форматы: jpg, jpeg, png, webp")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+			return
 		}
+		if err == domain.ErrInvalidInput {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Допустимые форматы: jpg, jpeg, png, webp")
+			return
+		}
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -199,27 +227,27 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 
 // GET /api/v1/users/:id/project-roles
 func (h *UserHandler) GetMyProjectRoles(c *gin.Context) {
-	currentUserID := c.GetString("userID")
-	if currentUserID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	currentUserUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
-	targetUserID := c.Param("id")
-	if currentUserID != targetUserID {
+	uid, ok := paramUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	if currentUserUUID != uid {
 		writeError(c, http.StatusForbidden, "FORBIDDEN", "Можно запрашивать только свои проектные роли")
-		return
-	}
-
-	uid, err := uuid.Parse(targetUserID)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор пользователя")
 		return
 	}
 
 	memberships, err := h.members.ListByUser(c.Request.Context(), uid)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проектные роли")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить проектные роли")
 		return
 	}
 
@@ -243,11 +271,10 @@ func (h *UserHandler) GetMyProjectRoles(c *gin.Context) {
 		resp = append(resp, dto.ProjectRoleResponse{
 			ProjectID:   m.ProjectID,
 			ProjectName: m.ProjectName,
-			Roles:       m.Roles,
+			Roles:       toMemberRoleRefsDTO(m.Roles),
 			Permissions: permissions,
 		})
 	}
 
 	writeSuccess(c, resp)
 }
-

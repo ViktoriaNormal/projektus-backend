@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -19,15 +17,16 @@ func NewProductBacklogHandler(service *services.ProductBacklogService) *ProductB
 }
 
 func (h *ProductBacklogHandler) GetProductBacklog(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 	tasks, err := h.service.GetProductBacklog(c.Request.Context(), projectID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить бэклог продукта")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить бэклог продукта")
 		return
 	}
 	resp := make([]dto.TaskResponse, 0, len(tasks))
@@ -42,15 +41,12 @@ type reorderRequest struct {
 }
 
 func (h *ProductBacklogHandler) ReorderProductBacklog(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	var req reorderRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[reorderRequest](c)
+	if !ok {
 		return
 	}
 	orders := make(map[uuid.UUID]int32, len(req.Orders))
@@ -58,51 +54,53 @@ func (h *ProductBacklogHandler) ReorderProductBacklog(c *gin.Context) {
 		orders[o.TaskID] = int32(o.Order)
 	}
 	if err := h.service.ReorderProductBacklog(c.Request.Context(), projectID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок бэклога продукта")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок бэклога продукта")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Порядок обновлён"})
 }
 
 func (h *ProductBacklogHandler) AddTaskToBacklog(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	var body struct {
+	type addBody struct {
 		TaskID uuid.UUID `json:"task_id" binding:"required"`
 		Order  int32     `json:"order"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	body, ok := bindJSON[addBody](c)
+	if !ok {
 		return
 	}
 	if err := h.service.AddToProductBacklog(c.Request.Context(), projectID, body.TaskID, body.Order); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось добавить задачу в бэклог продукта")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось добавить задачу в бэклог продукта")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Задача добавлена в бэклог продукта"})
 }
 
 func (h *ProductBacklogHandler) RemoveTaskFromBacklog(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	if err := h.service.RemoveFromProductBacklog(c.Request.Context(), projectID, taskID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить задачу из бэклога продукта")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить задачу из бэклога продукта")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Задача удалена из бэклога продукта"})
 }
-

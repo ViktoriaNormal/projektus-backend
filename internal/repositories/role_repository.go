@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"database/sql"
-	"errors"
 
 	"github.com/google/uuid"
 
@@ -16,6 +15,9 @@ type RoleRepository interface {
 	ListSystemRoles(ctx context.Context) ([]domain.Role, error)
 	GetRoleByID(ctx context.Context, id uuid.UUID) (*domain.Role, error)
 	CreateSystemRole(ctx context.Context, name, description string) (*domain.Role, error)
+	CreateAdminSystemRole(ctx context.Context, name, description string) (*domain.Role, error)
+	GetSystemAdminRole(ctx context.Context) (*domain.Role, error)
+	CountActiveSystemAdmins(ctx context.Context) (int32, error)
 	UpdateSystemRole(ctx context.Context, id uuid.UUID, name, description string) (*domain.Role, error)
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 
@@ -48,7 +50,7 @@ func NewRoleRepository(q *db.Queries) RoleRepository {
 func (r *roleRepository) ListSystemRoles(ctx context.Context) ([]domain.Role, error) {
 	rows, err := r.q.ListSystemRoles(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListSystemRoles")
 	}
 
 	roles := make([]domain.Role, 0, len(rows))
@@ -67,10 +69,7 @@ func (r *roleRepository) ListSystemRoles(ctx context.Context) ([]domain.Role, er
 func (r *roleRepository) GetRoleByID(ctx context.Context, id uuid.UUID) (*domain.Role, error) {
 	row, err := r.q.GetRoleByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, errctx.Wrap(err, "GetRoleByID", "id", id)
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetRoleByID", "id", id)
 	}
 
 	return &domain.Role{
@@ -100,6 +99,43 @@ func (r *roleRepository) CreateSystemRole(ctx context.Context, name, description
 	}, nil
 }
 
+func (r *roleRepository) CreateAdminSystemRole(ctx context.Context, name, description string) (*domain.Role, error) {
+	row, err := r.q.CreateAdminSystemRole(ctx, db.CreateAdminSystemRoleParams{
+		Name:        name,
+		Description: description,
+	})
+	if err != nil {
+		return nil, errctx.Wrap(err, "CreateAdminSystemRole", "name", name)
+	}
+
+	return &domain.Role{
+		ID:          row.ID,
+		Name:        row.Name,
+		Description: row.Description,
+		Scope:       domain.RoleScope(row.Scope),
+		IsAdmin:     row.IsAdmin,
+	}, nil
+}
+
+func (r *roleRepository) GetSystemAdminRole(ctx context.Context) (*domain.Role, error) {
+	row, err := r.q.GetSystemAdminRole(ctx)
+	if err != nil {
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetSystemAdminRole")
+	}
+
+	return &domain.Role{
+		ID:          row.ID,
+		Name:        row.Name,
+		Description: row.Description,
+		Scope:       domain.RoleScope(row.Scope),
+		IsAdmin:     row.IsAdmin,
+	}, nil
+}
+
+func (r *roleRepository) CountActiveSystemAdmins(ctx context.Context) (int32, error) {
+	return r.q.CountActiveSystemAdmins(ctx)
+}
+
 func (r *roleRepository) UpdateSystemRole(ctx context.Context, id uuid.UUID, name, description string) (*domain.Role, error) {
 	row, err := r.q.UpdateSystemRole(ctx, db.UpdateSystemRoleParams{
 		ID:          id,
@@ -107,10 +143,7 @@ func (r *roleRepository) UpdateSystemRole(ctx context.Context, id uuid.UUID, nam
 		Description: description,
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, errctx.Wrap(err, "UpdateSystemRole", "id", id)
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "UpdateSystemRole", "id", id)
 	}
 
 	return &domain.Role{
@@ -130,7 +163,7 @@ func (r *roleRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {
 func (r *roleRepository) ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]domain.Permission, error) {
 	rows, err := r.q.ListRolePermissions(ctx, roleID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListRolePermissions", "roleID", roleID)
 	}
 
 	perms := make([]domain.Permission, 0, len(rows))
@@ -169,7 +202,7 @@ func (r *roleRepository) RemoveAllPermissionsFromRole(ctx context.Context, roleI
 func (r *roleRepository) ListUserSystemRoles(ctx context.Context, userID uuid.UUID) ([]domain.Role, error) {
 	rows, err := r.q.ListUserSystemRoles(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListUserSystemRoles", "userID", userID)
 	}
 
 	roles := make([]domain.Role, 0, len(rows))
@@ -222,7 +255,7 @@ func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UU
 	pid := uuid.NullUUID{UUID: projectID, Valid: true}
 	rows, err := r.q.ListProjectRoles(ctx, pid)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListProjectRoles", "projectID", projectID)
 	}
 
 	roles := make([]domain.Role, 0, len(rows))
@@ -232,7 +265,7 @@ func (r *roleRepository) ListProjectRoles(ctx context.Context, projectID uuid.UU
 			Name:        row.Name,
 			Description: row.Description,
 			Scope:       domain.RoleScope(row.Scope),
-			ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
+			ProjectID:   nullUUIDToPtr(row.ProjectID),
 		})
 	}
 	return roles, nil
@@ -245,35 +278,14 @@ func (r *roleRepository) CreateProjectRole(ctx context.Context, projectID uuid.U
 		ProjectID:   uuid.NullUUID{UUID: projectID, Valid: true},
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateProjectRole", "projectID", projectID, "name", name)
 	}
 	return &domain.Role{
 		ID:          row.ID,
 		Name:        row.Name,
 		Description: row.Description,
 		Scope:       domain.RoleScope(row.Scope),
-		ProjectID:   nullUUIDToUUIDPtr(row.ProjectID),
+		ProjectID:   nullUUIDToPtr(row.ProjectID),
 	}, nil
 }
 
-func sqlNullStringToStringPtr(ns sql.NullString) string {
-	if !ns.Valid {
-		return ""
-	}
-	return ns.String
-}
-
-func stringToNullString(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{Valid: false}
-	}
-	return sql.NullString{String: s, Valid: true}
-}
-
-func nullUUIDToUUIDPtr(n uuid.NullUUID) *uuid.UUID {
-	if !n.Valid {
-		return nil
-	}
-	id := n.UUID
-	return &id
-}

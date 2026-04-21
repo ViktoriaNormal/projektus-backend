@@ -75,11 +75,12 @@ type TemplateProjectParam struct {
 }
 
 type TemplateRole struct {
-	ID          uuid.UUID              `json:"id"`
-	TemplateID  uuid.UUID              `json:"template_id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	IsAdmin     bool                   `json:"is_admin"`
+	ID          uuid.UUID                `json:"id"`
+	TemplateID  uuid.UUID                `json:"template_id"`
+	Name        string                   `json:"name"`
+	Description string                   `json:"description"`
+	IsAdmin     bool                     `json:"is_admin"`
+	Order       int32                    `json:"order"`
 	Permissions []TemplateRolePermission `json:"permissions"`
 }
 
@@ -139,7 +140,7 @@ type DefaultColumnDef struct {
 
 // DefaultBoardFieldDef — определение системного поля доски (единый источник правды).
 type DefaultBoardFieldDef struct {
-	Key          string   // "title", "priority", "estimation", "sprint", ...
+	Key          string   // "title", "priority", "estimation", "deadline", ...
 	Name         string
 	FieldType    string
 	IsRequired   bool

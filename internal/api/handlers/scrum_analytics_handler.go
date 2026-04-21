@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
-	"projektus-backend/internal/domain"
 	"projektus-backend/internal/services"
 )
 
@@ -22,10 +21,8 @@ func NewScrumAnalyticsHandler(analyticsSvc *services.ScrumAnalyticsService) *Scr
 }
 
 func (h *ScrumAnalyticsHandler) GetVelocity(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
@@ -39,7 +36,10 @@ func (h *ScrumAnalyticsHandler) GetVelocity(c *gin.Context) {
 
 	report, err := h.analyticsSvc.GetVelocity(c.Request.Context(), projectID, metricType, limit, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные velocity")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить данные velocity")
 		return
 	}
 
@@ -67,10 +67,8 @@ func (h *ScrumAnalyticsHandler) GetVelocity(c *gin.Context) {
 }
 
 func (h *ScrumAnalyticsHandler) GetBurndown(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
@@ -88,11 +86,10 @@ func (h *ScrumAnalyticsHandler) GetBurndown(c *gin.Context) {
 
 	report, err := h.analyticsSvc.GetBurndown(c.Request.Context(), projectID, metricType, sprintIDPtr, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Активный спринт не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные burndown")
+		respondInternal(c, err, "Не удалось получить данные burndown")
 		return
 	}
 

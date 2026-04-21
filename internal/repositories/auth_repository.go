@@ -11,6 +11,7 @@ import (
 	"github.com/sqlc-dev/pqtype"
 
 	"projektus-backend/internal/db"
+	"projektus-backend/pkg/errctx"
 )
 
 type AuthRepository interface {
@@ -58,14 +59,14 @@ func parseInet(ip string) pqtype.Inet {
 func (r *authRepository) CreateRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "CreateRefreshToken", "userID", userID)
 	}
 	_, err = r.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
 		UserID:    uid,
 		TokenHash: tokenHash,
 		ExpiresAt: expiresAt,
 	})
-	return err
+	return errctx.Wrap(err, "CreateRefreshToken", "userID", userID)
 }
 
 func (r *authRepository) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
@@ -74,17 +75,17 @@ func (r *authRepository) RevokeRefreshToken(ctx context.Context, tokenHash strin
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
-		return err
+		return errctx.Wrap(err, "RevokeRefreshToken.GetRefreshTokenByHash")
 	}
-	return r.q.RevokeRefreshToken(ctx, t.ID)
+	return errctx.Wrap(r.q.RevokeRefreshToken(ctx, t.ID), "RevokeRefreshToken", "id", t.ID)
 }
 
 func (r *authRepository) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "RevokeAllUserTokens", "userID", userID)
 	}
-	return r.q.RevokeAllUserRefreshTokens(ctx, uid)
+	return errctx.Wrap(r.q.RevokeAllUserRefreshTokens(ctx, uid), "RevokeAllUserTokens", "userID", userID)
 }
 
 func (r *authRepository) IsRefreshTokenValid(ctx context.Context, tokenHash string) (string, bool, error) {
@@ -93,7 +94,7 @@ func (r *authRepository) IsRefreshTokenValid(ctx context.Context, tokenHash stri
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", false, nil
 		}
-		return "", false, err
+		return "", false, errctx.Wrap(err, "IsRefreshTokenValid")
 	}
 	if t.RevokedAt.Valid {
 		return "", false, nil
@@ -143,7 +144,7 @@ func (r *authRepository) GetBlockedIPUntil(ctx context.Context, ip string) (*tim
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "GetBlockedIPUntil", "ip", ip)
 	}
 	return &row.BlockedUntil, nil
 }
@@ -166,7 +167,7 @@ func (r *authRepository) GetBlockedUserUntil(ctx context.Context, userID string)
 	}
 	result, err := r.q.GetUserBlockedUntil(ctx, uid)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetBlockedUserUntil", "userID", userID)
 	}
 	if !result.Valid {
 		return nil, nil
@@ -177,12 +178,12 @@ func (r *authRepository) GetBlockedUserUntil(ctx context.Context, userID string)
 func (r *authRepository) BlockUserUntil(ctx context.Context, userID string, until time.Time) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return err
+		return errctx.Wrap(err, "BlockUserUntil", "userID", userID)
 	}
-	return r.q.SetUserBlockedUntil(ctx, db.SetUserBlockedUntilParams{
+	return errctx.Wrap(r.q.SetUserBlockedUntil(ctx, db.SetUserBlockedUntilParams{
 		ID:           uid,
 		BlockedUntil: sql.NullTime{Time: until, Valid: true},
-	})
+	}), "BlockUserUntil", "userID", userID)
 }
 
 func (r *authRepository) CleanupExpiredBlockedUsers(ctx context.Context) error {

@@ -1,5 +1,7 @@
 package domain
 
+import "github.com/google/uuid"
+
 type SystemStatusType string
 
 const (
@@ -11,36 +13,37 @@ const (
 )
 
 type Board struct {
-	ID              string   `json:"id"`
-	ProjectID       *string  `json:"project_id,omitempty"`
-	TemplateID      *string  `json:"template_id,omitempty"`
-	Name            string   `json:"name"`
-	Description     *string  `json:"description,omitempty"`
-	IsDefault       bool     `json:"is_default"`
-	Order           int16    `json:"order"`
-	PriorityType    string   `json:"priority_type"`
-	EstimationUnit  string   `json:"estimation_unit"`
-	SwimlaneGroupBy string   `json:"swimlane_group_by"`
-	PriorityOptions []string `json:"priority_options,omitempty"`
+	ID              uuid.UUID  `json:"id"`
+	ProjectID       *uuid.UUID `json:"project_id,omitempty"`
+	TemplateID      *uuid.UUID `json:"template_id,omitempty"`
+	Name            string     `json:"name"`
+	Description     *string    `json:"description,omitempty"`
+	IsDefault       bool       `json:"is_default"`
+	Order           int16      `json:"order"`
+	PriorityType    string     `json:"priority_type"`
+	EstimationUnit  string     `json:"estimation_unit"`
+	SwimlaneGroupBy string     `json:"swimlane_group_by"`
+	PriorityOptions []string   `json:"priority_options,omitempty"`
 }
 
 type BoardCustomField struct {
-	ID         string   `json:"id"`
-	BoardID    string   `json:"board_id"`
-	Name       string   `json:"name"`
-	FieldType  string   `json:"field_type"`
-	IsSystem   bool     `json:"is_system"`
-	IsRequired bool     `json:"is_required"`
-	Options    []string `json:"options"`
+	ID         uuid.UUID `json:"id"`
+	BoardID    uuid.UUID `json:"board_id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsSystem   bool      `json:"is_system"`
+	IsRequired bool      `json:"is_required"`
+	Options    []string  `json:"options"`
 }
 
 type ProjectRole struct {
-	ID              string                 `json:"id"`
-	ProjectID       string                 `json:"project_id"`
-	Name            string                 `json:"name"`
-	Description     string                 `json:"description"`
-	IsAdmin         bool                   `json:"is_admin"`
-	Permissions     []ProjectRolePermission `json:"permissions"`
+	ID          uuid.UUID               `json:"id"`
+	ProjectID   uuid.UUID               `json:"project_id"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	IsAdmin     bool                    `json:"is_admin"`
+	Order       int32                   `json:"order"`
+	Permissions []ProjectRolePermission `json:"permissions"`
 }
 
 type ProjectRolePermission struct {
@@ -49,25 +52,25 @@ type ProjectRolePermission struct {
 }
 
 type Tag struct {
-	ID      string `json:"id"`
-	BoardID string `json:"board_id"`
-	Name    string `json:"name"`
+	ID      uuid.UUID `json:"id"`
+	BoardID uuid.UUID `json:"board_id"`
+	Name    string    `json:"name"`
 }
 
 type ProjectParam struct {
-	ID         string   `json:"id"`
-	ProjectID  string   `json:"project_id"`
-	Name       string   `json:"name"`
-	FieldType  string   `json:"field_type"`
-	IsSystem   bool     `json:"is_system"`
-	IsRequired bool     `json:"is_required"`
-	Options    []string `json:"options"`
-	Value      *string  `json:"value"`
+	ID         uuid.UUID `json:"id"`
+	ProjectID  uuid.UUID `json:"project_id"`
+	Name       string    `json:"name"`
+	FieldType  string    `json:"field_type"`
+	IsSystem   bool      `json:"is_system"`
+	IsRequired bool      `json:"is_required"`
+	Options    []string  `json:"options"`
+	Value      *string   `json:"value"`
 }
 
 type Column struct {
-	ID         string            `json:"id"`
-	BoardID    string            `json:"board_id"`
+	ID         uuid.UUID         `json:"id"`
+	BoardID    uuid.UUID         `json:"board_id"`
 	Name       string            `json:"name"`
 	SystemType *SystemStatusType `json:"system_type,omitempty"`
 	WipLimit   *int16            `json:"wip_limit,omitempty"`
@@ -76,16 +79,16 @@ type Column struct {
 }
 
 type Swimlane struct {
-	ID       string `json:"id"`
-	BoardID  string `json:"board_id"`
-	Name     string `json:"name"`
-	WipLimit *int16 `json:"wip_limit,omitempty"`
-	Order    int16  `json:"order"`
+	ID       uuid.UUID `json:"id"`
+	BoardID  uuid.UUID `json:"board_id"`
+	Name     string    `json:"name"`
+	WipLimit *int16    `json:"wip_limit,omitempty"`
+	Order    int16     `json:"order"`
 }
 
 type Note struct {
-	ID         string  `json:"id"`
-	ColumnID   *string `json:"column_id,omitempty"`
-	SwimlaneID *string `json:"swimlane_id,omitempty"`
-	Content    string  `json:"content"`
+	ID         uuid.UUID  `json:"id"`
+	ColumnID   *uuid.UUID `json:"column_id,omitempty"`
+	SwimlaneID *uuid.UUID `json:"swimlane_id,omitempty"`
+	Content    string     `json:"content"`
 }

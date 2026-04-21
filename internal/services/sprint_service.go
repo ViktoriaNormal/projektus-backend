@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,20 +16,20 @@ type SprintService struct {
 	sprintTaskRepo repositories.SprintTaskRepository
 	backlogRepo    repositories.ProductBacklogRepository
 	taskRepo       repositories.TaskRepository
-	boardRepo      repositories.BoardRepository
+	columnRepo     repositories.ColumnRepository
 	projectRepo    repositories.ProjectRepository
-	tagRepo        repositories.TagRepository
+	tagSvc         *TagService
 }
 
-func NewSprintService(repo repositories.SprintRepository, sprintTaskRepo repositories.SprintTaskRepository, backlogRepo repositories.ProductBacklogRepository, taskRepo repositories.TaskRepository, boardRepo repositories.BoardRepository, projectRepo repositories.ProjectRepository, tagRepo repositories.TagRepository) *SprintService {
+func NewSprintService(repo repositories.SprintRepository, sprintTaskRepo repositories.SprintTaskRepository, backlogRepo repositories.ProductBacklogRepository, taskRepo repositories.TaskRepository, columnRepo repositories.ColumnRepository, projectRepo repositories.ProjectRepository, tagSvc *TagService) *SprintService {
 	return &SprintService{
 		repo:           repo,
 		sprintTaskRepo: sprintTaskRepo,
 		backlogRepo:    backlogRepo,
 		taskRepo:       taskRepo,
-		boardRepo:      boardRepo,
+		columnRepo:     columnRepo,
 		projectRepo:    projectRepo,
-		tagRepo:        tagRepo,
+		tagSvc:         tagSvc,
 	}
 }
 
@@ -108,7 +109,7 @@ func (s *SprintService) StartSprint(ctx context.Context, id uuid.UUID) (*domain.
 
 	// 1. Валидация: нельзя запустить, если уже есть active спринт
 	activeSprint, err := s.repo.GetActiveSprint(ctx, sprint.ProjectID)
-	if err != nil && err != domain.ErrNotFound {
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, err
 	}
 	if activeSprint != nil && activeSprint.ID != id {
@@ -140,18 +141,16 @@ func (s *SprintService) StartSprint(ctx context.Context, id uuid.UUID) (*domain.
 		return nil, err
 	}
 	for _, t := range tasksWithoutColumn {
-		if t.BoardID == "" {
+		if t.BoardID == uuid.Nil {
 			return nil, domain.ErrInvalidInput
 		}
-		columns, err := s.boardRepo.ListColumns(ctx, t.BoardID)
+		columns, err := s.columnRepo.List(ctx, t.BoardID)
 		if err != nil {
 			return nil, err
 		}
 		for _, col := range columns {
 			if col.SystemType != nil && *col.SystemType == domain.StatusInitial {
-				taskID, _ := uuid.Parse(t.TaskID)
-				colID, _ := uuid.Parse(col.ID)
-				if err := s.taskRepo.AssignColumnToTask(ctx, taskID, colID); err != nil {
+				if err := s.taskRepo.AssignColumnToTask(ctx, t.TaskID, col.ID); err != nil {
 					return nil, err
 				}
 				break
@@ -235,7 +234,7 @@ func (s *SprintService) CompleteSprint(ctx context.Context, id uuid.UUID, incomp
 func (s *SprintService) moveIncompleteTasksToNextSprint(ctx context.Context, projectID uuid.UUID, currentSprintID uuid.UUID, tasks []domain.Task) error {
 	nextSprint, err := s.repo.GetNextPlannedSprint(ctx, projectID)
 	if err != nil {
-		if err == domain.ErrNotFound {
+		if errors.Is(err, domain.ErrNotFound) {
 			return domain.ErrNoNextSprintForMove
 		}
 		return err
@@ -254,7 +253,7 @@ func (s *SprintService) moveIncompleteTasksToNextSprint(ctx context.Context, pro
 	}
 
 	for _, t := range tasks {
-		taskID := uuid.MustParse(t.ID)
+		taskID := t.ID
 		maxOrder++
 		if _, err := s.sprintTaskRepo.AddTask(ctx, nextSprint.ID, taskID, &maxOrder); err != nil {
 			return err
@@ -272,7 +271,7 @@ func (s *SprintService) moveIncompleteTasksToNextSprint(ctx context.Context, pro
 
 func (s *SprintService) moveIncompleteTasksToBacklog(ctx context.Context, projectID uuid.UUID, sprintID uuid.UUID, tasks []domain.Task) error {
 	for _, t := range tasks {
-		taskID := uuid.MustParse(t.ID)
+		taskID := t.ID
 		if err := s.sprintTaskRepo.RemoveTask(ctx, sprintID, taskID); err != nil {
 			return err
 		}
@@ -295,24 +294,9 @@ func (s *SprintService) GetSprintTasks(ctx context.Context, sprintID uuid.UUID) 
 	return s.enrichTasksWithTags(ctx, tasks)
 }
 
+// enrichTasksWithTags — thin wrapper над TagService.EnrichTasksWithTags.
 func (s *SprintService) enrichTasksWithTags(ctx context.Context, tasks []domain.Task) ([]domain.Task, error) {
-	if len(tasks) == 0 {
-		return tasks, nil
-	}
-	ids := make([]uuid.UUID, len(tasks))
-	for i, t := range tasks {
-		ids[i] = uuid.MustParse(t.ID)
-	}
-	tagMap, err := s.tagRepo.ListTagsByTaskIDs(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	for i := range tasks {
-		if tags, ok := tagMap[tasks[i].ID]; ok {
-			tasks[i].Tags = tags
-		}
-	}
-	return tasks, nil
+	return s.tagSvc.EnrichTasksWithTags(ctx, tasks)
 }
 
 func (s *SprintService) GetSprintBacklog(ctx context.Context, sprintID uuid.UUID) ([]domain.Task, error) {

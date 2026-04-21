@@ -3,13 +3,13 @@ package repositories
 import (
 	"context"
 	"database/sql"
-	"errors"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type ProjectParamRepository interface {
@@ -31,7 +31,7 @@ func NewProjectParamRepository(q *db.Queries) ProjectParamRepository {
 func (r *projectParamRepository) List(ctx context.Context, projectID uuid.UUID) ([]domain.ProjectParam, error) {
 	rows, err := r.q.ListProjectParams(ctx, uuid.NullUUID{UUID: projectID, Valid: true})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListProjectParams", "projectID", projectID)
 	}
 	result := make([]domain.ProjectParam, len(rows))
 	for i, row := range rows {
@@ -43,10 +43,7 @@ func (r *projectParamRepository) List(ctx context.Context, projectID uuid.UUID) 
 func (r *projectParamRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProjectParam, error) {
 	row, err := r.q.GetProjectParamByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetProjectParamByID", "id", id)
 	}
 	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	return &p, nil
@@ -55,7 +52,7 @@ func (r *projectParamRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 func (r *projectParamRepository) Create(ctx context.Context, params db.CreateProjectParamParams) (*domain.ProjectParam, error) {
 	row, err := r.q.CreateProjectParam(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateProjectParam", "name", params.Name)
 	}
 	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	return &p, nil
@@ -64,17 +61,14 @@ func (r *projectParamRepository) Create(ctx context.Context, params db.CreatePro
 func (r *projectParamRepository) Update(ctx context.Context, params db.UpdateProjectParamParams) (*domain.ProjectParam, error) {
 	row, err := r.q.UpdateProjectParam(ctx, params)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "UpdateProjectParam", "id", params.ID)
 	}
 	p := mapProjectParamRow(row.ID, row.ProjectID, row.Name, row.FieldType, row.IsRequired, row.Options, row.Value)
 	return &p, nil
 }
 
 func (r *projectParamRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.q.DeleteProjectParamByID(ctx, id)
+	return errctx.Wrap(r.q.DeleteProjectParamByID(ctx, id), "DeleteProjectParamByID", "id", id)
 }
 
 func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, fieldType string, isRequired bool, options pqtype.NullRawMessage, value sql.NullString) domain.ProjectParam {
@@ -83,12 +77,12 @@ func mapProjectParamRow(id uuid.UUID, projectID uuid.NullUUID, name, fieldType s
 		v := value.String
 		val = &v
 	}
-	pid := ""
+	var pid uuid.UUID
 	if projectID.Valid {
-		pid = projectID.UUID.String()
+		pid = projectID.UUID
 	}
 	return domain.ProjectParam{
-		ID:         id.String(),
+		ID:         id,
 		ProjectID:  pid,
 		Name:       name,
 		FieldType:  fieldType,

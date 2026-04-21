@@ -68,26 +68,31 @@ func (q *Queries) ListMemberRoleIDs(ctx context.Context, memberID uuid.UUID) ([]
 
 const listMemberRoles = `-- name: ListMemberRoles :many
 
-SELECT r.id::text
+SELECT r.id, r.name
 FROM member_roles mr
 JOIN roles r ON r.id = mr.role_id
 WHERE mr.member_id = $1
 `
 
+type ListMemberRolesRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
 // Member roles
-func (q *Queries) ListMemberRoles(ctx context.Context, memberID uuid.UUID) ([]string, error) {
+func (q *Queries) ListMemberRoles(ctx context.Context, memberID uuid.UUID) ([]ListMemberRolesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listMemberRoles, memberID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []ListMemberRolesRow{}
 	for rows.Next() {
-		var r_id string
-		if err := rows.Scan(&r_id); err != nil {
+		var i ListMemberRolesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
 			return nil, err
 		}
-		items = append(items, r_id)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

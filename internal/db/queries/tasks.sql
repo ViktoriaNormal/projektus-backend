@@ -52,6 +52,24 @@ WHERE (m_owner.user_id = sqlc.arg('user_id') OR m_exec.user_id = sqlc.arg('user_
   AND t.deleted_at IS NULL
 ORDER BY t.created_at DESC;
 
+-- name: SearchTasksAll :many
+-- Без фильтра по участию пользователя. Используется для админов с
+-- system.projects.manage in ('full','view').
+SELECT t.id, t.key, t.project_id, t.owner_id, t.executor_id, t.name, t.description,
+       t.deadline, t.column_id, t.swimlane_id, t.deleted_at, t.created_at,
+       t.priority, t.estimation, t.board_id,
+       c.name AS column_name, c.system_type AS column_system_type,
+       m_owner.user_id AS owner_user_id,
+       m_exec.user_id AS executor_user_id
+FROM tasks t
+LEFT JOIN columns c ON t.column_id = c.id
+JOIN members m_owner ON m_owner.id = t.owner_id
+LEFT JOIN members m_exec ON m_exec.id = t.executor_id
+WHERE (sqlc.narg('project_id')::uuid IS NULL OR t.project_id = sqlc.narg('project_id'))
+  AND (sqlc.narg('column_id')::uuid IS NULL OR t.column_id = sqlc.narg('column_id'))
+  AND t.deleted_at IS NULL
+ORDER BY t.created_at DESC;
+
 -- name: UpdateTask :one
 UPDATE tasks
 SET name        = COALESCE(sqlc.narg('name'), name),
@@ -109,6 +127,27 @@ WHERE id = $1;
 -- name: RemoveInverseDependency :exec
 DELETE FROM task_dependencies
 WHERE task_id = $1 AND depends_on_task_id = $2;
+
+-- name: RemoveAllTaskDependencies :exec
+DELETE FROM task_dependencies
+WHERE task_id = $1 OR depends_on_task_id = $1;
+
+-- name: ClearTaskPriorityByBoard :exec
+-- Используется, когда у доски сменили priority_type или целиком очистили
+-- priority_options — все ранее выставленные приоритеты становятся
+-- несовместимыми с новым каталогом и сбрасываются в NULL.
+UPDATE tasks
+SET priority = NULL
+WHERE board_id = $1 AND priority IS NOT NULL;
+
+-- name: ClearTaskPriorityByBoardNotIn :exec
+-- Используется, когда priority_options изменились без смены priority_type:
+-- обнуляем только те значения, которых больше нет в новом списке опций.
+UPDATE tasks
+SET priority = NULL
+WHERE board_id = $1
+  AND priority IS NOT NULL
+  AND priority <> ALL($2::text[]);
 
 -- name: ListTaskDependencies :many
 SELECT id, task_id, depends_on_task_id, dependency_type

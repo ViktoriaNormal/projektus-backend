@@ -15,25 +15,23 @@ import (
 )
 
 type TaskHandler struct {
-	service    *services.TaskService
-	boardSvc   *services.BoardService
-	projectSvc *services.ProjectService
+	service       *services.TaskService
+	boardSvc      *services.BoardService
+	projectSvc    *services.ProjectService
+	permissionSvc *services.PermissionService
 }
 
-func NewTaskHandler(service *services.TaskService, boardSvc *services.BoardService, projectSvc *services.ProjectService) *TaskHandler {
-	return &TaskHandler{service: service, boardSvc: boardSvc, projectSvc: projectSvc}
+func NewTaskHandler(service *services.TaskService, boardSvc *services.BoardService, projectSvc *services.ProjectService, permissionSvc *services.PermissionService) *TaskHandler {
+	return &TaskHandler{service: service, boardSvc: boardSvc, projectSvc: projectSvc, permissionSvc: permissionSvc}
 }
 
 func (h *TaskHandler) SearchTasks(c *gin.Context) {
-	var req dto.SearchTasksRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры фильтрации")
+	req, ok := bindQuery[dto.SearchTasksRequest](c)
+	if !ok {
 		return
 	}
-	userIDStr := c.GetString("userID")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Не удалось определить пользователя")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 	var projectID, columnID *uuid.UUID
@@ -53,9 +51,34 @@ func (h *TaskHandler) SearchTasks(c *gin.Context) {
 		}
 		columnID = &id
 	}
-	tasks, err := h.service.SearchTasks(c.Request.Context(), userID, projectID, columnID)
+
+	// Семантика эндпоинта:
+	//   * без project_id → персональная выборка «мои задачи»
+	//     (автор / исполнитель / наблюдатель). Без исключений для админа —
+	//     системные права не расширяют личный список.
+	//   * с project_id → все задачи проекта при условии, что у пользователя
+	//     есть доступ (участник проекта или system.projects.manage ≥ view).
+	var tasks []domain.Task
+	var err error
+	if projectID == nil {
+		tasks, err = h.service.SearchTasks(c.Request.Context(), userID, nil, columnID)
+	} else {
+		allowed, accessErr := h.permissionSvc.UserCanAccessProject(c.Request.Context(), userID, *projectID)
+		if accessErr != nil {
+			respondInternal(c, accessErr, "Не удалось проверить доступ к проекту")
+			return
+		}
+		if !allowed {
+			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет доступа к задачам проекта")
+			return
+		}
+		tasks, err = h.service.SearchAllTasks(c.Request.Context(), projectID, columnID)
+	}
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список задач")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список задач")
 		return
 	}
 	resp := make([]dto.TaskResponse, 0, len(tasks))
@@ -66,9 +89,8 @@ func (h *TaskHandler) SearchTasks(c *gin.Context) {
 }
 
 func (h *TaskHandler) CreateTask(c *gin.Context) {
-	var req dto.CreateTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateTaskRequest](c)
+	if !ok {
 		return
 	}
 
@@ -95,7 +117,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		found := false
 		for _, col := range columns {
 			if col.SystemType != nil && *col.SystemType == domain.StatusInitial {
-				columnID = uuid.MustParse(col.ID)
+				columnID = col.ID
 				found = true
 				break
 			}
@@ -159,15 +181,14 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	createdTask, err := h.service.CreateTaskFull(c.Request.Context(), params)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры задачи")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать задачу: "+err.Error())
+		respondInternal(c, err, "Не удалось создать задачу: "+err.Error())
 		return
 	}
 	// Re-fetch to get full data with user_id JOINs
-	task, err := h.service.GetTask(c.Request.Context(), uuid.MustParse(createdTask.ID))
+	task, err := h.service.GetTask(c.Request.Context(), createdTask.ID)
 	if err != nil {
 		// Fallback: return created task without user_ids
 		writeSuccess(c, mapTaskToDTO(createdTask))
@@ -177,43 +198,36 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 }
 
 func (h *TaskHandler) GetTask(c *gin.Context) {
-	idStr := c.Param("taskId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	id, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	task, err := h.service.GetTask(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Задача не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить задачу")
+		respondInternal(c, err, "Не удалось получить задачу")
 		return
 	}
 	writeSuccess(c, mapTaskToDTO(task))
 }
 
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
-	idStr := c.Param("taskId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	id, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateTaskRequest](c)
+	if !ok {
 		return
 	}
 	task, err := h.service.GetTask(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Задача не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить задачу")
+		respondInternal(c, err, "Не удалось получить задачу")
 		return
 	}
 
@@ -230,20 +244,20 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		if req.ExecutorMemberID.Null {
 			task.ExecutorID = nil
 		} else {
-			idStr := req.ExecutorMemberID.Value.String()
-			task.ExecutorID = &idStr
+			v := req.ExecutorMemberID.Value
+			task.ExecutorID = &v
 		}
 	}
 	if req.ColumnID != nil {
-		s := req.ColumnID.String()
-		task.ColumnID = &s
+		v := *req.ColumnID
+		task.ColumnID = &v
 	}
 	if req.SwimlaneID.Set {
 		if req.SwimlaneID.Null {
 			task.SwimlaneID = nil
 		} else {
-			idStr := req.SwimlaneID.Value.String()
-			task.SwimlaneID = &idStr
+			v := req.SwimlaneID.Value
+			task.SwimlaneID = &v
 		}
 	}
 	if req.Priority.Set {
@@ -263,66 +277,67 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 
 	updated, err := h.service.UpdateTask(c.Request.Context(), task, c.GetString("userID"))
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры задачи")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить задачу")
+		respondInternal(c, err, "Не удалось обновить задачу")
 		return
 	}
 	writeSuccess(c, mapTaskToDTO(updated))
 }
 
 func (h *TaskHandler) DeleteTask(c *gin.Context) {
-	idStr := c.Param("taskId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	id, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteTask(c.Request.Context(), id); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить задачу")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить задачу")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Задача удалена"})
 }
 
 func (h *TaskHandler) ListWatchers(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	watchers, err := h.service.ListWatchers(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить наблюдателей")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить наблюдателей")
 		return
 	}
 	resp := make([]dto.TaskWatcherResponse, 0, len(watchers))
 	for _, w := range watchers {
 		resp = append(resp, dto.TaskWatcherResponse{
-			TaskID:   uuid.MustParse(w.TaskID),
-			MemberID: uuid.MustParse(w.MemberID),
+			TaskID:   w.TaskID,
+			MemberID: w.MemberID,
 		})
 	}
 	writeSuccess(c, resp)
 }
 
 func (h *TaskHandler) AddWatcher(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	var req dto.AddWatcherRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AddWatcherRequest](c)
+	if !ok {
 		return
 	}
 	if err := h.service.AddWatcher(c.Request.Context(), taskID, req.MemberID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось добавить наблюдателя")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось добавить наблюдателя")
 		return
 	}
 	writeSuccess(c, dto.TaskWatcherResponse{
@@ -332,20 +347,19 @@ func (h *TaskHandler) AddWatcher(c *gin.Context) {
 }
 
 func (h *TaskHandler) RemoveWatcher(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	memberIDStr := c.Param("memberId")
-	memberID, err := uuid.Parse(memberIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор участника")
+	memberID, ok := paramUUID(c, "memberId")
+	if !ok {
 		return
 	}
 	if err := h.service.RemoveWatcher(c.Request.Context(), taskID, memberID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить наблюдателя")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить наблюдателя")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Наблюдатель удалён"})
@@ -354,15 +368,16 @@ func (h *TaskHandler) RemoveWatcher(c *gin.Context) {
 // Comments
 
 func (h *TaskHandler) ListComments(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	comments, err := h.service.ListComments(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить комментарии")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить комментарии")
 		return
 	}
 	resp := make([]dto.CommentResponse, 0, len(comments))
@@ -373,44 +388,39 @@ func (h *TaskHandler) ListComments(c *gin.Context) {
 }
 
 func (h *TaskHandler) CreateComment(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	var req dto.CreateCommentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateCommentRequest](c)
+	if !ok {
 		return
 	}
-	userIDStr := c.GetString("userID")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Не удалось определить пользователя")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 	comment, err := h.service.CreateComment(c.Request.Context(), taskID, userID, req.Content, req.ParentCommentID)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Содержимое комментария не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать комментарий")
+		respondInternal(c, err, "Не удалось создать комментарий")
 		return
 	}
 	writeSuccess(c, mapCommentToDTO(comment))
 }
 
 func (h *TaskHandler) DeleteComment(c *gin.Context) {
-	commentIDStr := c.Param("commentId")
-	commentID, err := uuid.Parse(commentIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор комментария")
+	commentID, ok := paramUUID(c, "commentId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteComment(c.Request.Context(), commentID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить комментарий")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить комментарий")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Комментарий удалён"})
@@ -419,15 +429,16 @@ func (h *TaskHandler) DeleteComment(c *gin.Context) {
 // Attachments
 
 func (h *TaskHandler) ListAttachments(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	attachments, err := h.service.ListAttachments(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить вложения")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить вложения")
 		return
 	}
 	resp := make([]dto.AttachmentResponse, 0, len(attachments))
@@ -438,16 +449,12 @@ func (h *TaskHandler) ListAttachments(c *gin.Context) {
 }
 
 func (h *TaskHandler) UploadAttachment(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	userIDStr := c.GetString("userID")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Не удалось определить пользователя")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
@@ -462,13 +469,13 @@ func (h *TaskHandler) UploadAttachment(c *gin.Context) {
 	uniqueName := uuid.New().String() + ext
 	dir := "uploads/attachments"
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать директорию для файлов")
+		respondInternal(c, err, "Не удалось создать директорию для файлов")
 		return
 	}
 	filePath := dir + "/" + uniqueName
 
 	if err := c.SaveUploadedFile(file, filePath); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось сохранить файл")
+		respondInternal(c, err, "Не удалось сохранить файл")
 		return
 	}
 
@@ -479,17 +486,18 @@ func (h *TaskHandler) UploadAttachment(c *gin.Context) {
 
 	attachment, err := h.service.CreateAttachment(c.Request.Context(), taskID, userID, file.Filename, filePath, contentType, file.Size)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось сохранить информацию о вложении")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось сохранить информацию о вложении")
 		return
 	}
 	writeSuccess(c, mapAttachmentToDTO(attachment))
 }
 
 func (h *TaskHandler) DownloadAttachment(c *gin.Context) {
-	attachmentIDStr := c.Param("attachmentId")
-	attachmentID, err := uuid.Parse(attachmentIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор вложения")
+	attachmentID, ok := paramUUID(c, "attachmentId")
+	if !ok {
 		return
 	}
 	attachment, err := h.service.GetAttachmentByID(c.Request.Context(), attachmentID)
@@ -501,14 +509,15 @@ func (h *TaskHandler) DownloadAttachment(c *gin.Context) {
 }
 
 func (h *TaskHandler) DeleteAttachment(c *gin.Context) {
-	attachmentIDStr := c.Param("attachmentId")
-	attachmentID, err := uuid.Parse(attachmentIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор вложения")
+	attachmentID, ok := paramUUID(c, "attachmentId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteAttachment(c.Request.Context(), attachmentID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить вложение")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить вложение")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Вложение удалено"})
@@ -517,21 +526,22 @@ func (h *TaskHandler) DeleteAttachment(c *gin.Context) {
 // Field values
 
 func (h *TaskHandler) GetTaskFieldValues(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	fieldValues, err := h.service.GetTaskFieldValues(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить значения полей")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить значения полей")
 		return
 	}
 	resp := make([]dto.TaskFieldValueResponse, 0, len(fieldValues))
 	for _, fv := range fieldValues {
 		resp = append(resp, dto.TaskFieldValueResponse{
-			FieldID:       uuid.MustParse(fv.FieldID),
+			FieldID:       fv.FieldID,
 			ValueText:     fv.ValueText,
 			ValueNumber:   fv.ValueNumber,
 			ValueDatetime: fv.ValueDatetime,
@@ -541,48 +551,47 @@ func (h *TaskHandler) GetTaskFieldValues(c *gin.Context) {
 }
 
 func (h *TaskHandler) SetTaskFieldValue(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	fieldIDStr := c.Param("fieldId")
-	fieldID, err := uuid.Parse(fieldIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор поля")
+	fieldID, ok := paramUUID(c, "fieldId")
+	if !ok {
 		return
 	}
-	var req dto.SetTaskFieldValueRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.SetTaskFieldValueRequest](c)
+	if !ok {
 		return
 	}
 	if err := h.service.UpsertTaskFieldValue(c.Request.Context(), taskID, fieldID, req.ValueText, req.ValueNumber, req.ValueDatetime); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось сохранить значение поля")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось сохранить значение поля")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Значение поля сохранено"})
 }
 
 func (h *TaskHandler) ListDependencies(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	deps, err := h.service.ListDependencies(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить зависимости")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить зависимости")
 		return
 	}
 	resp := make([]dto.TaskDependencyResponse, 0, len(deps))
 	for _, d := range deps {
 		resp = append(resp, dto.TaskDependencyResponse{
-			ID:              uuid.MustParse(d.ID),
-			TaskID:          uuid.MustParse(d.TaskID),
-			DependsOnTaskID: uuid.MustParse(d.DependsOnTaskID),
+			ID:              d.ID,
+			TaskID:          d.TaskID,
+			DependsOnTaskID: d.DependsOnTaskID,
 			Type:            string(d.Type),
 		})
 	}
@@ -590,49 +599,66 @@ func (h *TaskHandler) ListDependencies(c *gin.Context) {
 }
 
 func (h *TaskHandler) AddDependency(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	var req dto.AddDependencyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AddDependencyRequest](c)
+	if !ok {
 		return
 	}
 	depType := domain.TaskDependencyType(req.Type)
 	dep, err := h.service.AddDependency(c.Request.Context(), taskID, req.DependsOnTaskID, depType)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный тип зависимости или самоссылка")
-			return
-		}
+		// Сохраняем исторический маппинг: ErrConflict → VALIDATION_ERROR для зависимостей.
 		if err == domain.ErrConflict {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Связь между этими задачами уже существует")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать зависимость")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать зависимость")
 		return
 	}
 	writeSuccess(c, dto.TaskDependencyResponse{
-		ID:              uuid.MustParse(dep.ID),
-		TaskID:          uuid.MustParse(dep.TaskID),
-		DependsOnTaskID: uuid.MustParse(dep.DependsOnTaskID),
+		ID:              dep.ID,
+		TaskID:          dep.TaskID,
+		DependsOnTaskID: dep.DependsOnTaskID,
 		Type:            string(dep.Type),
 	})
 }
 
+func (h *TaskHandler) RemoveDependency(c *gin.Context) {
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
+		return
+	}
+	dependencyID, ok := paramUUID(c, "dependencyId")
+	if !ok {
+		return
+	}
+	if err := h.service.RemoveDependency(c.Request.Context(), taskID, dependencyID); err != nil {
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить зависимость")
+		return
+	}
+	writeSuccess(c, nil)
+}
+
 func (h *TaskHandler) ListChecklists(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
 	checklists, err := h.service.ListChecklistsWithItems(c.Request.Context(), taskID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить чек-листы")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить чек-листы")
 		return
 	}
 	resp := make([]dto.ChecklistResponse, 0, len(checklists))
@@ -643,157 +669,143 @@ func (h *TaskHandler) ListChecklists(c *gin.Context) {
 }
 
 func (h *TaskHandler) CreateChecklist(c *gin.Context) {
-	taskIDStr := c.Param("taskId")
-	taskID, err := uuid.Parse(taskIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор задачи")
+	taskID, ok := paramUUID(c, "taskId")
+	if !ok {
 		return
 	}
-	var req dto.CreateChecklistRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateChecklistRequest](c)
+	if !ok {
 		return
 	}
 	ch, err := h.service.CreateChecklist(c.Request.Context(), taskID, req.Name)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректное название чек-листа")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать чек-лист")
+		respondInternal(c, err, "Не удалось создать чек-лист")
 		return
 	}
 	writeSuccess(c, mapChecklistToDTO(ch))
 }
 
 func (h *TaskHandler) AddChecklistItem(c *gin.Context) {
-	checklistIDStr := c.Param("checklistId")
-	checklistID, err := uuid.Parse(checklistIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор чек-листа")
+	checklistID, ok := paramUUID(c, "checklistId")
+	if !ok {
 		return
 	}
-	var req dto.CreateChecklistItemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateChecklistItemRequest](c)
+	if !ok {
 		return
 	}
 	item, err := h.service.AddChecklistItem(c.Request.Context(), checklistID, req.Content, int16(req.Order))
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректное содержимое пункта чек-листа")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось добавить пункт чек-листа")
+		respondInternal(c, err, "Не удалось добавить пункт чек-листа")
 		return
 	}
 	writeSuccess(c, mapChecklistItemToDTO(item))
 }
 
 func (h *TaskHandler) SetChecklistItemStatus(c *gin.Context) {
-	itemIDStr := c.Param("itemId")
-	itemID, err := uuid.Parse(itemIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пункта чек-листа")
+	itemID, ok := paramUUID(c, "itemId")
+	if !ok {
 		return
 	}
-	var req dto.SetChecklistItemStatusRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.SetChecklistItemStatusRequest](c)
+	if !ok {
 		return
 	}
 	item, err := h.service.SetChecklistItemStatus(c.Request.Context(), itemID, *req.IsChecked)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить статус пункта чек-листа")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось обновить статус пункта чек-листа")
 		return
 	}
 	writeSuccess(c, mapChecklistItemToDTO(item))
 }
 
 func (h *TaskHandler) UpdateChecklist(c *gin.Context) {
-	checklistIDStr := c.Param("checklistId")
-	checklistID, err := uuid.Parse(checklistIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор чек-листа")
+	checklistID, ok := paramUUID(c, "checklistId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateChecklistRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateChecklistRequest](c)
+	if !ok {
 		return
 	}
 	ch, err := h.service.UpdateChecklistName(c.Request.Context(), checklistID, req.Name)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название чек-листа не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить чек-лист")
+		respondInternal(c, err, "Не удалось обновить чек-лист")
 		return
 	}
 	writeSuccess(c, mapChecklistToDTO(ch))
 }
 
 func (h *TaskHandler) DeleteChecklist(c *gin.Context) {
-	checklistIDStr := c.Param("checklistId")
-	checklistID, err := uuid.Parse(checklistIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор чек-листа")
+	checklistID, ok := paramUUID(c, "checklistId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteChecklist(c.Request.Context(), checklistID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить чек-лист")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить чек-лист")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Чек-лист удалён"})
 }
 
 func (h *TaskHandler) UpdateChecklistItem(c *gin.Context) {
-	itemIDStr := c.Param("itemId")
-	itemID, err := uuid.Parse(itemIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пункта чек-листа")
+	itemID, ok := paramUUID(c, "itemId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateChecklistItemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateChecklistItemRequest](c)
+	if !ok {
 		return
 	}
 	item, err := h.service.UpdateChecklistItemContent(c.Request.Context(), itemID, req.Content)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Содержимое пункта не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить пункт чек-листа")
+		respondInternal(c, err, "Не удалось обновить пункт чек-листа")
 		return
 	}
 	writeSuccess(c, mapChecklistItemToDTO(item))
 }
 
 func (h *TaskHandler) DeleteChecklistItem(c *gin.Context) {
-	itemIDStr := c.Param("itemId")
-	itemID, err := uuid.Parse(itemIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пункта чек-листа")
+	itemID, ok := paramUUID(c, "itemId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteChecklistItem(c.Request.Context(), itemID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить пункт чек-листа")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить пункт чек-листа")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Пункт чек-листа удалён"})
 }
 
 func mapChecklistToDTO(ch *domain.Checklist) dto.ChecklistResponse {
-	taskID := uuid.MustParse(ch.TaskID)
+	taskID := ch.TaskID
 	items := make([]dto.ChecklistItemResponse, 0, len(ch.Items))
 	for _, it := range ch.Items {
 		items = append(items, mapChecklistItemToDTO(&it))
 	}
 	return dto.ChecklistResponse{
-		ID:     uuid.MustParse(ch.ID),
+		ID:     ch.ID,
 		TaskID: taskID,
 		Name:   ch.Name,
 		Items:  items,
@@ -802,26 +814,25 @@ func mapChecklistToDTO(ch *domain.Checklist) dto.ChecklistResponse {
 
 func mapChecklistItemToDTO(it *domain.ChecklistItem) dto.ChecklistItemResponse {
 	return dto.ChecklistItemResponse{
-		ID:          uuid.MustParse(it.ID),
-		ChecklistID: uuid.MustParse(it.ChecklistID),
+		ID:          it.ID,
+		ChecklistID: it.ChecklistID,
 		Content:     it.Content,
 		IsChecked:   it.IsChecked,
 		Order:       int32(it.Order),
 	}
 }
 
-
 func mapCommentToDTO(cm *domain.Comment) dto.CommentResponse {
 	resp := dto.CommentResponse{
-		ID:        uuid.MustParse(cm.ID),
-		TaskID:    uuid.MustParse(cm.TaskID),
-		AuthorID:  uuid.MustParse(cm.AuthorID),
+		ID:        cm.ID,
+		TaskID:    cm.TaskID,
+		AuthorID:  cm.AuthorID,
 		Content:   cm.Content,
 		CreatedAt: cm.CreatedAt,
 		UpdatedAt: cm.UpdatedAt,
 	}
 	if cm.ParentCommentID != nil {
-		id := uuid.MustParse(*cm.ParentCommentID)
+		id := *cm.ParentCommentID
 		resp.ParentCommentID = &id
 	}
 	return resp
@@ -829,31 +840,31 @@ func mapCommentToDTO(cm *domain.Comment) dto.CommentResponse {
 
 func mapAttachmentToDTO(a *domain.Attachment) dto.AttachmentResponse {
 	resp := dto.AttachmentResponse{
-		ID:          uuid.MustParse(a.ID),
+		ID:          a.ID,
 		FileName:    a.FileName,
 		FilePath:    a.FilePath,
 		FileSize:    a.FileSize,
 		ContentType: a.ContentType,
-		UploadedBy:  uuid.MustParse(a.UploadedBy),
+		UploadedBy:  a.UploadedBy,
 		UploadedAt:  a.UploadedAt,
 	}
 	if a.TaskID != nil {
-		id := uuid.MustParse(*a.TaskID)
+		id := *a.TaskID
 		resp.TaskID = &id
 	}
 	if a.CommentID != nil {
-		id := uuid.MustParse(*a.CommentID)
+		id := *a.CommentID
 		resp.CommentID = &id
 	}
 	return resp
 }
 
 func mapTaskToDTO(t *domain.Task) dto.TaskResponse {
-	projectID := uuid.MustParse(t.ProjectID)
-	ownerMemberID := uuid.MustParse(t.OwnerID)
+	projectID := t.ProjectID
+	ownerMemberID := t.OwnerID
 	var execMemberID *uuid.UUID
 	if t.ExecutorID != nil {
-		id := uuid.MustParse(*t.ExecutorID)
+		id := *t.ExecutorID
 		execMemberID = &id
 	}
 	var desc *string
@@ -862,7 +873,7 @@ func mapTaskToDTO(t *domain.Task) dto.TaskResponse {
 	}
 	var swimlaneID *uuid.UUID
 	if t.SwimlaneID != nil {
-		id := uuid.MustParse(*t.SwimlaneID)
+		id := *t.SwimlaneID
 		swimlaneID = &id
 	}
 	var deadline *time.Time
@@ -892,23 +903,29 @@ func mapTaskToDTO(t *domain.Task) dto.TaskResponse {
 	tags := make([]dto.TagResponse, 0, len(t.Tags))
 	for _, tag := range t.Tags {
 		tags = append(tags, dto.TagResponse{
-			ID:      tag.ID,
-			BoardID: tag.BoardID,
+			ID:      tag.ID.String(),
+			BoardID: tag.BoardID.String(),
 			Name:    tag.Name,
 		})
 	}
 
+	var columnID *uuid.UUID
+	if t.ColumnID != nil {
+		v := *t.ColumnID
+		columnID = &v
+	}
+
 	resp := dto.TaskResponse{
-		ID:               uuid.MustParse(t.ID),
+		ID:               t.ID,
 		Key:              t.Key,
 		ProjectID:        projectID,
-		BoardID:          uuid.MustParse(t.BoardID),
+		BoardID:          t.BoardID,
 		OwnerMemberID:    ownerMemberID,
 		ExecutorMemberID: execMemberID,
 		Name:             t.Name,
 		Description:      desc,
 		Deadline:         deadline,
-		ColumnID:         stringPtrToUUIDPtr(t.ColumnID),
+		ColumnID:         columnID,
 		SwimlaneID:       swimlaneID,
 		Priority:         t.Priority,
 		Estimation:       t.Estimation,
@@ -919,20 +936,14 @@ func mapTaskToDTO(t *domain.Task) dto.TaskResponse {
 		Tags:             tags,
 	}
 
-	resp.OwnerUserID = stringPtrToUUIDPtr(t.OwnerUserID)
-	resp.ExecutorUserID = stringPtrToUUIDPtr(t.ExecutorUserID)
+	if t.OwnerUserID != nil {
+		v := *t.OwnerUserID
+		resp.OwnerUserID = &v
+	}
+	if t.ExecutorUserID != nil {
+		v := *t.ExecutorUserID
+		resp.ExecutorUserID = &v
+	}
 
 	return resp
 }
-
-func stringPtrToUUIDPtr(s *string) *uuid.UUID {
-	if s == nil {
-		return nil
-	}
-	id, err := uuid.Parse(*s)
-	if err != nil {
-		return nil
-	}
-	return &id
-}
-

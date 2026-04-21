@@ -25,11 +25,11 @@ func NewNotificationHandler(svc services.NotificationService, queries *db.Querie
 
 // GET /api/v1/notifications
 func (h *NotificationHandler) GetFeed(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 
 	unreadOnly := c.Query("unreadOnly") == "true"
 
@@ -44,22 +44,21 @@ func (h *NotificationHandler) GetFeed(c *gin.Context) {
 
 	items, unreadCount, err := h.svc.GetFeed(c.Request.Context(), userID, unreadOnly, int32(limit), int32(offset))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить уведомления")
+		respondInternal(c, err, "Не удалось получить уведомления")
 		return
 	}
 
 	resp := make([]dto.NotificationResponse, 0, len(items))
 	for _, n := range items {
 		r := mapNotificationToDTO(n)
-		// For meeting_invite: enrich with current participant status.
+		// Для meeting_invite подгружаем текущий статус приглашения, чтобы
+		// фронту не пришлось делать отдельный запрос на каждую запись.
 		if n.EventType == domain.EventMeetingInvite && r.MeetingID != nil {
 			if mid, err := uuid.Parse(*r.MeetingID); err == nil {
-				if uid, err := uuid.Parse(userID); err == nil {
-					if status, err := h.queries.GetParticipantStatus(c.Request.Context(), db.GetParticipantStatusParams{
-						MeetingID: mid, UserID: uid,
-					}); err == nil {
-						r.ParticipantStatus = &status
-					}
+				if status, err := h.queries.GetParticipantStatus(c.Request.Context(), db.GetParticipantStatusParams{
+					MeetingID: mid, UserID: userUUID,
+				}); err == nil {
+					r.ParticipantStatus = &status
 				}
 			}
 		}
@@ -74,16 +73,14 @@ func (h *NotificationHandler) GetFeed(c *gin.Context) {
 
 // POST /api/v1/notifications/:notificationId/read
 func (h *NotificationHandler) MarkAsRead(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
-
 	notificationID := c.Param("notificationId")
 
-	if err := h.svc.MarkAsRead(c.Request.Context(), userID, notificationID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось отметить уведомление прочитанным")
+	if err := h.svc.MarkAsRead(c.Request.Context(), userUUID.String(), notificationID); err != nil {
+		respondInternal(c, err, "Не удалось отметить уведомление прочитанным")
 		return
 	}
 
@@ -92,47 +89,39 @@ func (h *NotificationHandler) MarkAsRead(c *gin.Context) {
 
 // POST /api/v1/notifications/delete-all
 func (h *NotificationHandler) DeleteAll(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
-
-	if err := h.svc.DeleteAll(c.Request.Context(), userID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить уведомления")
+	if err := h.svc.DeleteAll(c.Request.Context(), userUUID.String()); err != nil {
+		respondInternal(c, err, "Не удалось удалить уведомления")
 		return
 	}
-
 	c.Status(http.StatusNoContent)
 }
 
 // POST /api/v1/notifications/read-all
 func (h *NotificationHandler) MarkAllAsRead(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
-
-	if err := h.svc.MarkAllAsRead(c.Request.Context(), userID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось отметить уведомления прочитанными")
+	if err := h.svc.MarkAllAsRead(c.Request.Context(), userUUID.String()); err != nil {
+		respondInternal(c, err, "Не удалось отметить уведомления прочитанными")
 		return
 	}
-
 	c.Status(http.StatusNoContent)
 }
 
 // GET /api/v1/notifications/settings
 func (h *NotificationHandler) GetSettings(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
-
-	settings, err := h.svc.GetSettings(c.Request.Context(), userID)
+	settings, err := h.svc.GetSettings(c.Request.Context(), userUUID.String())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить настройки уведомлений")
+		respondInternal(c, err, "Не удалось получить настройки уведомлений")
 		return
 	}
 
@@ -140,28 +129,26 @@ func (h *NotificationHandler) GetSettings(c *gin.Context) {
 	for _, s := range settings {
 		resp = append(resp, mapSettingToDTO(s))
 	}
-
 	writeSuccess(c, resp)
 }
 
 // PUT /api/v1/notifications/settings
 func (h *NotificationHandler) UpdateSettings(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 
-	var req []dto.UpdateNotificationSettingItem
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[[]dto.UpdateNotificationSettingItem](c)
+	if !ok {
 		return
 	}
 
 	settings := make([]domain.NotificationSetting, 0, len(req))
 	for _, item := range req {
 		s := domain.NotificationSetting{
-			UserID:    userID,
+			UserID:    userUUID,
 			EventType: domain.EventType(item.EventType),
 			InSystem:  true,
 			InEmail:   false,
@@ -173,14 +160,13 @@ func (h *NotificationHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateSettings(c.Request.Context(), userID, settings); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось сохранить настройки уведомлений")
+		respondInternal(c, err, "Не удалось сохранить настройки уведомлений")
 		return
 	}
 
-	// Return updated settings
 	updated, err := h.svc.GetSettings(c.Request.Context(), userID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить настройки уведомлений")
+		respondInternal(c, err, "Не удалось получить настройки уведомлений")
 		return
 	}
 	resp := make([]dto.NotificationSettingResponse, 0, len(updated))
@@ -192,7 +178,7 @@ func (h *NotificationHandler) UpdateSettings(c *gin.Context) {
 
 func mapNotificationToDTO(n domain.Notification) dto.NotificationResponse {
 	r := dto.NotificationResponse{
-		ID:        n.ID,
+		ID:        n.ID.String(),
 		Type:      string(n.EventType),
 		Message:   n.Title,
 		Read:      n.IsRead,

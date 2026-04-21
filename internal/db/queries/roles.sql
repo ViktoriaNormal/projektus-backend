@@ -15,6 +15,18 @@ INSERT INTO roles (name, description, scope)
 VALUES ($1, $2, 'system')
 RETURNING id, name, description, scope, is_admin;
 
+-- name: GetSystemAdminRole :one
+SELECT id, name, description, scope, is_admin
+FROM roles
+WHERE scope = 'system' AND is_admin = TRUE
+ORDER BY name
+LIMIT 1;
+
+-- name: CreateAdminSystemRole :one
+INSERT INTO roles (name, description, scope, is_admin)
+VALUES ($1, $2, 'system', TRUE)
+RETURNING id, name, description, scope, is_admin;
+
 -- name: UpdateSystemRole :one
 UPDATE roles
 SET name = $2, description = $3

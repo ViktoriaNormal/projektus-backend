@@ -34,10 +34,12 @@ type TemplateProjectParamResponse struct {
 }
 
 type TemplateRoleResponse struct {
-	ID          uuid.UUID                       `json:"id"`
-	Name        string                          `json:"name"`
-	Description string                          `json:"description"`
-	IsAdmin     bool                            `json:"is_admin"`
+	ID          uuid.UUID                        `json:"id"`
+	Name        string                           `json:"name"`
+	Description string                           `json:"description"`
+	IsAdmin     bool                             `json:"is_admin"`
+	// Order — позиция роли в списке. Сортировка в ответе GET всегда идёт по order ASC.
+	Order       int32                            `json:"order"`
 	Permissions []TemplateRolePermissionResponse `json:"permissions"`
 }
 
@@ -115,12 +117,27 @@ type UpdateTemplateBoardRequest struct {
 	IsDefault       *bool                 `json:"is_default"`
 	Order           *int32                `json:"order"`
 	PriorityType    *string               `json:"priority_type"`
+	// PriorityOptions — кастомные значения системного поля «Приоритизация».
+	// Если поле передано, массив целиком заменяет текущий набор на доске
+	// (пустой `[]` интерпретируется как «явно очистить»). При смене PriorityType
+	// без передачи PriorityOptions бэкенд подставляет дефолты нового типа.
+	PriorityOptions *[]string             `json:"priority_options"`
 	EstimationUnit  *string               `json:"estimation_unit"`
 	SwimlaneGroupBy NullableField[string] `json:"swimlane_group_by"`
 }
 
 type ReorderRequest struct {
 	Orders []OrderItem `json:"orders" binding:"required"`
+}
+
+// ReorderTemplateRolesRequest — батч-перестановка ролей шаблона.
+type ReorderTemplateRolesRequest struct {
+	Orders []TemplateRoleOrderItem `json:"orders" binding:"required"`
+}
+
+type TemplateRoleOrderItem struct {
+	RoleID uuid.UUID `json:"role_id" binding:"required"`
+	Order  int32     `json:"order"`
 }
 
 type OrderItem struct {
@@ -174,7 +191,7 @@ type UpdateTemplateBoardSwimlaneRequest struct {
 
 type CreateTemplateBoardCustomFieldRequest struct {
 	Name       string   `json:"name" binding:"required"`
-	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list sprint sprint_list"`
+	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list"`
 	IsRequired bool     `json:"is_required"`
 	Options    []string `json:"options"`
 }

@@ -50,11 +50,12 @@ type AdminUserWithRoles struct {
 
 // AdminUserService — операции с пользователями для администратора.
 type AdminUserService struct {
-	userRepo      repositories.UserRepository
-	adminUserRepo repositories.AdminUserRepository
-	roleSvc       *RoleService
-	passwordSvc   PasswordService
-	policySvc     *PasswordPolicyService
+	userRepo        repositories.UserRepository
+	adminUserRepo   repositories.AdminUserRepository
+	roleSvc         *RoleService
+	passwordSvc     PasswordService
+	policySvc       *PasswordPolicyService
+	notificationSvc NotificationService
 }
 
 func NewAdminUserService(
@@ -63,37 +64,82 @@ func NewAdminUserService(
 	roleSvc *RoleService,
 	passwordSvc PasswordService,
 	policySvc *PasswordPolicyService,
+	notificationSvc NotificationService,
 ) *AdminUserService {
 	return &AdminUserService{
-		userRepo:      userRepo,
-		adminUserRepo: adminUserRepo,
-		roleSvc:       roleSvc,
-		passwordSvc:   passwordSvc,
-		policySvc:     policySvc,
+		userRepo:        userRepo,
+		adminUserRepo:   adminUserRepo,
+		roleSvc:         roleSvc,
+		passwordSvc:     passwordSvc,
+		policySvc:       policySvc,
+		notificationSvc: notificationSvc,
 	}
 }
 
-// ListUsers возвращает список пользователей с ролями.
-func (s *AdminUserService) ListUsers(ctx context.Context, limit, offset int32, includeDeleted bool) ([]AdminUserWithRoles, int64, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
+// AdminUserListResult — агрегированный ответ админского списка пользователей:
+// страница + `total` под применённые фильтры + глобальные счётчики статистики,
+// которые не зависят от фильтров (для карточек «Активные»/«Заблокированные»
+// на UI, чтобы они не «плясали» при вводе в поиск).
+type AdminUserListResult struct {
+	Users         []AdminUserWithRoles
+	Total         int64 // под применённые фильтры
+	ActiveCount   int64 // по всему множеству
+	InactiveCount int64 // по всему множеству
+}
+
+// ListUsers возвращает страницу пользователей с ролями + глобальные счётчики.
+func (s *AdminUserService) ListUsers(ctx context.Context, limit, offset int32, filter repositories.AdminUserListFilter) (*AdminUserListResult, error) {
+	// limit = 0 — дешёвый запрос только счётчиков, без выгрузки страницы.
+	countOnly := limit == 0
+	if !countOnly {
+		if limit < 0 {
+			limit = 20
+		}
+		if limit > 100 {
+			limit = 100
+		}
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	users, total, err := s.adminUserRepo.ListAllUsers(ctx, limit, offset, includeDeleted)
-	if err != nil {
-		return nil, 0, err
+
+	var (
+		users []domain.User
+		total int64
+		err   error
+	)
+	if countOnly {
+		// Ровно COUNT под фильтры, страницу не запрашиваем. Передаём page_limit=0,
+		// но sqlc-запрос использует LIMIT как есть — пустой результат, дешёвый COUNT рядом.
+		users, total, err = s.adminUserRepo.ListAllUsers(ctx, 0, 0, filter)
+	} else {
+		users, total, err = s.adminUserRepo.ListAllUsers(ctx, limit, offset, filter)
 	}
-	result := make([]AdminUserWithRoles, 0, len(users))
+	if err != nil {
+		return nil, err
+	}
+
+	active, err := s.adminUserRepo.CountActive(ctx, filter.IncludeDeleted)
+	if err != nil {
+		return nil, err
+	}
+	inactive, err := s.adminUserRepo.CountInactive(ctx, filter.IncludeDeleted)
+	if err != nil {
+		return nil, err
+	}
+
+	withRoles := make([]AdminUserWithRoles, 0, len(users))
 	for _, u := range users {
 		roles := s.getUserRoles(ctx, u.ID)
-		result = append(result, AdminUserWithRoles{User: u, Roles: roles})
+		withRoles = append(withRoles, AdminUserWithRoles{User: u, Roles: roles})
 	}
-	return result, total, nil
+
+	return &AdminUserListResult{
+		Users:         withRoles,
+		Total:         total,
+		ActiveCount:   active,
+		InactiveCount: inactive,
+	}, nil
 }
 
 // GetUser возвращает пользователя по ID с ролями.
@@ -107,7 +153,12 @@ func (s *AdminUserService) GetUser(ctx context.Context, userID uuid.UUID) (*Admi
 }
 
 // CreateUser создаёт пользователя с начальным паролем и назначает системные роли.
+// Ни одного пользователя нельзя зарегистрировать без системной роли — правило
+// действует даже при прямых вызовах сервиса в обход DTO-валидации.
 func (s *AdminUserService) CreateUser(ctx context.Context, req AdminCreateUserRequest) (*AdminUserWithRoles, error) {
+	if len(req.SystemRoleIDs) == 0 {
+		return nil, domain.ErrUserRequiresRole
+	}
 	if err := s.policySvc.ValidatePassword(ctx, req.Password); err != nil {
 		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
 	}
@@ -162,11 +213,12 @@ func (s *AdminUserService) CreateUser(ctx context.Context, req AdminCreateUserRe
 
 	_ = s.userRepo.InsertPasswordHistory(ctx, user.ID, hash)
 
-	if len(req.SystemRoleIDs) > 0 {
-		uid, _ := uuid.Parse(user.ID)
-		if err := s.roleSvc.AssignSystemRolesToUser(ctx, uid, req.SystemRoleIDs); err != nil {
-			return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
-		}
+	if err := s.notificationSvc.InitializeDefaultSettings(ctx, user.ID.String()); err != nil {
+		return nil, errctx.Wrap(err, "CreateUser", "userID", user.ID)
+	}
+
+	if err := s.roleSvc.AssignSystemRolesToUser(ctx, user.ID, req.SystemRoleIDs); err != nil {
+		return nil, errctx.Wrap(err, "CreateUser", "email", req.Email)
 	}
 
 	roles := s.getUserRoles(ctx, user.ID)
@@ -247,6 +299,9 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, userID uuid.UUID, req
 	}
 
 	if req.RoleIDs != nil {
+		if len(*req.RoleIDs) == 0 {
+			return nil, domain.ErrUserRequiresRole
+		}
 		if err := s.roleSvc.AssignSystemRolesToUser(ctx, userID, *req.RoleIDs); err != nil {
 			return nil, errctx.Wrap(err, "UpdateUser", "userID", userID)
 		}
@@ -273,12 +328,8 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, targetUserID uuid.UUI
 }
 
 // getUserRoles возвращает системные роли пользователя (не возвращает ошибку, при сбое — пустой список).
-func (s *AdminUserService) getUserRoles(ctx context.Context, userID string) []domain.Role {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil
-	}
-	roles, err := s.roleSvc.GetUserSystemRoles(ctx, uid)
+func (s *AdminUserService) getUserRoles(ctx context.Context, userID uuid.UUID) []domain.Role {
+	roles, err := s.roleSvc.GetUserSystemRoles(ctx, userID)
 	if err != nil {
 		return nil
 	}

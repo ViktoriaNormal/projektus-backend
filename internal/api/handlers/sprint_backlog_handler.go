@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -20,24 +18,29 @@ func NewSprintBacklogHandler(sprintService *services.SprintService) *SprintBackl
 }
 
 func (h *SprintBacklogHandler) GetSprintBacklog(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 	sprint, err := h.sprintService.GetActiveSprint(c.Request.Context(), projectID)
 	if err != nil {
+		// Нет активного спринта — пустой бэклог (исторический контракт, не 404).
 		if err == domain.ErrNotFound {
 			writeSuccess(c, []dto.TaskResponse{})
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить активный спринт")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить активный спринт")
 		return
 	}
 	tasks, err := h.sprintService.GetSprintBacklog(c.Request.Context(), sprint.ID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить бэклог спринта")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить бэклог спринта")
 		return
 	}
 	resp := make([]dto.TaskResponse, 0, len(tasks))
@@ -53,21 +56,20 @@ type moveToSprintRequest struct {
 }
 
 func (h *SprintBacklogHandler) MoveTasksToSprint(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	var req moveToSprintRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[moveToSprintRequest](c)
+	if !ok {
 		return
 	}
 	if err := h.sprintService.MoveTasksToSprint(c.Request.Context(), req.SprintID, projectID, req.TaskIDs); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось перенести задачи в спринт")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось перенести задачи в спринт")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Задачи перенесены в спринт"})
 }
-

@@ -16,29 +16,44 @@ import (
 
 
 type ProjectService struct {
-	repo            repositories.ProjectRepository
-	templateSvc     *TemplateService
-	boardRepo       repositories.BoardRepository
-	projectRoleRepo repositories.ProjectRoleRepository
-	projectParamRepo repositories.ProjectParamRepository
-	memberRepo      repositories.ProjectMemberRepository
+	repo                 repositories.ProjectRepository
+	templateSvc          *TemplateService
+	boardRepo            repositories.BoardRepository
+	columnRepo           repositories.ColumnRepository
+	swimlaneRepo         repositories.SwimlaneRepository
+	noteRepo             repositories.NoteRepository
+	boardCustomFieldRepo repositories.BoardCustomFieldRepository
+	projectRoleRepo      repositories.ProjectRoleRepository
+	projectParamRepo     repositories.ProjectParamRepository
+	memberRepo           repositories.ProjectMemberRepository
+	conn                 *sql.DB
 }
 
 func NewProjectService(
 	repo repositories.ProjectRepository,
 	templateSvc *TemplateService,
 	boardRepo repositories.BoardRepository,
+	columnRepo repositories.ColumnRepository,
+	swimlaneRepo repositories.SwimlaneRepository,
+	noteRepo repositories.NoteRepository,
+	boardCustomFieldRepo repositories.BoardCustomFieldRepository,
 	projectRoleRepo repositories.ProjectRoleRepository,
 	projectParamRepo repositories.ProjectParamRepository,
 	memberRepo repositories.ProjectMemberRepository,
+	conn *sql.DB,
 ) *ProjectService {
 	return &ProjectService{
-		repo:             repo,
-		templateSvc:      templateSvc,
-		boardRepo:        boardRepo,
-		projectRoleRepo:  projectRoleRepo,
-		projectParamRepo: projectParamRepo,
-		memberRepo:       memberRepo,
+		repo:                 repo,
+		templateSvc:          templateSvc,
+		boardRepo:            boardRepo,
+		columnRepo:           columnRepo,
+		swimlaneRepo:         swimlaneRepo,
+		noteRepo:             noteRepo,
+		boardCustomFieldRepo: boardCustomFieldRepo,
+		projectRoleRepo:      projectRoleRepo,
+		projectParamRepo:     projectParamRepo,
+		memberRepo:           memberRepo,
+		conn:                 conn,
 	}
 }
 
@@ -116,7 +131,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 	}
 	_ = tmpl
 
-	pid := projectID.String()
+	pid := projectID
 
 	// Copy boards with all nested entities
 	for _, tb := range data.Boards {
@@ -143,7 +158,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 				wl = &v
 			}
 			st := domain.SystemStatusType(tc.SystemType)
-			col, err := s.boardRepo.CreateColumn(ctx, &domain.Column{
+			col, err := s.columnRepo.Create(ctx, &domain.Column{
 				BoardID:    board.ID,
 				Name:       tc.Name,
 				SystemType: &st,
@@ -157,7 +172,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 			// Copy column note
 			if tc.Note != nil && *tc.Note != "" {
 				cid := col.ID
-				_, _ = s.boardRepo.CreateNoteForColumn(ctx, &domain.Note{
+				_, _ = s.noteRepo.CreateForColumn(ctx, &domain.Note{
 					ColumnID: &cid,
 					Content:  *tc.Note,
 				})
@@ -171,7 +186,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 				v := int16(*ts.WipLimit)
 				wl = &v
 			}
-			sw, err := s.boardRepo.CreateSwimlane(ctx, &domain.Swimlane{
+			sw, err := s.swimlaneRepo.Create(ctx, &domain.Swimlane{
 				BoardID:  board.ID,
 				Name:     ts.Name,
 				WipLimit: wl,
@@ -183,7 +198,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 			// Copy swimlane note
 			if ts.Note != nil && *ts.Note != "" {
 				sid := sw.ID
-				_, _ = s.boardRepo.CreateNoteForSwimlane(ctx, &domain.Note{
+				_, _ = s.noteRepo.CreateForSwimlane(ctx, &domain.Note{
 					SwimlaneID: &sid,
 					Content:    *ts.Note,
 				})
@@ -193,7 +208,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 		// Copy custom fields and build ID mapping for swimlane_group_by remapping
 		fieldIDMap := make(map[string]string) // template field ID → project field ID
 		for _, cf := range tb.CustomFields {
-			newField, err := s.boardRepo.CreateCustomField(ctx, &domain.BoardCustomField{
+			newField, err := s.boardCustomFieldRepo.Create(ctx, &domain.BoardCustomField{
 				BoardID:    board.ID,
 				Name:       cf.Name,
 				FieldType:  cf.FieldType,
@@ -202,7 +217,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 				Options:    cf.Options,
 			})
 			if err == nil && newField != nil {
-				fieldIDMap[cf.ID.String()] = newField.ID
+				fieldIDMap[cf.ID.String()] = newField.ID.String()
 			}
 		}
 
@@ -240,7 +255,7 @@ func (s *ProjectService) copyTemplateToProject(ctx context.Context, projectID uu
 		if err != nil {
 			continue
 		}
-		roleID := uuid.MustParse(role.ID)
+		roleID := role.ID
 		for _, p := range tr.Permissions {
 			_ = s.projectRoleRepo.UpsertPermission(ctx, roleID, p.Area, p.Access)
 		}
@@ -266,44 +281,70 @@ func (s *ProjectService) ListAllProjects(ctx context.Context, query *string, sta
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, p *domain.Project, newOwnerID *uuid.UUID) (*domain.Project, error) {
-	updated, err := s.repo.Update(ctx, p)
-	if err != nil {
-		return nil, err
-	}
+	// Каскад owner → project_members завязан на ту же транзакцию, что и апдейт
+	// самого проекта: если добавить участника/роль не удалось, изменение
+	// owner_id в projects тоже откатывается — иначе на проекте остался бы
+	// ответственный, которого нет среди участников (именно так и выглядел
+	// воспроизведённый баг).
+	return repositories.InTxT(ctx, s.conn, func(qtx *db.Queries) (*domain.Project, error) {
+		txProjectRepo := repositories.NewProjectRepository(qtx)
 
-	// Если сменился owner — убедиться что он участник проекта с admin-ролью
-	if newOwnerID != nil && s.memberRepo != nil {
-		if err := s.ensureOwnerIsMember(ctx, p.ID, *newOwnerID); err != nil {
+		current, err := txProjectRepo.GetByID(ctx, p.ID)
+		if err != nil {
 			return nil, err
 		}
-	}
 
-	return updated, nil
+		updated, err := txProjectRepo.Update(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+
+		// Каскад срабатывает только если owner действительно меняется.
+		// Если клиент прислал owner_id, равный текущему — это no-op, трогать
+		// project_members не нужно (и не хотим случайно перетасовать роли).
+		if newOwnerID != nil && *newOwnerID != current.OwnerID {
+			if err := s.ensureOwnerIsMemberTx(ctx, qtx, p.ID, *newOwnerID); err != nil {
+				return nil, err
+			}
+		}
+
+		return updated, nil
+	})
 }
 
-func (s *ProjectService) ensureOwnerIsMember(ctx context.Context, projectID, ownerID uuid.UUID) error {
-	// Проверяем, является ли owner участником проекта
-	member, err := s.memberRepo.GetByProjectAndUser(ctx, projectID, ownerID)
-	if err != nil && err != domain.ErrNotFound {
+// ensureOwnerIsMemberTx — добавляет пользователя в project_members и
+// гарантирует, что у него есть admin-роль проекта. Существующие роли участника
+// сохраняются (AddRoleToMember идемпотентен через ON CONFLICT DO NOTHING).
+// Если в проекте нет admin-роли — возвращает ErrProjectAdminRoleMissing,
+// транзакция откатывается.
+func (s *ProjectService) ensureOwnerIsMemberTx(ctx context.Context, qtx *db.Queries, projectID, ownerID uuid.UUID) error {
+	memberRepo := repositories.NewProjectMemberRepository(qtx)
+	roleRepo := repositories.NewProjectRoleRepository(qtx)
+
+	member, err := memberRepo.GetByProjectAndUser(ctx, projectID, ownerID)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return err
 	}
-
 	if member == nil {
-		// Добавляем в участники
-		member, err = s.memberRepo.AddMember(ctx, projectID, ownerID)
+		member, err = memberRepo.AddMember(ctx, projectID, ownerID)
 		if err != nil {
 			return err
 		}
 	}
 
-	// Назначаем admin-роль
-	adminRoleID, err := s.projectRoleRepo.GetProjectAdminRoleID(ctx, projectID)
+	adminRoleID, err := roleRepo.GetProjectAdminRoleID(ctx, projectID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrProjectAdminRoleMissing
+		}
 		return err
 	}
 
-	// Добавляем admin-роль к существующим ролям (не заменяем)
-	return s.memberRepo.ReplaceMemberRoles(ctx, member.ID, []uuid.UUID{adminRoleID})
+	// Добавляем admin-роль, сохраняя уже назначенные роли участника
+	// (Разработчик/Менеджер и т.п.). Политика «старый владелец сохраняет
+	// admin-роль» сознательная: смена ответственного не должна молча лишать
+	// прежнего прав.
+	return memberRepo.AddRoleToMember(ctx, member.ID, adminRoleID)
 }
 
 func (s *ProjectService) DeleteProject(ctx context.Context, id uuid.UUID, confirm bool) error {

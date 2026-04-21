@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"projektus-backend/internal/catalog"
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
@@ -198,7 +199,34 @@ func (s *TemplateService) CreateBoard(ctx context.Context, templateID uuid.UUID,
 	return s.buildBoardDomain(board, columns, swimlanes, nil), nil
 }
 
-func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID uuid.UUID, name, description *string, isDefault *bool, order *int32, priorityType, estimationUnit *string, swimlaneGroupBy *string, clearSwimlaneGroup bool) (domain.TemplateBoard, error) {
+// GetBoardByID возвращает полную представление шаблонной доски — колонки,
+// дорожки, кастомные поля. Используется handler'ом для перечитывания доски
+// после правки (например, при обновлении priority_options через системное поле).
+func (s *TemplateService) GetBoardByID(ctx context.Context, templateID, boardID uuid.UUID) (domain.TemplateBoard, error) {
+	board, err := s.repo.GetBoardByID(ctx, boardID)
+	if err != nil {
+		return domain.TemplateBoard{}, domain.ErrNotFound
+	}
+	if !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
+		return domain.TemplateBoard{}, domain.ErrNotFound
+	}
+	// board здесь — db.Board; loadFullBoard ожидает row-тип listTemplateBoardsByTemplateID.
+	// Собираем подходящую row-структуру вручную (все поля совпадают).
+	return s.loadFullBoard(ctx, db.ListTemplateBoardsByTemplateIDRow{
+		ID:              board.ID,
+		TemplateID:      board.TemplateID,
+		Name:            board.Name,
+		Description:     board.Description,
+		SortOrder:       board.SortOrder,
+		PriorityType:    board.PriorityType,
+		EstimationUnit:  board.EstimationUnit,
+		SwimlaneGroupBy: board.SwimlaneGroupBy,
+		IsDefault:       board.IsDefault,
+		PriorityOptions: board.PriorityOptions,
+	})
+}
+
+func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID uuid.UUID, name, description *string, isDefault *bool, order *int32, priorityType, estimationUnit *string, swimlaneGroupBy *string, clearSwimlaneGroup bool, priorityOptions *[]string) (domain.TemplateBoard, error) {
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil {
 		return domain.TemplateBoard{}, domain.ErrNotFound
@@ -228,8 +256,10 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 		finalOrder = int16(*order)
 	}
 	finalPriorityType := board.PriorityType
+	priorityTypeChanged := false
 	if priorityType != nil && *priorityType != board.PriorityType {
 		finalPriorityType = *priorityType
+		priorityTypeChanged = true
 	}
 	finalEstimationUnit := board.EstimationUnit
 	if estimationUnit != nil {
@@ -247,6 +277,16 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 		swimlaneGroupChanged = true
 	}
 
+	// priority_options: явно переданный массив целиком заменяет текущий.
+	// Если priority_type поменялся и опции не переданы — подставляем дефолты
+	// нового типа. Иначе оставляем прежний JSON в БД (COALESCE в SQL-запросе).
+	finalPriorityOptions := board.PriorityOptions
+	if priorityOptions != nil {
+		finalPriorityOptions = repositories.OptionsToJSON(*priorityOptions)
+	} else if priorityTypeChanged {
+		finalPriorityOptions = repositories.OptionsToJSON(defaultPriorityOptions(finalPriorityType))
+	}
+
 	updated, err := s.repo.UpdateBoard(ctx, db.UpdateTemplateBoardParams{
 		ID:              boardID,
 		Name:            finalName,
@@ -256,6 +296,7 @@ func (s *TemplateService) UpdateBoard(ctx context.Context, templateID, boardID u
 		PriorityType:    finalPriorityType,
 		EstimationUnit:  finalEstimationUnit,
 		SwimlaneGroupBy: finalSwimlaneGroupBy,
+		PriorityOptions: finalPriorityOptions,
 	})
 	if err != nil {
 		return domain.TemplateBoard{}, err
@@ -618,20 +659,14 @@ func (s *TemplateService) ReorderSwimlanes(ctx context.Context, templateID, boar
 // --- Custom Fields ---
 
 func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boardID uuid.UUID, name, fieldType string, isRequired bool, options []string) (domain.TemplateBoardCustomField, error) {
+	// Таблица board_fields хранит только кастомные поля — обязательными они
+	// по политике быть не могут.
+	if isRequired {
+		return domain.TemplateBoardCustomField{}, domain.ErrRequiredCustomFieldNotAllowed
+	}
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
 		return domain.TemplateBoardCustomField{}, domain.ErrNotFound
-	}
-
-	// sprint/sprint_list доступны только для задач Scrum-досок
-	if fieldType == "sprint" || fieldType == "sprint_list" {
-		tmpl, err := s.repo.GetByID(ctx, templateID)
-		if err != nil {
-			return domain.TemplateBoardCustomField{}, err
-		}
-		if string(tmpl.Type) != "scrum" {
-			return domain.TemplateBoardCustomField{}, domain.ErrInvalidFieldType
-		}
 	}
 
 	// Проверка уникальности имени среди полей доски
@@ -659,6 +694,10 @@ func (s *TemplateService) CreateCustomField(ctx context.Context, templateID, boa
 func (s *TemplateService) UpdateCustomField(ctx context.Context, templateID, boardID, fieldID uuid.UUID, name *string, isRequired *bool, options []string) (domain.TemplateBoardCustomField, error) {
 	if name != nil && strings.TrimSpace(*name) == "" {
 		return domain.TemplateBoardCustomField{}, domain.ErrInvalidInput
+	}
+	// Кастомное поле не может стать обязательным.
+	if isRequired != nil && *isRequired {
+		return domain.TemplateBoardCustomField{}, domain.ErrRequiredCustomFieldNotAllowed
 	}
 	board, err := s.repo.GetBoardByID(ctx, boardID)
 	if err != nil || !board.TemplateID.Valid || board.TemplateID.UUID != templateID {
@@ -715,14 +754,13 @@ func (s *TemplateService) DeleteCustomField(ctx context.Context, templateID, boa
 // --- Project Params ---
 
 func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uuid.UUID, name, fieldType string, isRequired bool, options []string) (domain.TemplateProjectParam, error) {
+	// Кастомные параметры шаблона не могут быть обязательными.
+	if isRequired {
+		return domain.TemplateProjectParam{}, domain.ErrRequiredCustomFieldNotAllowed
+	}
 	_, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
 		return domain.TemplateProjectParam{}, err
-	}
-
-	// sprint/sprint_list недопустимы для параметров проекта
-	if fieldType == "sprint" || fieldType == "sprint_list" {
-		return domain.TemplateProjectParam{}, domain.ErrInvalidFieldType
 	}
 
 	// Проверка уникальности имени среди параметров проекта
@@ -745,6 +783,10 @@ func (s *TemplateService) CreateProjectParam(ctx context.Context, templateID uui
 func (s *TemplateService) UpdateProjectParam(ctx context.Context, templateID, paramID uuid.UUID, name *string, isRequired *bool, options []string) (domain.TemplateProjectParam, error) {
 	if name != nil && strings.TrimSpace(*name) == "" {
 		return domain.TemplateProjectParam{}, domain.ErrInvalidInput
+	}
+	// Кастомные параметры шаблона не могут стать обязательными.
+	if isRequired != nil && *isRequired {
+		return domain.TemplateProjectParam{}, domain.ErrRequiredCustomFieldNotAllowed
 	}
 	existing, err := s.repo.GetProjectParamByID(ctx, paramID)
 	if err != nil || !existing.TemplateID.Valid || existing.TemplateID.UUID != templateID {
@@ -779,9 +821,32 @@ func (s *TemplateService) DeleteProjectParam(ctx context.Context, templateID, pa
 
 // --- Roles ---
 
+// validateTemplateRolePermissions проверяет, что каждый Area — валидный
+// project-scope permission_code из каталога. Отсекает опечатки и scope-missmatch
+// на входе API, чтобы неверные коды не попадали в role_permissions (иначе они
+// тихо не матчились бы с проверками доступа).
+func validateTemplateRolePermissions(permissions []domain.TemplateRolePermission) error {
+	if len(permissions) == 0 {
+		return nil
+	}
+	var bad []string
+	for _, p := range permissions {
+		if !catalog.IsValidProjectPermission(p.Area) {
+			bad = append(bad, p.Area)
+		}
+	}
+	if len(bad) > 0 {
+		return &domain.InvalidPermissionCodeError{Codes: bad}
+	}
+	return nil
+}
+
 func (s *TemplateService) CreateRole(ctx context.Context, templateID uuid.UUID, name, description string, permissions []domain.TemplateRolePermission) (domain.TemplateRole, error) {
 	if strings.TrimSpace(name) == "" {
 		return domain.TemplateRole{}, domain.ErrInvalidInput
+	}
+	if err := validateTemplateRolePermissions(permissions); err != nil {
+		return domain.TemplateRole{}, err
 	}
 	_, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
@@ -810,6 +875,9 @@ func (s *TemplateService) UpdateRole(ctx context.Context, templateID, roleID uui
 	// Роль is_admin в шаблоне: можно менять только name и description, права менять нельзя
 	if role.IsAdmin && permissions != nil {
 		return domain.TemplateRole{}, domain.ErrTemplateAdminRole
+	}
+	if err := validateTemplateRolePermissions(permissions); err != nil {
+		return domain.TemplateRole{}, err
 	}
 	finalName := role.Name
 	if name != nil {
@@ -842,6 +910,27 @@ func (s *TemplateService) DeleteRole(ctx context.Context, templateID, roleID uui
 	return s.repo.DeleteRole(ctx, roleID)
 }
 
+// ReorderRoles — принимает map roleID → новая позиция; валидирует, что роли
+// действительно принадлежат шаблону (защита от кросс-шаблонных правок),
+// затем применяет UpdateRoleOrder по каждой. Фронт посылает одним батчем.
+func (s *TemplateService) ReorderRoles(ctx context.Context, templateID uuid.UUID, orders map[uuid.UUID]int32) error {
+	for roleID := range orders {
+		role, err := s.repo.GetRoleByID(ctx, roleID)
+		if err != nil {
+			return domain.ErrNotFound
+		}
+		if !role.TemplateID.Valid || role.TemplateID.UUID != templateID {
+			return domain.ErrNotFound
+		}
+	}
+	for roleID, order := range orders {
+		if err := s.repo.UpdateRoleOrder(ctx, roleID, order); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *TemplateService) loadRole(ctx context.Context, r db.ListTemplateRolesRow) (domain.TemplateRole, error) {
 	perms, err := s.repo.ListRolePermissions(ctx, r.ID)
 	if err != nil {
@@ -853,7 +942,8 @@ func (s *TemplateService) loadRole(ctx context.Context, r db.ListTemplateRolesRo
 	}
 	return domain.TemplateRole{
 		ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name,
-		IsAdmin: r.IsAdmin, Permissions: domPerms,
+		Description: r.Description,
+		IsAdmin:     r.IsAdmin, Order: r.SortOrder, Permissions: domPerms,
 	}, nil
 }
 
@@ -907,8 +997,13 @@ func (s *TemplateService) loadRoles(ctx context.Context, templateID uuid.UUID) (
 			domPerms = append(domPerms, domain.TemplateRolePermission{Area: p.PermissionCode, Access: p.Access.String})
 		}
 		result = append(result, domain.TemplateRole{
-			ID: r.ID, TemplateID: r.TemplateID.UUID, Name: r.Name,
-			IsAdmin: r.IsAdmin, Permissions: domPerms,
+			ID:          r.ID,
+			TemplateID:  r.TemplateID.UUID,
+			Name:        r.Name,
+			Description: r.Description,
+			IsAdmin:     r.IsAdmin,
+			Order:       r.SortOrder,
+			Permissions: domPerms,
 		})
 	}
 	return result, nil

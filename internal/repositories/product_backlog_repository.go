@@ -7,6 +7,7 @@ import (
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type ProductBacklogRepository interface {
@@ -31,22 +32,22 @@ func (r *productBacklogRepository) Add(ctx context.Context, projectID, taskID uu
 		SortOrder: order,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "AddToProductBacklog", "projectID", projectID, "taskID", taskID)
 	}
 	return mapDBBacklog(row), nil
 }
 
 func (r *productBacklogRepository) Remove(ctx context.Context, projectID, taskID uuid.UUID) error {
-	return r.q.RemoveFromProductBacklog(ctx, db.RemoveFromProductBacklogParams{
+	return errctx.Wrap(r.q.RemoveFromProductBacklog(ctx, db.RemoveFromProductBacklogParams{
 		ProjectID: projectID,
 		TaskID:    taskID,
-	})
+	}), "RemoveFromProductBacklog", "projectID", projectID, "taskID", taskID)
 }
 
 func (r *productBacklogRepository) List(ctx context.Context, projectID uuid.UUID) ([]domain.ProductBacklogItem, error) {
 	rows, err := r.q.GetProductBacklog(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetProductBacklog", "projectID", projectID)
 	}
 	result := make([]domain.ProductBacklogItem, 0, len(rows))
 	for _, row := range rows {
@@ -56,11 +57,11 @@ func (r *productBacklogRepository) List(ctx context.Context, projectID uuid.UUID
 }
 
 func (r *productBacklogRepository) UpdateOrder(ctx context.Context, projectID, taskID uuid.UUID, order int32) error {
-	return r.q.UpdateProductBacklogOrder(ctx, db.UpdateProductBacklogOrderParams{
+	return errctx.Wrap(r.q.UpdateProductBacklogOrder(ctx, db.UpdateProductBacklogOrderParams{
 		ProjectID: projectID,
 		TaskID:    taskID,
 		SortOrder: order,
-	})
+	}), "UpdateProductBacklogOrder", "projectID", projectID, "taskID", taskID)
 }
 
 func mapDBBacklog(row db.Backlog) *domain.ProductBacklogItem {

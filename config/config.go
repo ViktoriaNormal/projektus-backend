@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,12 @@ type Config struct {
 
 	RateLimitIPWindowMinutes int
 	RateLimitIPMaxFailures   int
+
+	AllowPublicRegistration bool
+
+	InitialAdminUsername string
+	InitialAdminEmail    string
+	InitialAdminPassword string
 }
 
 func getenv(key, def string) string {
@@ -48,10 +55,26 @@ func mustInt(key string, def int) int {
 	return v
 }
 
+func getbool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		log.Fatalf("invalid bool value for %s: %q", key, v)
+		return def
+	}
+}
+
 func Load() *Config {
 	cfg := &Config{
 		ServerPort: getenv("SERVER_PORT", "8080"),
-		DBURL:      getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/projektus?sslmode=disable"),
+		DBURL:      getenv("DATABASE_URL", "postgres://projektus:projektus@localhost:5432/projektus?sslmode=disable"),
 
 		CORSAllowedOrigin: getenv("CORS_ALLOWED_ORIGIN", "http://localhost:5173"),
 
@@ -68,6 +91,12 @@ func Load() *Config {
 
 		RateLimitIPWindowMinutes: mustInt("RATE_LIMIT_IP_WINDOW_MINUTES", 60),
 		RateLimitIPMaxFailures:   mustInt("RATE_LIMIT_IP_MAX_FAILURES", 20),
+
+		AllowPublicRegistration: getbool("ALLOW_PUBLIC_REGISTRATION", false),
+
+		InitialAdminUsername: getenv("INITIAL_ADMIN_USERNAME", "admin"),
+		InitialAdminEmail:    getenv("INITIAL_ADMIN_EMAIL", "admin@projektus.local"),
+		InitialAdminPassword: os.Getenv("INITIAL_ADMIN_PASSWORD"),
 	}
 
 	return cfg

@@ -3,28 +3,28 @@ package repositories
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type MeetingRepository interface {
 	CreateMeeting(ctx context.Context, m domain.Meeting) (*domain.Meeting, error)
 	UpdateMeeting(ctx context.Context, m domain.Meeting) error
-	CancelMeeting(ctx context.Context, id string) (*domain.Meeting, error)
-	DeleteMeeting(ctx context.Context, id string) error
-	GetMeetingByID(ctx context.Context, id string) (*domain.Meeting, error)
-	ListUserMeetings(ctx context.Context, userID string, from, to sql.NullTime) ([]domain.Meeting, error)
-	ListProjectMeetings(ctx context.Context, projectID string) ([]domain.Meeting, error)
+	CancelMeeting(ctx context.Context, id uuid.UUID) (*domain.Meeting, error)
+	DeleteMeeting(ctx context.Context, id uuid.UUID) error
+	GetMeetingByID(ctx context.Context, id uuid.UUID) (*domain.Meeting, error)
+	ListUserMeetings(ctx context.Context, userID uuid.UUID, from, to sql.NullTime) ([]domain.Meeting, error)
+	ListProjectMeetings(ctx context.Context, projectID uuid.UUID) ([]domain.Meeting, error)
 
-	AddParticipant(ctx context.Context, meetingID, userID string, status domain.ParticipantStatus) (*domain.MeetingParticipant, error)
-	UpdateParticipantStatus(ctx context.Context, meetingID, userID string, status domain.ParticipantStatus) error
-	GetMeetingParticipants(ctx context.Context, meetingID string) ([]domain.MeetingParticipant, error)
-	CreateReminder(ctx context.Context, meetingID, userID string, channel domain.ChannelType, reminderTime time.Time) error
+	AddParticipant(ctx context.Context, meetingID, userID uuid.UUID, status domain.ParticipantStatus) (*domain.MeetingParticipant, error)
+	UpdateParticipantStatus(ctx context.Context, meetingID, userID uuid.UUID, status domain.ParticipantStatus) error
+	GetMeetingParticipants(ctx context.Context, meetingID uuid.UUID) ([]domain.MeetingParticipant, error)
+	CreateReminder(ctx context.Context, meetingID, userID uuid.UUID, channel domain.ChannelType, reminderTime time.Time) error
 }
 
 type meetingRepository struct {
@@ -36,12 +36,7 @@ func NewMeetingRepository(q *db.Queries) MeetingRepository {
 }
 
 func (r *meetingRepository) CreateMeeting(ctx context.Context, m domain.Meeting) (*domain.Meeting, error) {
-	var pid uuid.NullUUID
-	if m.ProjectID != nil {
-		if id, err := uuid.Parse(*m.ProjectID); err == nil {
-			pid = uuid.NullUUID{UUID: id, Valid: true}
-		}
-	}
+	pid := ptrToNullUUID(m.ProjectID)
 	desc := sql.NullString{}
 	if m.Description != nil {
 		desc = sql.NullString{String: *m.Description, Valid: true}
@@ -49,10 +44,6 @@ func (r *meetingRepository) CreateMeeting(ctx context.Context, m domain.Meeting)
 	loc := sql.NullString{}
 	if m.Location != nil {
 		loc = sql.NullString{String: *m.Location, Valid: true}
-	}
-	creator, err := uuid.Parse(m.CreatedBy)
-	if err != nil {
-		return nil, err
 	}
 	row, err := r.q.CreateMeeting(ctx, db.CreateMeetingParams{
 		ProjectID:   pid,
@@ -62,20 +53,16 @@ func (r *meetingRepository) CreateMeeting(ctx context.Context, m domain.Meeting)
 		Location:    loc,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
-		CreatedBy:   creator,
+		CreatedBy:   m.CreatedBy,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateMeeting", "name", m.Name)
 	}
 	d := mapDBMeetingToDomain(row)
 	return &d, nil
 }
 
 func (r *meetingRepository) UpdateMeeting(ctx context.Context, m domain.Meeting) error {
-	id, err := uuid.Parse(m.ID)
-	if err != nil {
-		return err
-	}
 	desc := sql.NullString{}
 	if m.Description != nil {
 		desc = sql.NullString{String: *m.Description, Valid: true}
@@ -84,14 +71,9 @@ func (r *meetingRepository) UpdateMeeting(ctx context.Context, m domain.Meeting)
 	if m.Location != nil {
 		loc = sql.NullString{String: *m.Location, Valid: true}
 	}
-	var pid uuid.NullUUID
-	if m.ProjectID != nil {
-		if parsed, err := uuid.Parse(*m.ProjectID); err == nil {
-			pid = uuid.NullUUID{UUID: parsed, Valid: true}
-		}
-	}
-	return r.q.UpdateMeeting(ctx, db.UpdateMeetingParams{
-		ID:          id,
+	pid := ptrToNullUUID(m.ProjectID)
+	return errctx.Wrap(r.q.UpdateMeeting(ctx, db.UpdateMeetingParams{
+		ID:          m.ID,
 		Name:        m.Name,
 		Description: desc,
 		MeetingType: string(m.Type),
@@ -99,59 +81,40 @@ func (r *meetingRepository) UpdateMeeting(ctx context.Context, m domain.Meeting)
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
 		ProjectID:   pid,
-	})
+	}), "UpdateMeeting", "id", m.ID)
 }
 
-func (r *meetingRepository) CancelMeeting(ctx context.Context, id string) (*domain.Meeting, error) {
-	uid, err := uuid.Parse(id)
+func (r *meetingRepository) CancelMeeting(ctx context.Context, id uuid.UUID) (*domain.Meeting, error) {
+	row, err := r.q.CancelMeeting(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	row, err := r.q.CancelMeeting(ctx, uid)
-	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CancelMeeting", "id", id)
 	}
 	d := mapDBMeetingToDomain(row)
 	return &d, nil
 }
 
-func (r *meetingRepository) DeleteMeeting(ctx context.Context, id string) error {
-	uid, err := uuid.Parse(id)
-	if err != nil {
-		return err
-	}
-	return r.q.DeleteMeeting(ctx, uid)
+func (r *meetingRepository) DeleteMeeting(ctx context.Context, id uuid.UUID) error {
+	return errctx.Wrap(r.q.DeleteMeeting(ctx, id), "DeleteMeeting", "id", id)
 }
 
-func (r *meetingRepository) GetMeetingByID(ctx context.Context, id string) (*domain.Meeting, error) {
-	uid, err := uuid.Parse(id)
+func (r *meetingRepository) GetMeetingByID(ctx context.Context, id uuid.UUID) (*domain.Meeting, error) {
+	row, err := r.q.GetMeetingByID(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	row, err := r.q.GetMeetingByID(ctx, uid)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetMeetingByID", "id", id)
 	}
 	d := mapDBMeetingToDomain(row)
 	return &d, nil
 }
 
-func (r *meetingRepository) ListUserMeetings(ctx context.Context, userID string, from, to sql.NullTime) ([]domain.Meeting, error) {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
+func (r *meetingRepository) ListUserMeetings(ctx context.Context, userID uuid.UUID, from, to sql.NullTime) ([]domain.Meeting, error) {
 	params := db.ListUserMeetingsParams{
-		UserID:   uid,
+		UserID:   userID,
 		FromTime: from,
 		ToTime:   to,
 	}
 	rows, err := r.q.ListUserMeetings(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListUserMeetings", "userID", userID)
 	}
 	result := make([]domain.Meeting, len(rows))
 	for i, m := range rows {
@@ -160,14 +123,10 @@ func (r *meetingRepository) ListUserMeetings(ctx context.Context, userID string,
 	return result, nil
 }
 
-func (r *meetingRepository) ListProjectMeetings(ctx context.Context, projectID string) ([]domain.Meeting, error) {
-	pid, err := uuid.Parse(projectID)
+func (r *meetingRepository) ListProjectMeetings(ctx context.Context, projectID uuid.UUID) ([]domain.Meeting, error) {
+	rows, err := r.q.ListProjectMeetings(ctx, uuid.NullUUID{UUID: projectID, Valid: true})
 	if err != nil {
-		return nil, err
-	}
-	rows, err := r.q.ListProjectMeetings(ctx, uuid.NullUUID{UUID: pid, Valid: true})
-	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListProjectMeetings", "projectID", projectID)
 	}
 	result := make([]domain.Meeting, len(rows))
 	for i, m := range rows {
@@ -176,51 +135,31 @@ func (r *meetingRepository) ListProjectMeetings(ctx context.Context, projectID s
 	return result, nil
 }
 
-func (r *meetingRepository) AddParticipant(ctx context.Context, meetingID, userID string, status domain.ParticipantStatus) (*domain.MeetingParticipant, error) {
-	mid, err := uuid.Parse(meetingID)
-	if err != nil {
-		return nil, err
-	}
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
+func (r *meetingRepository) AddParticipant(ctx context.Context, meetingID, userID uuid.UUID, status domain.ParticipantStatus) (*domain.MeetingParticipant, error) {
 	row, err := r.q.AddMeetingParticipant(ctx, db.AddMeetingParticipantParams{
-		MeetingID: mid,
-		UserID:    uid,
+		MeetingID: meetingID,
+		UserID:    userID,
 		Status:    string(status),
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "AddMeetingParticipant", "meetingID", meetingID, "userID", userID)
 	}
 	d := mapDBMeetingParticipantToDomain(row)
 	return &d, nil
 }
 
-func (r *meetingRepository) UpdateParticipantStatus(ctx context.Context, meetingID, userID string, status domain.ParticipantStatus) error {
-	mid, err := uuid.Parse(meetingID)
-	if err != nil {
-		return err
-	}
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	return r.q.UpdateParticipantStatus(ctx, db.UpdateParticipantStatusParams{
-		MeetingID: mid,
-		UserID:    uid,
+func (r *meetingRepository) UpdateParticipantStatus(ctx context.Context, meetingID, userID uuid.UUID, status domain.ParticipantStatus) error {
+	return errctx.Wrap(r.q.UpdateParticipantStatus(ctx, db.UpdateParticipantStatusParams{
+		MeetingID: meetingID,
+		UserID:    userID,
 		Status:    string(status),
-	})
+	}), "UpdateParticipantStatus", "meetingID", meetingID, "userID", userID)
 }
 
-func (r *meetingRepository) GetMeetingParticipants(ctx context.Context, meetingID string) ([]domain.MeetingParticipant, error) {
-	mid, err := uuid.Parse(meetingID)
+func (r *meetingRepository) GetMeetingParticipants(ctx context.Context, meetingID uuid.UUID) ([]domain.MeetingParticipant, error) {
+	rows, err := r.q.GetMeetingParticipants(ctx, meetingID)
 	if err != nil {
-		return nil, err
-	}
-	rows, err := r.q.GetMeetingParticipants(ctx, mid)
-	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetMeetingParticipants", "meetingID", meetingID)
 	}
 	result := make([]domain.MeetingParticipant, len(rows))
 	for i, p := range rows {
@@ -229,17 +168,12 @@ func (r *meetingRepository) GetMeetingParticipants(ctx context.Context, meetingI
 	return result, nil
 }
 
-func (r *meetingRepository) CreateReminder(_ context.Context, _, _ string, _ domain.ChannelType, _ time.Time) error {
+func (r *meetingRepository) CreateReminder(_ context.Context, _, _ uuid.UUID, _ domain.ChannelType, _ time.Time) error {
 	// meeting_reminders table removed in schema redesign
 	return nil
 }
 
 func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
-	var projectID *string
-	if m.ProjectID.Valid {
-		id := m.ProjectID.UUID.String()
-		projectID = &id
-	}
 	var desc *string
 	if m.Description.Valid {
 		desc = &m.Description.String
@@ -249,8 +183,8 @@ func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
 		loc = &m.Location.String
 	}
 	return domain.Meeting{
-		ID:          m.ID.String(),
-		ProjectID:   projectID,
+		ID:          m.ID,
+		ProjectID:   nullUUIDToPtr(m.ProjectID),
 		Name:        m.Name,
 		Description: desc,
 		Type:        domain.MeetingType(m.MeetingType),
@@ -258,16 +192,15 @@ func mapDBMeetingToDomain(m db.Meeting) domain.Meeting {
 		Status:      domain.MeetingStatus(m.Status),
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
-		CreatedBy:   m.CreatedBy.String(),
+		CreatedBy:   m.CreatedBy,
 	}
 }
 
 func mapDBMeetingParticipantToDomain(p db.MeetingParticipant) domain.MeetingParticipant {
 	return domain.MeetingParticipant{
-		ID:        p.ID.String(),
-		MeetingID: p.MeetingID.String(),
-		UserID:    p.UserID.String(),
+		ID:        p.ID,
+		MeetingID: p.MeetingID,
+		UserID:    p.UserID,
 		Status:    domain.ParticipantStatus(p.Status),
 	}
 }
-

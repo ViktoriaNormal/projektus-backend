@@ -5,10 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
-	"projektus-backend/internal/domain"
 	"projektus-backend/internal/services"
 )
 
@@ -24,6 +22,7 @@ func NewAdminPasswordPolicyHandler(policySvc *services.PasswordPolicyService) *A
 func (h *AdminPasswordPolicyHandler) GetPasswordPolicy(c *gin.Context) {
 	policy, err := h.policySvc.GetCurrentPolicy(c.Request.Context())
 	if err != nil {
+		// Специфичная служебная ошибка сервиса — не доменная.
 		if errors.Is(err, services.ErrNoPasswordPolicy) {
 			c.JSON(http.StatusNotFound, dto.APIResponse{
 				Success: false,
@@ -32,7 +31,10 @@ func (h *AdminPasswordPolicyHandler) GetPasswordPolicy(c *gin.Context) {
 			})
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить политику паролей")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить политику паролей")
 		return
 	}
 
@@ -54,27 +56,23 @@ func (h *AdminPasswordPolicyHandler) GetPasswordPolicy(c *gin.Context) {
 
 // UpdatePasswordPolicy PUT /admin/password-policy — обновление парольной политики.
 func (h *AdminPasswordPolicyHandler) UpdatePasswordPolicy(c *gin.Context) {
-	userIDStr := c.GetString("userID")
-	if userIDStr == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется авторизация")
-		return
-	}
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "INVALID_USER", "Некорректный идентификатор пользователя")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
-	var req dto.UpdatePasswordPolicyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdatePasswordPolicyRequest](c)
+	if !ok {
 		return
 	}
 
 	// Сначала получаем текущую политику, чтобы подставить значения для неуказанных полей
 	current, err := h.policySvc.GetCurrentPolicy(c.Request.Context())
 	if err != nil && !errors.Is(err, services.ErrNoPasswordPolicy) {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить текущую политику")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить текущую политику")
 		return
 	}
 
@@ -112,11 +110,10 @@ func (h *AdminPasswordPolicyHandler) UpdatePasswordPolicy(c *gin.Context) {
 		Notes:            req.Notes,
 	}, userID)
 	if err != nil {
-		if errors.Is(err, domain.ErrInvalidInput) {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "minLength должен быть от 1 до 100")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить политику паролей")
+		respondInternal(c, err, "Не удалось обновить политику паролей")
 		return
 	}
 	resp := dto.PasswordPolicyResponse{

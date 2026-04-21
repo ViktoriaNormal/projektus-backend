@@ -1,25 +1,30 @@
 -- Roles for projects (scope='project', filtered by project_id)
 
 -- name: ListProjRoleDefinitions :many
-SELECT id, project_id, name, description, is_admin
+-- Стабильный порядок через sort_order (см. миграцию 000035): последние UPDATE
+-- не перетасовывают список.
+SELECT id, project_id, name, description, is_admin, sort_order
 FROM roles
-WHERE project_id = $1;
+WHERE project_id = $1
+ORDER BY sort_order ASC, id ASC;
 
 -- name: GetProjRoleDefinitionByID :one
-SELECT id, project_id, name, description, is_admin
+SELECT id, project_id, name, description, is_admin, sort_order
 FROM roles
 WHERE id = $1;
 
 -- name: CreateProjRoleDefinition :one
-INSERT INTO roles (project_id, scope, name, description, is_admin)
-VALUES ($1, 'project', $2, $3, $4)
-RETURNING id, project_id, name, description, is_admin;
+-- Новую роль добавляем в конец: sort_order = max(existing) + 1.
+INSERT INTO roles (project_id, scope, name, description, is_admin, sort_order)
+VALUES ($1, 'project', $2, $3, $4,
+    COALESCE((SELECT MAX(sort_order) FROM roles WHERE project_id = $1), 0) + 1)
+RETURNING id, project_id, name, description, is_admin, sort_order;
 
 -- name: UpdateProjRoleDefinition :one
 UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, project_id, name, description, is_admin;
+RETURNING id, project_id, name, description, is_admin, sort_order;
 
 -- name: DeleteProjRoleDefinitionByID :exec
 DELETE FROM roles WHERE id = $1;

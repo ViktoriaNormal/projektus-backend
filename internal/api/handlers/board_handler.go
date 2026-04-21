@@ -24,10 +24,8 @@ func NewBoardHandler(service *services.BoardService, projectService *services.Pr
 }
 
 func (h *BoardHandler) ListBoards(c *gin.Context) {
-	userIDStr := c.GetString("userID")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
@@ -56,7 +54,10 @@ func (h *BoardHandler) ListBoards(c *gin.Context) {
 	}
 	boards, err := h.service.ListBoards(c.Request.Context(), projectID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список досок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список досок")
 		return
 	}
 	resp := make([]dto.BoardResponse, 0, len(boards))
@@ -67,16 +68,13 @@ func (h *BoardHandler) ListBoards(c *gin.Context) {
 }
 
 func (h *BoardHandler) CreateBoard(c *gin.Context) {
-	var req dto.CreateBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateBoardRequest](c)
+	if !ok {
 		return
 	}
 
-	userIDStr := c.GetString("userID")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
@@ -95,7 +93,10 @@ func (h *BoardHandler) CreateBoard(c *gin.Context) {
 
 	project, err := h.projectService.GetProject(c.Request.Context(), req.ProjectID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить проект")
 		return
 	}
 
@@ -105,50 +106,46 @@ func (h *BoardHandler) CreateBoard(c *gin.Context) {
 	}
 	board, err := h.service.CreateBoard(c.Request.Context(), req.ProjectID, string(project.Type), req.Name, req.Description, int16(req.Order), req.PriorityType, req.EstimationUnit, swimlaneGroupBy)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать доску")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать доску")
 		return
 	}
 	writeSuccess(c, mapBoardToDTO(board))
 }
 
 func (h *BoardHandler) GetBoard(c *gin.Context) {
-	idStr := c.Param("boardId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	id, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 	board, err := h.service.GetBoard(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить доску")
+		respondInternal(c, err, "Не удалось получить доску")
 		return
 	}
 	writeSuccess(c, mapBoardToDTO(board))
 }
 
 func (h *BoardHandler) UpdateBoard(c *gin.Context) {
-	idStr := c.Param("boardId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	id, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateBoardRequest](c)
+	if !ok {
 		return
 	}
 	board, err := h.service.GetBoard(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить доску")
+		respondInternal(c, err, "Не удалось получить доску")
 		return
 	}
 	if req.Name != nil {
@@ -181,36 +178,41 @@ func (h *BoardHandler) UpdateBoard(c *gin.Context) {
 	}
 	updated, err := h.service.UpdateBoard(c.Request.Context(), board)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить доску")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось обновить доску")
 		return
 	}
 	writeSuccess(c, mapBoardToDTO(updated))
 }
 
 func (h *BoardHandler) DeleteBoard(c *gin.Context) {
-	idStr := c.Param("boardId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	id, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteBoard(c.Request.Context(), id); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить доску")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить доску")
 		return
 	}
 	writeSuccess(c, gin.H{"message": "Доска удалена"})
 }
 
 func (h *BoardHandler) ListColumns(c *gin.Context) {
-	boardIDStr := c.Param("boardId")
-	boardID, err := uuid.Parse(boardIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 	cols, err := h.service.ListColumns(c.Request.Context(), boardID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список колонок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список колонок")
 		return
 	}
 	resp := make([]dto.ColumnResponse, 0, len(cols))
@@ -221,15 +223,12 @@ func (h *BoardHandler) ListColumns(c *gin.Context) {
 }
 
 func (h *BoardHandler) CreateColumn(c *gin.Context) {
-	boardIDStr := c.Param("boardId")
-	boardID, err := uuid.Parse(boardIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	var req dto.CreateColumnRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateColumnRequest](c)
+	if !ok {
 		return
 	}
 	if req.SystemType == nil {
@@ -248,34 +247,31 @@ func (h *BoardHandler) CreateColumn(c *gin.Context) {
 	}
 	col, err := h.service.CreateColumn(c.Request.Context(), boardID, req.Name, sysType, wipLimit16, int16(req.Order))
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Недопустимое значение systemType для колонки")
-			return
-		}
-		if err == domain.ErrCompletedColumnWip {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
-			return
-		}
+		// Специфичный текстовый маркер — до домен-маппинга
 		if strings.Contains(err.Error(), "INVALID_COLUMN_ORDER") {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать колонку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать колонку")
 		return
 	}
 	writeSuccess(c, mapColumnToDTO(col))
 }
 
 func (h *BoardHandler) ListSwimlanes(c *gin.Context) {
-	boardIDStr := c.Param("boardId")
-	boardID, err := uuid.Parse(boardIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 	sw, err := h.service.ListSwimlanes(c.Request.Context(), boardID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список дорожек")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список дорожек")
 		return
 	}
 	resp := make([]dto.SwimlaneResponse, 0, len(sw))
@@ -286,15 +282,12 @@ func (h *BoardHandler) ListSwimlanes(c *gin.Context) {
 }
 
 func (h *BoardHandler) CreateSwimlane(c *gin.Context) {
-	boardIDStr := c.Param("boardId")
-	boardID, err := uuid.Parse(boardIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	var req dto.CreateSwimlaneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateSwimlaneRequest](c)
+	if !ok {
 		return
 	}
 	var swWipLimit16 *int16
@@ -304,22 +297,26 @@ func (h *BoardHandler) CreateSwimlane(c *gin.Context) {
 	}
 	sw, err := h.service.CreateSwimlane(c.Request.Context(), boardID, req.Name, swWipLimit16, int16(req.Order))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать дорожку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать дорожку")
 		return
 	}
 	writeSuccess(c, mapSwimlaneToDTO(sw))
 }
 
 func (h *BoardHandler) ListNotes(c *gin.Context) {
-	boardIDStr := c.Param("boardId")
-	boardID, err := uuid.Parse(boardIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 	notes, err := h.service.ListNotes(c.Request.Context(), boardID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список заметок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список заметок")
 		return
 	}
 	resp := make([]dto.NoteResponse, 0, len(notes))
@@ -330,40 +327,40 @@ func (h *BoardHandler) ListNotes(c *gin.Context) {
 }
 
 func (h *BoardHandler) CreateNoteForColumn(c *gin.Context) {
-	columnIDStr := c.Param("columnId")
-	columnID, err := uuid.Parse(columnIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор колонки")
+	columnID, ok := paramUUID(c, "columnId")
+	if !ok {
 		return
 	}
-	var req dto.CreateNoteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateNoteRequest](c)
+	if !ok {
 		return
 	}
 	note, err := h.service.CreateNoteForColumn(c.Request.Context(), columnID, req.Content)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать заметку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать заметку")
 		return
 	}
 	writeSuccess(c, mapNoteToDTO(note))
 }
 
 func (h *BoardHandler) CreateNoteForSwimlane(c *gin.Context) {
-	swimlaneIDStr := c.Param("swimlaneId")
-	swimlaneID, err := uuid.Parse(swimlaneIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор дорожки")
+	swimlaneID, ok := paramUUID(c, "swimlaneId")
+	if !ok {
 		return
 	}
-	var req dto.CreateNoteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateNoteRequest](c)
+	if !ok {
 		return
 	}
 	note, err := h.service.CreateNoteForSwimlane(c.Request.Context(), swimlaneID, req.Content)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать заметку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать заметку")
 		return
 	}
 	writeSuccess(c, mapNoteToDTO(note))
@@ -372,14 +369,12 @@ func (h *BoardHandler) CreateNoteForSwimlane(c *gin.Context) {
 // --- Column PATCH/DELETE/reorder ---
 
 func (h *BoardHandler) UpdateColumn(c *gin.Context) {
-	columnID, err := uuid.Parse(c.Param("columnId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор колонки")
+	columnID, ok := paramUUID(c, "columnId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateColumnRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateColumnRequest](c)
+	if !ok {
 		return
 	}
 
@@ -422,20 +417,18 @@ func (h *BoardHandler) UpdateColumn(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
 			return
 		}
-		if err == domain.ErrCompletedColumnWip {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить колонку")
+		respondInternal(c, err, "Не удалось обновить колонку")
 		return
 	}
 	writeSuccess(c, mapColumnToDTO(updated))
 }
 
 func (h *BoardHandler) DeleteColumn(c *gin.Context) {
-	columnID, err := uuid.Parse(c.Param("columnId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор колонки")
+	columnID, ok := paramUUID(c, "columnId")
+	if !ok {
 		return
 	}
 	col, err := h.service.GetColumnByID(c.Request.Context(), columnID)
@@ -449,25 +442,22 @@ func (h *BoardHandler) DeleteColumn(c *gin.Context) {
 	}
 	err = h.service.DeleteColumnSafe(c.Request.Context(), columnID)
 	if err != nil {
-		if err == domain.ErrColumnHasTasks {
-			writeError(c, http.StatusBadRequest, "COLUMN_HAS_TASKS", "Нельзя удалить колонку, в которой есть задачи")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить колонку")
+		respondInternal(c, err, "Не удалось удалить колонку")
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
 func (h *BoardHandler) ReorderColumns(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	var req dto.BoardReorderColumnsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.BoardReorderColumnsRequest](c)
+	if !ok {
 		return
 	}
 	orders := make(map[uuid.UUID]int16)
@@ -483,7 +473,10 @@ func (h *BoardHandler) ReorderColumns(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок колонок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок колонок")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -492,14 +485,12 @@ func (h *BoardHandler) ReorderColumns(c *gin.Context) {
 // --- Swimlane PATCH/DELETE/reorder ---
 
 func (h *BoardHandler) UpdateSwimlane(c *gin.Context) {
-	swimlaneID, err := uuid.Parse(c.Param("swimlaneId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор дорожки")
+	swimlaneID, ok := paramUUID(c, "swimlaneId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateSwimlaneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateSwimlaneRequest](c)
+	if !ok {
 		return
 	}
 
@@ -511,10 +502,9 @@ func (h *BoardHandler) UpdateSwimlane(c *gin.Context) {
 
 	// Reject wipLimit for Scrum projects.
 	if req.WipLimit.Set && !req.WipLimit.Null {
-		board, err := h.service.GetBoard(c.Request.Context(), uuid.MustParse(sw.BoardID))
+		board, err := h.service.GetBoard(c.Request.Context(), sw.BoardID)
 		if err == nil && board.ProjectID != nil {
-			pid, _ := uuid.Parse(*board.ProjectID)
-			project, err := h.projectService.GetProject(c.Request.Context(), pid)
+			project, err := h.projectService.GetProject(c.Request.Context(), *board.ProjectID)
 			if err == nil && project.Type == domain.ProjectTypeScrum {
 				writeError(c, http.StatusBadRequest, "SCRUM_WIP_NOT_ALLOWED", "WIP-лимиты дорожек не поддерживаются в Scrum")
 				return
@@ -538,39 +528,38 @@ func (h *BoardHandler) UpdateSwimlane(c *gin.Context) {
 	}
 	updated, err := h.service.UpdateSwimlane(c.Request.Context(), sw)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить дорожку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось обновить дорожку")
 		return
 	}
 	writeSuccess(c, mapSwimlaneToDTO(updated))
 }
 
 func (h *BoardHandler) DeleteSwimlane(c *gin.Context) {
-	swimlaneID, err := uuid.Parse(c.Param("swimlaneId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор дорожки")
+	swimlaneID, ok := paramUUID(c, "swimlaneId")
+	if !ok {
 		return
 	}
-	err = h.service.DeleteSwimlaneSafe(c.Request.Context(), swimlaneID)
+	err := h.service.DeleteSwimlaneSafe(c.Request.Context(), swimlaneID)
 	if err != nil {
-		if err == domain.ErrSwimlaneHasTasks {
-			writeError(c, http.StatusBadRequest, "SWIMLANE_HAS_TASKS", "Нельзя удалить дорожку, в которой есть задачи")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить дорожку")
+		respondInternal(c, err, "Не удалось удалить дорожку")
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
 func (h *BoardHandler) ReorderSwimlanes(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	var req dto.BoardReorderSwimlanesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.BoardReorderSwimlanesRequest](c)
+	if !ok {
 		return
 	}
 	orders := make(map[uuid.UUID]int16)
@@ -578,7 +567,10 @@ func (h *BoardHandler) ReorderSwimlanes(c *gin.Context) {
 		orders[o.SwimlaneID] = int16(o.Order)
 	}
 	if err := h.service.ReorderSwimlanes(c.Request.Context(), boardID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок дорожек")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок дорожек")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -587,14 +579,12 @@ func (h *BoardHandler) ReorderSwimlanes(c *gin.Context) {
 // --- Note PATCH/DELETE ---
 
 func (h *BoardHandler) UpdateNote(c *gin.Context) {
-	noteID, err := uuid.Parse(c.Param("noteId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор заметки")
+	noteID, ok := paramUUID(c, "noteId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateNoteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateNoteRequest](c)
+	if !ok {
 		return
 	}
 	note, err := h.service.GetNoteByID(c.Request.Context(), noteID)
@@ -607,20 +597,25 @@ func (h *BoardHandler) UpdateNote(c *gin.Context) {
 	}
 	updated, err := h.service.UpdateNote(c.Request.Context(), note)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить заметку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось обновить заметку")
 		return
 	}
 	writeSuccess(c, mapNoteToDTO(updated))
 }
 
 func (h *BoardHandler) DeleteNote(c *gin.Context) {
-	noteID, err := uuid.Parse(c.Param("noteId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор заметки")
+	noteID, ok := paramUUID(c, "noteId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteNote(c.Request.Context(), noteID); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить заметку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить заметку")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -629,9 +624,8 @@ func (h *BoardHandler) DeleteNote(c *gin.Context) {
 // --- Board reorder ---
 
 func (h *BoardHandler) ReorderBoards(c *gin.Context) {
-	var req dto.ReorderBoardsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.ReorderBoardsRequest](c)
+	if !ok {
 		return
 	}
 	orders := make(map[uuid.UUID]int16)
@@ -639,7 +633,10 @@ func (h *BoardHandler) ReorderBoards(c *gin.Context) {
 		orders[o.BoardID] = int16(o.Order)
 	}
 	if err := h.service.ReorderBoards(c.Request.Context(), orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок досок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок досок")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -648,22 +645,23 @@ func (h *BoardHandler) ReorderBoards(c *gin.Context) {
 // --- Custom Fields ---
 
 func (h *BoardHandler) ListCustomFields(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
 	// Get board to determine project type and priority options.
 	board, err := h.service.GetBoard(c.Request.Context(), boardID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить доску")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить доску")
 		return
 	}
 	projectType := "kanban"
 	if board.ProjectID != nil {
-		pid, _ := uuid.Parse(*board.ProjectID)
-		project, err := h.projectService.GetProject(c.Request.Context(), pid)
+		project, err := h.projectService.GetProject(c.Request.Context(), *board.ProjectID)
 		if err == nil {
 			projectType = string(project.Type)
 		}
@@ -678,7 +676,10 @@ func (h *BoardHandler) ListCustomFields(c *gin.Context) {
 	// Get custom fields from DB.
 	customFields, err := h.service.ListCustomFields(c.Request.Context(), boardID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить кастомные поля")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить кастомные поля")
 		return
 	}
 
@@ -692,78 +693,64 @@ func (h *BoardHandler) ListCustomFields(c *gin.Context) {
 }
 
 func (h *BoardHandler) CreateCustomField(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	var req dto.CreateBoardCustomFieldRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateBoardCustomFieldRequest](c)
+	if !ok {
 		return
 	}
 	field, err := h.service.CreateCustomField(c.Request.Context(), boardID, req.Name, req.FieldType, req.IsRequired, req.Options)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать кастомное поле")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать кастомное поле")
 		return
 	}
 	writeSuccess(c, mapCustomFieldToDTO(*field))
 }
 
 func (h *BoardHandler) UpdateCustomField(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	fieldID, err := uuid.Parse(c.Param("fieldId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор поля")
+	fieldID, ok := paramUUID(c, "fieldId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateBoardCustomFieldRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateBoardCustomFieldRequest](c)
+	if !ok {
 		return
 	}
 	field, err := h.service.UpdateCustomField(c.Request.Context(), boardID, fieldID, req.Name, req.IsRequired, req.Options)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrSystemField {
-			writeError(c, http.StatusBadRequest, "SYSTEM_FIELD", "Нельзя изменять системное поле")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить кастомное поле")
+		respondInternal(c, err, "Не удалось обновить кастомное поле")
 		return
 	}
 	writeSuccess(c, mapCustomFieldToDTO(*field))
 }
 
 func (h *BoardHandler) DeleteCustomField(c *gin.Context) {
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	fieldID, err := uuid.Parse(c.Param("fieldId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор поля")
+	fieldID, ok := paramUUID(c, "fieldId")
+	if !ok {
 		return
 	}
-	err = h.service.DeleteCustomField(c.Request.Context(), boardID, fieldID)
+	err := h.service.DeleteCustomField(c.Request.Context(), boardID, fieldID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrSystemField {
-			writeError(c, http.StatusBadRequest, "SYSTEM_FIELD", "Нельзя удалить системное поле")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить кастомное поле")
+		respondInternal(c, err, "Не удалось удалить кастомное поле")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -774,9 +761,8 @@ func (h *BoardHandler) DeleteCustomField(c *gin.Context) {
 func mapBoardToDTO(b *domain.Board) dto.BoardResponse {
 	var projectID *uuid.UUID
 	if b.ProjectID != nil {
-		if id, err := uuid.Parse(*b.ProjectID); err == nil {
-			projectID = &id
-		}
+		id := *b.ProjectID
+		projectID = &id
 	}
 	var sgb *string
 	if b.SwimlaneGroupBy != "" {
@@ -787,7 +773,7 @@ func mapBoardToDTO(b *domain.Board) dto.BoardResponse {
 		priorityOptions = []string{}
 	}
 	return dto.BoardResponse{
-		ID:              uuid.MustParse(b.ID),
+		ID:              b.ID,
 		ProjectID:       projectID,
 		Name:            b.Name,
 		Description:     b.Description,
@@ -806,7 +792,7 @@ func mapCustomFieldToDTO(f domain.BoardCustomField) dto.BoardCustomFieldResponse
 		opts = []string{}
 	}
 	return dto.BoardCustomFieldResponse{
-		ID:         uuid.MustParse(f.ID),
+		ID:         f.ID,
 		Name:       f.Name,
 		FieldType:  f.FieldType,
 		IsSystem:   f.IsSystem,
@@ -827,8 +813,8 @@ func mapColumnToDTO(c *domain.Column) dto.ColumnResponse {
 		wl = &v
 	}
 	return dto.ColumnResponse{
-		ID:         uuid.MustParse(c.ID),
-		BoardID:    uuid.MustParse(c.BoardID),
+		ID:         c.ID,
+		BoardID:    c.BoardID,
 		Name:       c.Name,
 		SystemType: st,
 		WipLimit:   wl,
@@ -844,8 +830,8 @@ func mapSwimlaneToDTO(s *domain.Swimlane) dto.SwimlaneResponse {
 		wl = &v
 	}
 	return dto.SwimlaneResponse{
-		ID:       uuid.MustParse(s.ID),
-		BoardID:  uuid.MustParse(s.BoardID),
+		ID:       s.ID,
+		BoardID:  s.BoardID,
 		Name:     s.Name,
 		WipLimit: wl,
 		Order:    int32(s.Order),
@@ -855,21 +841,18 @@ func mapSwimlaneToDTO(s *domain.Swimlane) dto.SwimlaneResponse {
 func mapNoteToDTO(n *domain.Note) dto.NoteResponse {
 	var colID *uuid.UUID
 	if n.ColumnID != nil {
-		if id, err := uuid.Parse(*n.ColumnID); err == nil {
-			colID = &id
-		}
+		id := *n.ColumnID
+		colID = &id
 	}
 	var swID *uuid.UUID
 	if n.SwimlaneID != nil {
-		if id, err := uuid.Parse(*n.SwimlaneID); err == nil {
-			swID = &id
-		}
+		id := *n.SwimlaneID
+		swID = &id
 	}
 	return dto.NoteResponse{
-		ID:         uuid.MustParse(n.ID),
+		ID:         n.ID,
 		ColumnID:   colID,
 		SwimlaneID: swID,
 		Content:    n.Content,
 	}
 }
-

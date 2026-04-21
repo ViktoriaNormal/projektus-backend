@@ -1,11 +1,9 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -22,16 +20,18 @@ func NewProjectParamHandler(service *services.ProjectParamService, projectServic
 }
 
 func (h *ProjectParamHandler) ListParams(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	// Generate system params with real values from the project.
 	project, err := h.projectService.GetProject(c.Request.Context(), projectID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить проект")
 		return
 	}
 	systemParams := domain.GenerateSystemProjectParams(project)
@@ -39,7 +39,10 @@ func (h *ProjectParamHandler) ListParams(c *gin.Context) {
 	// Get custom params from DB.
 	customParams, err := h.service.ListParams(c.Request.Context(), projectID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить параметры проекта")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить параметры проекта")
 		return
 	}
 
@@ -52,43 +55,36 @@ func (h *ProjectParamHandler) ListParams(c *gin.Context) {
 }
 
 func (h *ProjectParamHandler) CreateParam(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	var req dto.CreateProjectParamRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateProjectParamRequest](c)
+	if !ok {
 		return
 	}
 	param, err := h.service.CreateParam(c.Request.Context(), projectID, req.Name, req.FieldType, req.IsRequired, req.Options, req.Value)
 	if err != nil {
-		var pve *domain.ParamValidationError
-		if errors.As(err, &pve) {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", pve.Message)
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать параметр")
+		respondInternal(c, err, "Не удалось создать параметр")
 		return
 	}
 	writeSuccess(c, mapProjectParamToDTO(*param))
 }
 
 func (h *ProjectParamHandler) UpdateParam(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	paramID, err := uuid.Parse(c.Param("paramId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор параметра")
+	paramID, ok := paramUUID(c, "paramId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateProjectParamRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateProjectParamRequest](c)
+	if !ok {
 		return
 	}
 	var value *string
@@ -102,43 +98,30 @@ func (h *ProjectParamHandler) UpdateParam(c *gin.Context) {
 	}
 	param, err := h.service.UpdateParam(c.Request.Context(), projectID, paramID, req.Name, req.IsRequired, req.Options, value, clearValue)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		var pve *domain.ParamValidationError
-		if errors.As(err, &pve) {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", pve.Message)
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить параметр")
+		respondInternal(c, err, "Не удалось обновить параметр")
 		return
 	}
 	writeSuccess(c, mapProjectParamToDTO(*param))
 }
 
 func (h *ProjectParamHandler) DeleteParam(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	paramID, err := uuid.Parse(c.Param("paramId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор параметра")
+	paramID, ok := paramUUID(c, "paramId")
+	if !ok {
 		return
 	}
-	err = h.service.DeleteParam(c.Request.Context(), projectID, paramID)
+	err := h.service.DeleteParam(c.Request.Context(), projectID, paramID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrSystemParam {
-			writeError(c, http.StatusBadRequest, "SYSTEM_PARAM", "Нельзя удалить системный обязательный параметр")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить параметр")
+		respondInternal(c, err, "Не удалось удалить параметр")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -150,7 +133,7 @@ func mapProjectParamToDTO(p domain.ProjectParam) dto.ProjectParamResponse {
 		opts = []string{}
 	}
 	return dto.ProjectParamResponse{
-		ID:         uuid.MustParse(p.ID),
+		ID:         p.ID,
 		Name:       p.Name,
 		FieldType:  p.FieldType,
 		IsSystem:   p.IsSystem,

@@ -56,9 +56,10 @@ func (q *Queries) CountProjRoleDefinitions(ctx context.Context, projectID uuid.N
 }
 
 const createProjRoleDefinition = `-- name: CreateProjRoleDefinition :one
-INSERT INTO roles (project_id, scope, name, description, is_admin)
-VALUES ($1, 'project', $2, $3, $4)
-RETURNING id, project_id, name, description, is_admin
+INSERT INTO roles (project_id, scope, name, description, is_admin, sort_order)
+VALUES ($1, 'project', $2, $3, $4,
+    COALESCE((SELECT MAX(sort_order) FROM roles WHERE project_id = $1), 0) + 1)
+RETURNING id, project_id, name, description, is_admin, sort_order
 `
 
 type CreateProjRoleDefinitionParams struct {
@@ -74,8 +75,10 @@ type CreateProjRoleDefinitionRow struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
+// Новую роль добавляем в конец: sort_order = max(existing) + 1.
 func (q *Queries) CreateProjRoleDefinition(ctx context.Context, arg CreateProjRoleDefinitionParams) (CreateProjRoleDefinitionRow, error) {
 	row := q.db.QueryRowContext(ctx, createProjRoleDefinition,
 		arg.ProjectID,
@@ -90,6 +93,7 @@ func (q *Queries) CreateProjRoleDefinition(ctx context.Context, arg CreateProjRo
 		&i.Name,
 		&i.Description,
 		&i.IsAdmin,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -154,7 +158,7 @@ func (q *Queries) GetMemberProjectPermissions(ctx context.Context, arg GetMember
 }
 
 const getProjRoleDefinitionByID = `-- name: GetProjRoleDefinitionByID :one
-SELECT id, project_id, name, description, is_admin
+SELECT id, project_id, name, description, is_admin, sort_order
 FROM roles
 WHERE id = $1
 `
@@ -165,6 +169,7 @@ type GetProjRoleDefinitionByIDRow struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
 func (q *Queries) GetProjRoleDefinitionByID(ctx context.Context, id uuid.UUID) (GetProjRoleDefinitionByIDRow, error) {
@@ -176,6 +181,7 @@ func (q *Queries) GetProjRoleDefinitionByID(ctx context.Context, id uuid.UUID) (
 		&i.Name,
 		&i.Description,
 		&i.IsAdmin,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -224,9 +230,10 @@ func (q *Queries) ListProjRoleDefPermissions(ctx context.Context, roleID uuid.UU
 
 const listProjRoleDefinitions = `-- name: ListProjRoleDefinitions :many
 
-SELECT id, project_id, name, description, is_admin
+SELECT id, project_id, name, description, is_admin, sort_order
 FROM roles
 WHERE project_id = $1
+ORDER BY sort_order ASC, id ASC
 `
 
 type ListProjRoleDefinitionsRow struct {
@@ -235,9 +242,12 @@ type ListProjRoleDefinitionsRow struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
 // Roles for projects (scope='project', filtered by project_id)
+// Стабильный порядок через sort_order (см. миграцию 000035): последние UPDATE
+// не перетасовывают список.
 func (q *Queries) ListProjRoleDefinitions(ctx context.Context, projectID uuid.NullUUID) ([]ListProjRoleDefinitionsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjRoleDefinitions, projectID)
 	if err != nil {
@@ -253,6 +263,7 @@ func (q *Queries) ListProjRoleDefinitions(ctx context.Context, projectID uuid.Nu
 			&i.Name,
 			&i.Description,
 			&i.IsAdmin,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -271,7 +282,7 @@ const updateProjRoleDefinition = `-- name: UpdateProjRoleDefinition :one
 UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, project_id, name, description, is_admin
+RETURNING id, project_id, name, description, is_admin, sort_order
 `
 
 type UpdateProjRoleDefinitionParams struct {
@@ -286,6 +297,7 @@ type UpdateProjRoleDefinitionRow struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
 func (q *Queries) UpdateProjRoleDefinition(ctx context.Context, arg UpdateProjRoleDefinitionParams) (UpdateProjRoleDefinitionRow, error) {
@@ -297,6 +309,7 @@ func (q *Queries) UpdateProjRoleDefinition(ctx context.Context, arg UpdateProjRo
 		&i.Name,
 		&i.Description,
 		&i.IsAdmin,
+		&i.SortOrder,
 	)
 	return i, err
 }

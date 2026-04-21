@@ -76,7 +76,13 @@ paths:
   /auth/register:
     post:
       tags: [Auth]
-      summary: Register a new user
+      summary: Register a new user (закрытая регистрация)
+      description: |
+        Публичная регистрация по умолчанию отключена. Эндпоинт возвращает
+        `403 REGISTRATION_DISABLED` во всех окружениях, кроме тех, где явно
+        установлено `ALLOW_PUBLIC_REGISTRATION=true` (только для отладочных
+        целей). Учётные записи пользователей создаются администратором через
+        `POST /admin/users`.
       security: []
       requestBody:
         required: true
@@ -86,13 +92,19 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '200':
-          description: Registered successfully
+          description: Registered successfully (только при ALLOW_PUBLIC_REGISTRATION=true)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse_AuthResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Самостоятельная регистрация отключена (REGISTRATION_DISABLED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /auth/login:
     post:
@@ -218,6 +230,20 @@ paths:
     get:
       tags: [Users]
       summary: Search users
+      description: |
+        Возвращает страницу пользователей по фильтру `q` и полное число
+        совпадений под фильтр в поле `total` (не зависит от limit/offset).
+        Фронт использует `total` для счётчиков «Всего сотрудников: N» /
+        «Найдено: M» и пагинатора без дополнительных запросов.
+
+        Отдельный случай — `limit=0`: сервер вернёт только `total` с пустым
+        массивом `users[]`. Полезно, когда нужно узнать количество совпадений
+        без выгрузки самих данных.
+
+        **Порядок сортировки** (применяется после фильтра q, до limit/offset):
+        `ORDER BY LOWER(full_name) ASC, id ASC`. Регистро-независимо, кириллица
+        сортируется по-русски корректно; `id` — стабильный tiebreaker для
+        записей с одинаковым ФИО, чтобы пагинация не скакала.
       parameters:
         - name: q
           in: query
@@ -225,6 +251,9 @@ paths:
             type: string
         - name: limit
           in: query
+          description: |
+            Размер страницы. При `0` возвращает только `total` без users[].
+            Отрицательное значение или отсутствие параметра трактуется как 20.
           schema:
             type: integer
             default: 20
@@ -245,11 +274,18 @@ paths:
                     properties:
                       data:
                         type: object
+                        required: [users, total]
                         properties:
                           users:
                             type: array
                             items:
                               $ref: '#/components/schemas/UserResponse'
+                          total:
+                            type: integer
+                            format: int64
+                            description: |
+                              Полное количество пользователей, подходящих под фильтр `q`,
+                              без учёта limit/offset.
 
   /users/{id}:
     get:
@@ -418,6 +454,12 @@ paths:
     get:
       tags: [Notifications]
       summary: Get notification settings
+      description: |
+        Возвращает настройки уведомлений пользователя для всех известных
+        типов событий. При создании учётной записи (через `/admin/users`
+        или при первичной инициализации первого администратора) настройки
+        создаются автоматически со значениями `in_system=true`,
+        `in_email=false` — список всегда непустой.
       responses:
         '200':
           description: Notification settings
@@ -463,6 +505,11 @@ paths:
     get:
       tags: [Meetings]
       summary: List user meetings
+      description: |
+        Возвращает встречи, в которых текущий пользователь — организатор
+        или принявший приглашение участник (`participants[].status = accepted`).
+        Правило действует для всех пользователей, включая администраторов
+        системы: системные права на просмотр чужих встреч не распространяются.
       parameters:
         - name: from
           in: query
@@ -662,7 +709,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [active, archived, paused]
+            enum: [active, archived]
         - name: project_type
           in: query
           schema:
@@ -724,7 +771,15 @@ paths:
       tags: [Projects]
       summary: Update project
       description: |-
-        При смене `owner_id` новый владелец автоматически добавляется в участники проекта с admin-ролью (если ещё не является участником).
+        Каскад при смене `owner_id` (только если новое значение отличается от текущего):
+
+        * Новый ответственный гарантированно становится участником проекта (строка в `project_members`) и получает admin-роль этого проекта (роль с `is_admin = true`).
+        * Существующие роли нового участника (например «Разработчик», «Менеджер») сохраняются — admin-роль добавляется поверх, а не заменяет их.
+        * Прежний ответственный сохраняет свои роли, включая admin-роль, — смена ответственного не лишает его прав на проекте.
+        * Если `owner_id` не меняется, каскад не выполняется.
+        * Если в проекте отсутствует admin-роль (нарушен инвариант БД) — возвращается `500 PROJECT_ADMIN_ROLE_MISSING`, транзакция откатывается, `owner_id` остаётся прежним.
+
+        Вся операция (обновление полей проекта + каскад по участникам) выполняется в одной транзакции.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -740,6 +795,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse_Project'
+        '500':
+          description: В проекте отсутствует admin-роль (нарушен инвариант)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
     delete:
       tags: [Projects]
       summary: Delete project
@@ -890,6 +951,10 @@ paths:
     post:
       tags: [ProjectRoles]
       summary: Create project role
+      description: |
+        Каждый `area` в `permissions[]` валидируется против каталога
+        `catalog.AllPermissions` (scope=project). Неизвестные / чужого scope
+        коды → `400 INVALID_PERMISSION_CODE` с перечнем значений в message.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
       requestBody:
@@ -925,6 +990,10 @@ paths:
         - `name` and `description` CAN be changed.
         - `permissions` CANNOT be changed — returns `400 PROJECT_ADMIN_ROLE`
           with message "Нельзя изменять права доступа роли администратора проекта".
+
+        Каждый `area` в `permissions[]` валидируется против каталога
+        `catalog.AllPermissions` (scope=project). Неизвестные / чужого scope
+        коды → `400 INVALID_PERMISSION_CODE` с перечнем значений в message.
       parameters:
         - $ref: '#/components/parameters/ProjectIdPath'
         - $ref: '#/components/parameters/RoleIdPath'
@@ -1843,6 +1912,18 @@ paths:
     patch:
       tags: [Boards]
       summary: Update board
+      description: |
+        Синхронизация `tasks.priority` при изменении каталога приоритетов:
+
+        * Если меняется `priority_type` (например, `service_class` → `priority`)
+          — в той же транзакции выполняется
+          `UPDATE tasks SET priority = NULL WHERE board_id = :board_id`,
+          т.е. все ранее выставленные значения обнуляются, потому что они
+          принадлежат другому каталогу.
+        * Если `priority_type` не меняется, но обновляется `priority_options`
+          — обнуляются только те задачи, чьё значение `priority` больше не
+          входит в новый список опций. Если `priority_options` становится
+          пустым, очищаются все значения приоритетов задач доски.
       parameters:
         - $ref: '#/components/parameters/BoardIdPath'
       requestBody:
@@ -2331,10 +2412,19 @@ paths:
   /tasks:
     get:
       tags: [Tasks]
-      summary: My tasks
+      summary: My tasks / project tasks
       description: |-
-        Возвращает задачи текущего пользователя (по JWT-токену) — где он автор, исполнитель или наблюдатель.
-        Опциональные фильтры позволяют сузить выборку по проекту или колонке.
+        Семантика выборки зависит от наличия `project_id`:
+          * **Без `project_id`** — персональный список задач текущего пользователя
+            (по JWT): где он автор, исполнитель или наблюдатель. Правило действует
+            для всех пользователей без исключений — включая администраторов системы
+            (системные права не расширяют персональный список).
+          * **С `project_id`** — все задачи указанного проекта (без фильтрации по
+            участию пользователя) при условии, что у пользователя есть доступ к
+            проекту: он участник или обладает системным правом `system.projects.manage`
+            на уровне view/full. Если доступа нет — возвращается 403 ACCESS_DENIED.
+
+        Дополнительный `column_id` сужает выборку до одной колонки в рамках выбранного режима.
       parameters:
         - name: project_id
           in: query
@@ -2529,6 +2619,50 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/TaskDependencyResponse'
+
+  /tasks/{task_id}/dependencies/{dependency_id}:
+    delete:
+      tags: [Tasks]
+      summary: Remove dependency
+      description: >
+        Удаляет связь между задачами. Связи симметричны и хранятся парой строк
+        (прямая + обратная), поэтому удаление по `dependency_id` снимает связь
+        с обеих сторон — после этого ни GET /tasks/{task_id}/dependencies, ни
+        GET /tasks/{other_id}/dependencies не будут содержать парную запись.
+        `dependency_id` должен принадлежать задаче `task_id` (иначе 404).
+      parameters:
+        - $ref: '#/components/parameters/TaskIdPath'
+        - name: dependency_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dependency removed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+                        example: null
+        '404':
+          description: Dependency not found or does not belong to the task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 
   /tasks/{task_id}/checklists:
     get:
@@ -3130,9 +3264,31 @@ paths:
     get:
       tags: [AdminUsers]
       summary: List all users (admin)
+      description: |
+        Страница пользователей с серверными фильтрами + карточки статистики.
+
+        В ответе:
+        - `users[]` — страница под limit/offset и применённые фильтры.
+        - `total` — число записей, подходящих под фильтры (без учёта limit/offset).
+        - `active_count` / `inactive_count` — глобальные счётчики по всему множеству
+          пользователей (`is_active=true` / `is_active=false`). Не зависят от
+          фильтров `q`, `is_active`, `role_id` — чтобы карточки на UI не «плясали»
+          при вводе в поиск. `include_deleted` действует на оба счётчика.
+
+        `limit=0` — дешёвый режим «только счётчики»: возвращает пустой `users[]`
+        и значения `total`/`active_count`/`inactive_count`.
+
+        **Порядок сортировки** (применяется после фильтров q/is_active/role_id,
+        до limit/offset): `ORDER BY LOWER(full_name) ASC, id ASC`.
+        Регистро-независимо, кириллица сортируется по-русски корректно; `id` —
+        стабильный tiebreaker, чтобы запись с одинаковым ФИО не перескакивала
+        между страницами пагинации.
       parameters:
         - name: limit
           in: query
+          description: |
+            Размер страницы. `0` — только статистика без выгрузки users[].
+            Отрицательное/невалидное значение трактуется как 20.
           schema:
             type: integer
             default: 20
@@ -3141,11 +3297,28 @@ paths:
           schema:
             type: integer
             default: 0
-        - name: include_deleted
+        - name: includeDeleted
           in: query
+          description: Включать soft-deleted пользователей.
           schema:
             type: boolean
             default: false
+        - name: q
+          in: query
+          description: Поиск ILIKE по username, email, full_name, position.
+          schema:
+            type: string
+        - name: is_active
+          in: query
+          description: Фильтр по статусу (`true` — активные, `false` — деактивированные).
+          schema:
+            type: boolean
+        - name: role_id
+          in: query
+          description: Только пользователи, которым назначена указанная системная роль.
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
           description: User list
@@ -3157,9 +3330,29 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/AdminUserResponse'
+                        type: object
+                        required: [users, total, active_count, inactive_count]
+                        properties:
+                          users:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/AdminUserResponse'
+                          total:
+                            type: integer
+                            format: int64
+                            description: Число записей под применённые фильтры.
+                          active_count:
+                            type: integer
+                            format: int64
+                            description: |
+                              Глобальный счётчик активных пользователей
+                              (`is_active=true`). Не зависит от q/is_active/role_id.
+                          inactive_count:
+                            type: integer
+                            format: int64
+                            description: |
+                              Глобальный счётчик заблокированных/деактивированных
+                              (`is_active=false`). Не зависит от q/is_active/role_id.
     post:
       tags: [AdminUsers]
       summary: Create user (admin)
@@ -3695,9 +3888,6 @@ paths:
       summary: Create template custom field
       description: |
         Creates a new custom field for a template board.
-
-        `sprint` and `sprint_list` field types are only allowed for Scrum templates.
-        Kanban templates will receive `400 INVALID_FIELD_TYPE`.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/BoardIdPath'
@@ -3774,10 +3964,6 @@ paths:
       summary: Create template project param
       description: |
         Creates a new project parameter for a template.
-
-        `sprint` and `sprint_list` field types are not allowed for project
-        parameters — they are only valid for board task fields.
-        Returns `400 INVALID_FIELD_TYPE` if attempted.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
       requestBody:
@@ -3861,6 +4047,41 @@ paths:
                       data:
                         $ref: '#/components/schemas/TemplateRoleResponse'
 
+  /admin/project-templates/{template_id}/roles/reorder:
+    patch:
+      tags: [AdminTemplates]
+      summary: Reorder template roles
+      description: |
+        Батч-перестановка ролей шаблона. Принимает массив пар
+        `(role_id, order)` — все роли должны принадлежать указанному шаблону.
+        После вызова GET `/admin/project-templates/{template_id}` вернёт
+        роли в новом порядке.
+      parameters:
+        - $ref: '#/components/parameters/TemplateIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orders]
+              properties:
+                orders:
+                  type: array
+                  items:
+                    type: object
+                    required: [role_id, order]
+                    properties:
+                      role_id: { type: string, format: uuid }
+                      order:   { type: integer, format: int32 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+
   /admin/project-templates/{template_id}/roles/{role_id}:
     patch:
       tags: [AdminTemplates]
@@ -3868,6 +4089,12 @@ paths:
       description: |
         Роль с is_admin=true: можно менять только name и description.
         Попытка изменить permissions вернёт ошибку TEMPLATE_ADMIN_ROLE.
+
+        Каждый `area` в `permissions[]` валидируется против каталога
+        `catalog.AllPermissions` (scope=project). Неизвестные или чужого scope
+        коды (например, опечатка `project.project.boards`) приводят к
+        `400 INVALID_PERMISSION_CODE` со списком нарушивших значений в message
+        — чтобы клиент мог поправить точечно, а не ловить тихую потерю доступа.
       parameters:
         - $ref: '#/components/parameters/TemplateIdPath'
         - $ref: '#/components/parameters/RoleIdPath'
@@ -4291,6 +4518,17 @@ components:
           type: array
           items: { $ref: '#/components/schemas/RolePermissionRequest' }
 
+    ProjectMemberRoleRef:
+      type: object
+      description: |
+        Роль участника проекта в ответе API: id и отображаемое имя.
+        Передаётся сразу в обоих полях, чтобы фронт мог рендерить имя без
+        дополнительного запроса за списком ролей проекта.
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
     ProjectRoleResponse:
       type: object
       properties:
@@ -4298,7 +4536,7 @@ components:
         project_name: { type: string }
         roles:
           type: array
-          items: { type: string }
+          items: { $ref: '#/components/schemas/ProjectMemberRoleRef' }
         permissions:
           type: array
           items: { type: string }
@@ -4414,7 +4652,7 @@ components:
         description: { type: string }
         project_type: { type: string, enum: [scrum, kanban] }
         owner_id: { type: string, format: uuid }
-        status: { type: string, enum: [active, archived, paused] }
+        status: { type: string, enum: [active, archived] }
         sprint_duration_weeks: { type: integer, enum: [1, 2, 3, 4], description: Длительность спринта в неделях (только Scrum) }
         incomplete_tasks_action: { type: string, enum: [backlog, next_sprint], default: backlog, description: "Действие с незавершёнными задачами при завершении спринта" }
         created_at: { type: string, format: date-time }
@@ -4442,7 +4680,7 @@ components:
       properties:
         name: { type: string }
         description: { type: string, nullable: true }
-        status: { type: string, enum: [active, archived, paused] }
+        status: { type: string, enum: [active, archived] }
         owner_id: { type: string, format: uuid }
         sprint_duration_weeks: { type: integer, enum: [1, 2, 3, 4] }
         incomplete_tasks_action: { type: string, enum: [backlog, next_sprint], description: "Действие с незавершёнными задачами при завершении спринта" }
@@ -4481,8 +4719,10 @@ components:
         user_id: { type: string, format: uuid }
         roles:
           type: array
-          description: Array of role UUIDs assigned to this member
-          items: { type: string, format: uuid }
+          description: |
+            Роли участника в проекте с id и именем. Фронт использует имя
+            для отображения, id — для ссылок/правок.
+          items: { $ref: '#/components/schemas/ProjectMemberRoleRef' }
 
     AddMemberRequest:
       type: object
@@ -4504,11 +4744,18 @@ components:
     # ── Project Roles ──
     ProjectRoleDefinitionResponse:
       type: object
+      description: |
+        Описание роли внутри проекта. Упорядочены по `order` ASC;
+        админ-роли изначально сверху.
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
         is_admin: { type: boolean }
+        order:
+          type: integer
+          format: int32
+          description: Позиция роли в списке (стабильная сортировка).
         permissions:
           type: array
           items: { $ref: '#/components/schemas/ProjectRoleDefPermissionResponse' }
@@ -4559,9 +4806,18 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
         is_system: { type: boolean }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -4582,8 +4838,17 @@ components:
         - **user_list** — UUID через запятую, каждый — существующий пользователь
       properties:
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
-        is_required: { type: boolean }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -4605,7 +4870,16 @@ components:
         Если параметр обязательный, `value` не может быть null или пустой строкой.
       properties:
         name: { type: string }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -4779,9 +5053,18 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, priority, estimation] }
         is_system: { type: boolean }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -4791,8 +5074,17 @@ components:
       required: [name, field_type]
       properties:
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
-        is_required: { type: boolean }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -4801,7 +5093,16 @@ components:
       type: object
       properties:
         name: { type: string }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -5314,16 +5615,18 @@ components:
 
     AdminCreateUserRequest:
       type: object
-      required: [username, email, full_name, password]
+      required: [username, email, full_name, position, password, role_ids]
       properties:
         username: { type: string, minLength: 3, maxLength: 50 }
         email: { type: string, format: email }
         full_name: { type: string }
-        position: { type: string, nullable: true }
+        position: { type: string, minLength: 1, description: "Должность сотрудника — обязательное поле" }
         password: { type: string, minLength: 6 }
         is_active: { type: boolean }
         role_ids:
           type: array
+          minItems: 1
+          description: "Идентификаторы системных ролей — минимум одна обязательна"
           items: { type: string, format: uuid }
         on_vacation: { type: boolean }
         is_sick: { type: boolean }
@@ -5332,14 +5635,24 @@ components:
 
     AdminUpdateUserRequest:
       type: object
+      description: |
+        Все поля необязательные (частичное обновление). Однако если клиент
+        явно передаёт `position` или `role_ids`, значения должны быть
+        непустыми — сбросить должность в `null`/`""` или очистить список
+        ролей нельзя (вернётся `400 VALIDATION_ERROR`).
       properties:
         username: { type: string, minLength: 3, maxLength: 50 }
         email: { type: string, format: email }
         full_name: { type: string }
-        position: { type: string, nullable: true }
+        position:
+          type: string
+          minLength: 1
+          description: "Должность сотрудника. Если передаётся — должна быть непустой."
         is_active: { type: boolean }
         role_ids:
           type: array
+          minItems: 1
+          description: "Идентификаторы системных ролей. Если передаются — минимум одна."
           items: { type: string, format: uuid }
         on_vacation: { type: boolean }
         is_sick: { type: boolean }
@@ -5445,9 +5758,18 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list, priority, estimation] }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, priority, estimation] }
         is_system: { type: boolean }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -5457,20 +5779,41 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
         is_system: { type: boolean }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
 
     TemplateRoleResponse:
       type: object
+      description: |
+        Роль в шаблоне проекта. В массиве ролей шаблона (`roles` на
+        ProjectTemplateResponse) упорядочены по `order` ASC; `id` выступает
+        вторичным ключом. Админ-роли (`is_admin=true`) в стартовой раскладке
+        идут первыми — но после drag-and-drop `order` может быть любым,
+        фронт доверяет присланному порядку.
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
         is_admin: { type: boolean }
+        order:
+          type: integer
+          format: int32
+          description: |
+            Позиция роли в списке. Меняется через
+            PATCH `/admin/project-templates/{t}/roles/reorder`.
         permissions:
           type: array
           items: { $ref: '#/components/schemas/TemplateRolePermissionResponse' }
@@ -5519,7 +5862,19 @@ components:
         priority_options:
           type: array
           items: { type: string }
-          description: Кастомные опции приоритизации
+          description: |
+            Кастомные опции системного поля «Приоритизация» (например, свой набор
+            названий приоритетов для `priority_type=priority` или классов
+            обслуживания для `priority_type=service_class`). Если поле передано —
+            массив целиком заменяет текущие опции на доске (пустой `[]`
+            интерпретируется как «сбросить»). Если передано *вместе* со сменой
+            `priority_type` — явно переданные опции в приоритете над дефолтами
+            нового типа; если не передано, но `priority_type` поменялся —
+            бэкенд подставляет дефолты нового типа автоматически.
+
+            Те же опции видны через системное поле «Приоритизация» в
+            `TemplateBoardResponse.fields[]` (поле синтезируется из
+            `priority_options` доски, оба представления синхронизированы).
 
     ReorderRequest:
       type: object
@@ -5570,17 +5925,47 @@ components:
       required: [name, field_type]
       properties:
         name: { type: string }
-        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list, sprint, sprint_list] }
-        is_required: { type: boolean }
+        field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
 
     UpdateTemplateBoardCustomFieldRequest:
       type: object
+      description: |
+        PATCH обычного (не-системного) кастомного поля доски.
+
+        Системные поля «Приоритизация» и «Оценка трудозатрат» (с
+        детерминированными UUID из `domain.SystemBoardFieldIDs`) обрабатываются
+        отдельно: PATCH на них принимается и отражается на соответствующих
+        полях доски (`priority_options` / `estimation_unit`).
+
+        Рекомендуемый путь обновления опций приоритизации —
+        PATCH `/admin/project-templates/{id}/boards/{board_id}` с
+        `priority_options`. PATCH на системное поле поддерживается для
+        обратной совместимости и возвращает актуальное состояние.
       properties:
         name: { type: string }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -5591,7 +5976,16 @@ components:
       properties:
         name: { type: string }
         field_type: { type: string, enum: [text, number, datetime, select, multiselect, checkbox, user, user_list] }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }
@@ -5600,7 +5994,16 @@ components:
       type: object
       properties:
         name: { type: string }
-        is_required: { type: boolean }
+        is_required:
+          type: boolean
+          default: false
+          description: >
+            Через этот эндпоинт создаются/редактируются только кастомные
+            параметры. Обязательными (`is_required: true`) могут быть только
+            системные параметры — они генерируются сервером и в этом запросе
+            не адресуются. Передача `true` для кастомного параметра приводит
+            к `400 REQUIRED_CUSTOM_FIELD_NOT_ALLOWED`. Рекомендуется либо
+            опускать поле, либо передавать `false`.
         options:
           type: array
           items: { type: string }

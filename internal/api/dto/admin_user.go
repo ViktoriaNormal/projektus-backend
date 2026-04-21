@@ -7,10 +7,10 @@ type AdminCreateUserRequest struct {
 	Username                  string      `json:"username" binding:"required,min=3,max=50"`
 	Email                     string      `json:"email" binding:"required,email"`
 	FullName                  string      `json:"full_name" binding:"required"`
-	Position                  *string     `json:"position,omitempty"`
+	Position                  string      `json:"position" binding:"required"`
 	Password                  string      `json:"password" binding:"required,min=6"`
 	IsActive                  *bool       `json:"is_active,omitempty"`
-	RoleIDs                   []uuid.UUID `json:"role_ids"`
+	RoleIDs                   []uuid.UUID `json:"role_ids" binding:"required,min=1"`
 	OnVacation                *bool       `json:"on_vacation,omitempty"`
 	IsSick                    *bool       `json:"is_sick,omitempty"`
 	AlternativeContactChannel *string     `json:"alt_contact_channel,omitempty"`
@@ -24,7 +24,7 @@ type AdminUpdateUserRequest struct {
 	FullName                  *string               `json:"full_name,omitempty"`
 	Position                  NullableField[string] `json:"position"`
 	IsActive                  *bool                 `json:"is_active,omitempty"`
-	RoleIDs                   *[]uuid.UUID          `json:"role_ids,omitempty"`
+	RoleIDs                   *[]uuid.UUID          `json:"role_ids,omitempty" binding:"omitempty,min=1"`
 	OnVacation                *bool                 `json:"on_vacation,omitempty"`
 	IsSick                    *bool                 `json:"is_sick,omitempty"`
 	AlternativeContactChannel NullableField[string] `json:"alt_contact_channel"`

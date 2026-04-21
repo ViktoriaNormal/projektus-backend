@@ -28,16 +28,10 @@ func (s *PermissionService) HasPermission(ctx context.Context, userID uuid.UUID,
 // Logic: system.projects.manage = full → all areas full; view → all view; none → project role.
 func (s *PermissionService) GetMyPermissions(ctx context.Context, userID, projectID uuid.UUID) ([]domain.ProjectRolePermission, error) {
 	// Check system-level access for projects.
-	sysAccess, err := s.queries.GetSystemPermissionAccess(ctx, db.GetSystemPermissionAccessParams{
-		UserID:         userID,
-		PermissionCode: repositories.SystemPermissionManageProjects,
-	})
-	if err != nil && err != sql.ErrNoRows {
-		return nil, err
-	}
+	sysAccess := s.GetProjectManageAccess(ctx, userID)
 
 	// system.projects.manage = full → полный доступ ко всем areas.
-	if err == nil && sysAccess.String == "full" {
+	if sysAccess == "full" {
 		areas := repositories.ProjectPermissionAreas
 		result := make([]domain.ProjectRolePermission, len(areas))
 		for i, a := range areas {
@@ -49,7 +43,7 @@ func (s *PermissionService) GetMyPermissions(ctx context.Context, userID, projec
 	// system.projects.manage = view → минимум "view" для всех areas,
 	// но проектная роль может повысить до "full".
 	sysMinAccess := ""
-	if err == nil && sysAccess.String == "view" {
+	if sysAccess == "view" {
 		sysMinAccess = "view"
 	}
 
@@ -85,6 +79,27 @@ func (s *PermissionService) GetMyPermissions(ctx context.Context, userID, projec
 		result[i] = domain.ProjectRolePermission{Area: a.Area, Access: access}
 	}
 	return result, nil
+}
+
+// UserCanAccessProject сообщает, вправе ли пользователь видеть данные проекта.
+// Доступ открыт, если пользователь — участник проекта либо обладает системным
+// правом system.projects.manage на уровне view/full. Используется для эндпоинтов
+// выборки задач/досок/аналитики, где контент ограничен рамками одного проекта.
+func (s *PermissionService) UserCanAccessProject(ctx context.Context, userID, projectID uuid.UUID) (bool, error) {
+	if access := s.GetProjectManageAccess(ctx, userID); access == "full" || access == "view" {
+		return true, nil
+	}
+	_, err := s.queries.GetMemberByProjectAndUser(ctx, db.GetMemberByProjectAndUserParams{
+		ProjectID: projectID,
+		UserID:    userID,
+	})
+	if err == nil {
+		return true, nil
+	}
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return false, err
 }
 
 // GetProjectManageAccess returns the user's system-level access for system.projects.manage.

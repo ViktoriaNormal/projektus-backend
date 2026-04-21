@@ -17,7 +17,7 @@ const createProject = `-- name: CreateProject :one
 
 INSERT INTO projects (key, name, description, project_type, owner_id, status, sprint_duration_weeks, incomplete_tasks_action)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
+RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action, deleted_at
 `
 
 type CreateProjectParams struct {
@@ -55,24 +55,16 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.CreatedAt,
 		&i.SprintDurationWeeks,
 		&i.IncompleteTasksAction,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const deleteProject = `-- name: DeleteProject :exec
-DELETE FROM projects
-WHERE id = $1
-`
-
-func (q *Queries) DeleteProject(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.ExecContext(ctx, deleteProject, id)
-	return err
-}
-
 const getProjectByID = `-- name: GetProjectByID :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
+SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action, deleted_at
 FROM projects
 WHERE id = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, error) {
@@ -89,14 +81,16 @@ func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, er
 		&i.CreatedAt,
 		&i.SprintDurationWeeks,
 		&i.IncompleteTasksAction,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getProjectByKey = `-- name: GetProjectByKey :one
-SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
+SELECT id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action, deleted_at
 FROM projects
 WHERE key = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) GetProjectByKey(ctx context.Context, key string) (Project, error) {
@@ -113,6 +107,7 @@ func (q *Queries) GetProjectByKey(ctx context.Context, key string) (Project, err
 		&i.CreatedAt,
 		&i.SprintDurationWeeks,
 		&i.IncompleteTasksAction,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -122,7 +117,8 @@ SELECT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, p.status,
        u.full_name AS owner_full_name, u.avatar_url AS owner_avatar_url, u.email AS owner_email
 FROM projects p
 JOIN users u ON u.id = p.owner_id
-WHERE ($1::text IS NULL OR p.status = $1)
+WHERE p.deleted_at IS NULL
+  AND ($1::text IS NULL OR p.status = $1)
   AND ($2::text IS NULL OR p.project_type = $2)
   AND ($3::text IS NULL OR $3::text = '' OR (
        p.name ILIKE '%' || $3 || '%'
@@ -193,7 +189,8 @@ SELECT DISTINCT p.id, p.key, p.name, p.description, p.project_type, p.owner_id, 
 FROM projects p
 JOIN users u ON u.id = p.owner_id
 LEFT JOIN members m ON m.project_id = p.id AND m.user_id = $1
-WHERE (p.owner_id = $1 OR m.user_id IS NOT NULL)
+WHERE p.deleted_at IS NULL
+  AND (p.owner_id = $1 OR m.user_id IS NOT NULL)
   AND ($2::text IS NULL OR p.status = $2)
   AND ($3::text IS NULL OR p.project_type = $3)
   AND ($4::text IS NULL OR $4::text = '' OR (
@@ -265,6 +262,18 @@ func (q *Queries) ListUserProjects(ctx context.Context, arg ListUserProjectsPara
 	return items, nil
 }
 
+const softDeleteProject = `-- name: SoftDeleteProject :exec
+UPDATE projects
+SET deleted_at = NOW()
+WHERE id = $1
+  AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteProject(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, softDeleteProject, id)
+	return err
+}
+
 const updateProject = `-- name: UpdateProject :one
 UPDATE projects
 SET name = COALESCE($1, name),
@@ -274,7 +283,8 @@ SET name = COALESCE($1, name),
     sprint_duration_weeks = COALESCE($5, sprint_duration_weeks),
     incomplete_tasks_action = COALESCE($6, incomplete_tasks_action)
 WHERE id = $7
-RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action
+  AND deleted_at IS NULL
+RETURNING id, key, name, description, project_type, owner_id, status, created_at, sprint_duration_weeks, incomplete_tasks_action, deleted_at
 `
 
 type UpdateProjectParams struct {
@@ -309,6 +319,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.CreatedAt,
 		&i.SprintDurationWeeks,
 		&i.IncompleteTasksAction,
+		&i.DeletedAt,
 	)
 	return i, err
 }

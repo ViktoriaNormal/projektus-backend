@@ -18,7 +18,6 @@ var SystemBoardFieldIDs = map[string]uuid.UUID{
 	"deadline":    uuid.MustParse("00000000-0000-0000-0001-000000000007"),
 	"priority":    uuid.MustParse("00000000-0000-0000-0001-000000000008"),
 	"estimation":  uuid.MustParse("00000000-0000-0000-0001-000000000009"),
-	"sprint":      uuid.MustParse("00000000-0000-0000-0001-000000000010"),
 	"created_at":  uuid.MustParse("00000000-0000-0000-0001-000000000011"),
 }
 
@@ -66,7 +65,7 @@ func GenerateSystemBoardFields(projectType, priorityType, estimationUnit string,
 			}
 		}
 		result = append(result, BoardCustomField{
-			ID:         id.String(),
+			ID:         id,
 			Name:       def.Name,
 			FieldType:  def.FieldType,
 			IsSystem:   true,
@@ -100,8 +99,8 @@ func GenerateSystemProjectParams(project *Project) []ProjectParam {
 	for _, def := range DefaultProjectParams {
 		id := SystemProjectParamIDs[def.Key]
 		result = append(result, ProjectParam{
-			ID:         id.String(),
-			ProjectID:  project.ID.String(),
+			ID:         id,
+			ProjectID:  project.ID,
 			Name:       def.Name,
 			FieldType:  def.FieldType,
 			IsSystem:   true,
@@ -119,7 +118,7 @@ func GenerateSystemProjectParamsForTemplate() []ProjectParam {
 	for _, def := range DefaultProjectParams {
 		id := SystemProjectParamIDs[def.Key]
 		result = append(result, ProjectParam{
-			ID:         id.String(),
+			ID:         id,
 			Name:       def.Name,
 			FieldType:  def.FieldType,
 			IsSystem:   true,

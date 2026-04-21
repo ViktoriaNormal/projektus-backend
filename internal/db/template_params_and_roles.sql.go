@@ -68,9 +68,10 @@ func (q *Queries) CreateTemplateProjectParam(ctx context.Context, arg CreateTemp
 }
 
 const createTemplateRole = `-- name: CreateTemplateRole :one
-INSERT INTO roles (template_id, scope, name, description)
-VALUES ($1, 'template', $2, $3)
-RETURNING id, template_id, name, is_admin
+INSERT INTO roles (template_id, scope, name, description, sort_order)
+VALUES ($1, 'template', $2, $3,
+    COALESCE((SELECT MAX(sort_order) FROM roles WHERE template_id = $1), 0) + 1)
+RETURNING id, template_id, name, description, is_admin, sort_order
 `
 
 type CreateTemplateRoleParams struct {
@@ -80,12 +81,15 @@ type CreateTemplateRoleParams struct {
 }
 
 type CreateTemplateRoleRow struct {
-	ID         uuid.UUID     `json:"id"`
-	TemplateID uuid.NullUUID `json:"template_id"`
-	Name       string        `json:"name"`
-	IsAdmin    bool          `json:"is_admin"`
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
+// Новую роль добавляем в конец: sort_order = max(existing) + 1.
 func (q *Queries) CreateTemplateRole(ctx context.Context, arg CreateTemplateRoleParams) (CreateTemplateRoleRow, error) {
 	row := q.db.QueryRowContext(ctx, createTemplateRole, arg.TemplateID, arg.Name, arg.Description)
 	var i CreateTemplateRoleRow
@@ -93,7 +97,9 @@ func (q *Queries) CreateTemplateRole(ctx context.Context, arg CreateTemplateRole
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
+		&i.Description,
 		&i.IsAdmin,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -155,16 +161,18 @@ func (q *Queries) GetTemplateProjectParamByID(ctx context.Context, id uuid.UUID)
 }
 
 const getTemplateRoleByID = `-- name: GetTemplateRoleByID :one
-SELECT id, template_id, name, is_admin
+SELECT id, template_id, name, description, is_admin, sort_order
 FROM roles
 WHERE id = $1
 `
 
 type GetTemplateRoleByIDRow struct {
-	ID         uuid.UUID     `json:"id"`
-	TemplateID uuid.NullUUID `json:"template_id"`
-	Name       string        `json:"name"`
-	IsAdmin    bool          `json:"is_admin"`
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
 func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTemplateRoleByIDRow, error) {
@@ -174,7 +182,9 @@ func (q *Queries) GetTemplateRoleByID(ctx context.Context, id uuid.UUID) (GetTem
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
+		&i.Description,
 		&i.IsAdmin,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -259,19 +269,23 @@ func (q *Queries) ListTemplateRolePermissions(ctx context.Context, roleID uuid.U
 
 const listTemplateRoles = `-- name: ListTemplateRoles :many
 
-SELECT id, template_id, name, is_admin
+SELECT id, template_id, name, description, is_admin, sort_order
 FROM roles
 WHERE template_id = $1
+ORDER BY sort_order ASC, id ASC
 `
 
 type ListTemplateRolesRow struct {
-	ID         uuid.UUID     `json:"id"`
-	TemplateID uuid.NullUUID `json:"template_id"`
-	Name       string        `json:"name"`
-	IsAdmin    bool          `json:"is_admin"`
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
-// Template roles (in unified roles table, scope='template')
+// Template roles (in unified roles table, scope='template').
+// Порядок стабильный: ORDER BY sort_order, id — не зависит от последнего UPDATE.
 func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.NullUUID) ([]ListTemplateRolesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTemplateRoles, templateID)
 	if err != nil {
@@ -285,7 +299,9 @@ func (q *Queries) ListTemplateRoles(ctx context.Context, templateID uuid.NullUUI
 			&i.ID,
 			&i.TemplateID,
 			&i.Name,
+			&i.Description,
 			&i.IsAdmin,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -346,7 +362,7 @@ const updateTemplateRole = `-- name: UpdateTemplateRole :one
 UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, template_id, name, is_admin
+RETURNING id, template_id, name, description, is_admin, sort_order
 `
 
 type UpdateTemplateRoleParams struct {
@@ -356,12 +372,15 @@ type UpdateTemplateRoleParams struct {
 }
 
 type UpdateTemplateRoleRow struct {
-	ID         uuid.UUID     `json:"id"`
-	TemplateID uuid.NullUUID `json:"template_id"`
-	Name       string        `json:"name"`
-	IsAdmin    bool          `json:"is_admin"`
+	ID          uuid.UUID     `json:"id"`
+	TemplateID  uuid.NullUUID `json:"template_id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
+// UPDATE не меняет sort_order — позиция в списке сохраняется.
 func (q *Queries) UpdateTemplateRole(ctx context.Context, arg UpdateTemplateRoleParams) (UpdateTemplateRoleRow, error) {
 	row := q.db.QueryRowContext(ctx, updateTemplateRole, arg.ID, arg.Name, arg.Description)
 	var i UpdateTemplateRoleRow
@@ -369,9 +388,26 @@ func (q *Queries) UpdateTemplateRole(ctx context.Context, arg UpdateTemplateRole
 		&i.ID,
 		&i.TemplateID,
 		&i.Name,
+		&i.Description,
 		&i.IsAdmin,
+		&i.SortOrder,
 	)
 	return i, err
+}
+
+const updateTemplateRoleOrder = `-- name: UpdateTemplateRoleOrder :exec
+UPDATE roles SET sort_order = $2 WHERE id = $1
+`
+
+type UpdateTemplateRoleOrderParams struct {
+	ID        uuid.UUID `json:"id"`
+	SortOrder int32     `json:"sort_order"`
+}
+
+// Частичное обновление только позиции. Используется эндпоинтом reorder.
+func (q *Queries) UpdateTemplateRoleOrder(ctx context.Context, arg UpdateTemplateRoleOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateTemplateRoleOrder, arg.ID, arg.SortOrder)
+	return err
 }
 
 const upsertTemplateRolePermission = `-- name: UpsertTemplateRolePermission :exec

@@ -138,7 +138,7 @@ type BoardCustomFieldResponse struct {
 
 type CreateBoardCustomFieldRequest struct {
 	Name       string   `json:"name" binding:"required"`
-	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list sprint sprint_list"`
+	FieldType  string   `json:"field_type" binding:"required,oneof=text number datetime select multiselect checkbox user user_list"`
 	IsRequired bool     `json:"is_required"`
 	Options    []string `json:"options"`
 }

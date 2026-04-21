@@ -50,8 +50,7 @@ func (s *TagService) AddTagToTask(ctx context.Context, boardID, taskID uuid.UUID
 		}
 	}
 
-	tagID, _ := uuid.Parse(tag.ID)
-	if err := s.repo.AddTagToTask(ctx, taskID, tagID); err != nil {
+	if err := s.repo.AddTagToTask(ctx, taskID, tag.ID); err != nil {
 		return nil, err
 	}
 
@@ -74,6 +73,30 @@ func (s *TagService) RemoveTagFromTask(ctx context.Context, taskID, tagID uuid.U
 	}
 
 	return nil
+}
+
+// EnrichTasksWithTags делает bulk-load тегов для переданного набора задач
+// (одним запросом) и проставляет их в поле Tags каждой задачи. Единая
+// реализация — используется и TaskService, и SprintService вместо локальных
+// копий. При пустом списке задач возвращает его без запроса в БД.
+func (s *TagService) EnrichTasksWithTags(ctx context.Context, tasks []domain.Task) ([]domain.Task, error) {
+	if len(tasks) == 0 {
+		return tasks, nil
+	}
+	ids := make([]uuid.UUID, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+	tagMap, err := s.repo.ListTagsByTaskIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range tasks {
+		if tags, ok := tagMap[tasks[i].ID]; ok {
+			tasks[i].Tags = tags
+		}
+	}
+	return tasks, nil
 }
 
 // SetTaskTags заменяет все теги задачи на новый набор.

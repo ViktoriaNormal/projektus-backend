@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
 	"projektus-backend/pkg/utils"
@@ -17,7 +19,10 @@ type UserService interface {
 	GetProfile(ctx context.Context, id string) (*domain.User, error)
 	UpdateProfile(ctx context.Context, currentUserID, targetUserID, fullName, email string, position *string, onVacation bool, isSick bool, altContactChannel *string, altContactInfo *string, isAdmin bool) (*domain.User, error)
 	UpdateAvatar(ctx context.Context, currentUserID, targetUserID string, fileName string, data []byte, isAdmin bool) (*domain.User, error)
-	SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error)
+	// SearchUsers возвращает страницу пользователей по фильтру query и полное
+	// число записей, подходящих под фильтр (для пагинатора на фронте).
+	// Если limit == 0 — страница пустая, возвращаем только total.
+	SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, int64, error)
 }
 
 type userService struct {
@@ -29,17 +34,25 @@ func NewUserService(users repositories.UserRepository) UserService {
 }
 
 func (s *userService) GetProfile(ctx context.Context, id string) (*domain.User, error) {
-	return s.users.GetUserByID(ctx, id)
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.users.GetUserByID(ctx, uid)
 }
 
 func (s *userService) UpdateProfile(ctx context.Context, currentUserID, targetUserID, fullName, email string, position *string, onVacation bool, isSick bool, altContactChannel *string, altContactInfo *string, isAdmin bool) (*domain.User, error) {
 	if currentUserID != targetUserID && !isAdmin {
 		return nil, domain.ErrAccessDenied
 	}
-	if err := s.users.UpdateProfile(ctx, targetUserID, fullName, email, position, onVacation, isSick, altContactChannel, altContactInfo); err != nil {
+	tid, err := uuid.Parse(targetUserID)
+	if err != nil {
+		return nil, domain.ErrInvalidInput
+	}
+	if err := s.users.UpdateProfile(ctx, tid, fullName, email, position, onVacation, isSick, altContactChannel, altContactInfo); err != nil {
 		return nil, err
 	}
-	return s.users.GetUserByID(ctx, targetUserID)
+	return s.users.GetUserByID(ctx, tid)
 }
 
 var allowedAvatarExtensions = map[string]bool{
@@ -59,8 +72,13 @@ func (s *userService) UpdateAvatar(ctx context.Context, currentUserID, targetUse
 		return nil, domain.ErrInvalidInput
 	}
 
+	tid, err := uuid.Parse(targetUserID)
+	if err != nil {
+		return nil, domain.ErrInvalidInput
+	}
+
 	// Удалить старый аватар с диска
-	user, err := s.users.GetUserByID(ctx, targetUserID)
+	user, err := s.users.GetUserByID(ctx, tid)
 	if err != nil {
 		return nil, err
 	}
@@ -75,12 +93,25 @@ func (s *userService) UpdateAvatar(ctx context.Context, currentUserID, targetUse
 	if err := utils.SaveFile(relPath, data); err != nil {
 		return nil, err
 	}
-	if err := s.users.UpdateAvatar(ctx, targetUserID, "/"+relPath); err != nil {
+	if err := s.users.UpdateAvatar(ctx, tid, "/"+relPath); err != nil {
 		return nil, err
 	}
-	return s.users.GetUserByID(ctx, targetUserID)
+	return s.users.GetUserByID(ctx, tid)
 }
 
-func (s *userService) SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, error) {
-	return s.users.SearchUsers(ctx, query, limit, offset)
+func (s *userService) SearchUsers(ctx context.Context, query string, limit, offset int32) ([]domain.User, int64, error) {
+	total, err := s.users.CountSearchUsers(ctx, query)
+	if err != nil {
+		return nil, 0, err
+	}
+	if limit == 0 {
+		// Запрос только счётчика — страница не нужна (например, для пагинатора,
+		// где отдельно загружается каждая видимая страница).
+		return nil, total, nil
+	}
+	users, err := s.users.SearchUsers(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	return users, total, nil
 }

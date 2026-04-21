@@ -1,7 +1,7 @@
 -- Member roles
 
 -- name: ListMemberRoles :many
-SELECT r.id::text
+SELECT r.id, r.name
 FROM member_roles mr
 JOIN roles r ON r.id = mr.role_id
 WHERE mr.member_id = $1;

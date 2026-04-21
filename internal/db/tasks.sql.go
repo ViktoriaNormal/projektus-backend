@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/sqlc-dev/pqtype"
 )
 
@@ -69,6 +70,40 @@ UPDATE tasks SET swimlane_id = NULL WHERE swimlane_id = $1
 
 func (q *Queries) ClearSwimlaneFromTasks(ctx context.Context, swimlaneID uuid.NullUUID) error {
 	_, err := q.db.ExecContext(ctx, clearSwimlaneFromTasks, swimlaneID)
+	return err
+}
+
+const clearTaskPriorityByBoard = `-- name: ClearTaskPriorityByBoard :exec
+UPDATE tasks
+SET priority = NULL
+WHERE board_id = $1 AND priority IS NOT NULL
+`
+
+// Используется, когда у доски сменили priority_type или целиком очистили
+// priority_options — все ранее выставленные приоритеты становятся
+// несовместимыми с новым каталогом и сбрасываются в NULL.
+func (q *Queries) ClearTaskPriorityByBoard(ctx context.Context, boardID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, clearTaskPriorityByBoard, boardID)
+	return err
+}
+
+const clearTaskPriorityByBoardNotIn = `-- name: ClearTaskPriorityByBoardNotIn :exec
+UPDATE tasks
+SET priority = NULL
+WHERE board_id = $1
+  AND priority IS NOT NULL
+  AND priority <> ALL($2::text[])
+`
+
+type ClearTaskPriorityByBoardNotInParams struct {
+	BoardID uuid.UUID `json:"board_id"`
+	Column2 []string  `json:"column_2"`
+}
+
+// Используется, когда priority_options изменились без смены priority_type:
+// обнуляем только те значения, которых больше нет в новом списке опций.
+func (q *Queries) ClearTaskPriorityByBoardNotIn(ctx context.Context, arg ClearTaskPriorityByBoardNotInParams) error {
+	_, err := q.db.ExecContext(ctx, clearTaskPriorityByBoardNotIn, arg.BoardID, pq.Array(arg.Column2))
 	return err
 }
 
@@ -476,6 +511,16 @@ func (q *Queries) ListTaskDependencies(ctx context.Context, taskID uuid.UUID) ([
 	return items, nil
 }
 
+const removeAllTaskDependencies = `-- name: RemoveAllTaskDependencies :exec
+DELETE FROM task_dependencies
+WHERE task_id = $1 OR depends_on_task_id = $1
+`
+
+func (q *Queries) RemoveAllTaskDependencies(ctx context.Context, taskID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, removeAllTaskDependencies, taskID)
+	return err
+}
+
 const removeInverseDependency = `-- name: RemoveInverseDependency :exec
 DELETE FROM task_dependencies
 WHERE task_id = $1 AND depends_on_task_id = $2
@@ -558,6 +603,95 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Sea
 	items := []SearchTasksRow{}
 	for rows.Next() {
 		var i SearchTasksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.ProjectID,
+			&i.OwnerID,
+			&i.ExecutorID,
+			&i.Name,
+			&i.Description,
+			&i.Deadline,
+			&i.ColumnID,
+			&i.SwimlaneID,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.Priority,
+			&i.Estimation,
+			&i.BoardID,
+			&i.ColumnName,
+			&i.ColumnSystemType,
+			&i.OwnerUserID,
+			&i.ExecutorUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchTasksAll = `-- name: SearchTasksAll :many
+SELECT t.id, t.key, t.project_id, t.owner_id, t.executor_id, t.name, t.description,
+       t.deadline, t.column_id, t.swimlane_id, t.deleted_at, t.created_at,
+       t.priority, t.estimation, t.board_id,
+       c.name AS column_name, c.system_type AS column_system_type,
+       m_owner.user_id AS owner_user_id,
+       m_exec.user_id AS executor_user_id
+FROM tasks t
+LEFT JOIN columns c ON t.column_id = c.id
+JOIN members m_owner ON m_owner.id = t.owner_id
+LEFT JOIN members m_exec ON m_exec.id = t.executor_id
+WHERE ($1::uuid IS NULL OR t.project_id = $1)
+  AND ($2::uuid IS NULL OR t.column_id = $2)
+  AND t.deleted_at IS NULL
+ORDER BY t.created_at DESC
+`
+
+type SearchTasksAllParams struct {
+	ProjectID uuid.NullUUID `json:"project_id"`
+	ColumnID  uuid.NullUUID `json:"column_id"`
+}
+
+type SearchTasksAllRow struct {
+	ID               uuid.UUID      `json:"id"`
+	Key              string         `json:"key"`
+	ProjectID        uuid.UUID      `json:"project_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	ExecutorID       uuid.NullUUID  `json:"executor_id"`
+	Name             string         `json:"name"`
+	Description      sql.NullString `json:"description"`
+	Deadline         sql.NullTime   `json:"deadline"`
+	ColumnID         uuid.NullUUID  `json:"column_id"`
+	SwimlaneID       uuid.NullUUID  `json:"swimlane_id"`
+	DeletedAt        sql.NullTime   `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	Priority         sql.NullString `json:"priority"`
+	Estimation       sql.NullString `json:"estimation"`
+	BoardID          uuid.UUID      `json:"board_id"`
+	ColumnName       sql.NullString `json:"column_name"`
+	ColumnSystemType sql.NullString `json:"column_system_type"`
+	OwnerUserID      uuid.UUID      `json:"owner_user_id"`
+	ExecutorUserID   uuid.NullUUID  `json:"executor_user_id"`
+}
+
+// Без фильтра по участию пользователя. Используется для админов с
+// system.projects.manage in ('full','view').
+func (q *Queries) SearchTasksAll(ctx context.Context, arg SearchTasksAllParams) ([]SearchTasksAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchTasksAll, arg.ProjectID, arg.ColumnID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchTasksAllRow{}
+	for rows.Next() {
+		var i SearchTasksAllRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Key,

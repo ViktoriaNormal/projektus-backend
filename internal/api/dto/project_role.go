@@ -3,11 +3,14 @@ package dto
 import "github.com/google/uuid"
 
 type ProjectRoleDefinitionResponse struct {
-	ID             uuid.UUID                          `json:"id"`
-	Name           string                             `json:"name"`
-	Description    string                             `json:"description"`
-	IsAdmin        bool                               `json:"is_admin"`
-	Permissions    []ProjectRoleDefPermissionResponse  `json:"permissions"`
+	ID          uuid.UUID                          `json:"id"`
+	Name        string                             `json:"name"`
+	Description string                             `json:"description"`
+	IsAdmin     bool                               `json:"is_admin"`
+	// Order — стабильная позиция роли в списке (ASC). Админские роли
+	// изначально сверху (sort_order=1), остальные идут следом.
+	Order       int32                              `json:"order"`
+	Permissions []ProjectRoleDefPermissionResponse `json:"permissions"`
 }
 
 type ProjectRoleDefPermissionResponse struct {

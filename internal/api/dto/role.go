@@ -62,8 +62,8 @@ type AssignRolesRequest struct {
 }
 
 type ProjectRoleResponse struct {
-	ProjectID   uuid.UUID `json:"project_id"`
-	ProjectName string    `json:"project_name"`
-	Roles       []string  `json:"roles"`
-	Permissions []string  `json:"permissions"`
+	ProjectID   uuid.UUID              `json:"project_id"`
+	ProjectName string                 `json:"project_name"`
+	Roles       []ProjectMemberRoleRef `json:"roles"`
+	Permissions []string               `json:"permissions"`
 }

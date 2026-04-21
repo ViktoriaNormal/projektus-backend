@@ -189,6 +189,7 @@ type Project struct {
 	CreatedAt             time.Time      `json:"created_at"`
 	SprintDurationWeeks   sql.NullInt32  `json:"sprint_duration_weeks"`
 	IncompleteTasksAction string         `json:"incomplete_tasks_action"`
+	DeletedAt             sql.NullTime   `json:"deleted_at"`
 }
 
 type ProjectParam struct {
@@ -210,6 +211,7 @@ type Role struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	IsAdmin     bool          `json:"is_admin"`
+	SortOrder   int32         `json:"sort_order"`
 }
 
 type RolePermission struct {

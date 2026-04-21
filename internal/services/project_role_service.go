@@ -5,10 +5,30 @@ import (
 
 	"github.com/google/uuid"
 
+	"projektus-backend/internal/catalog"
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
 )
+
+// validateProjectRolePermissions — то же, что и для template-ролей: проверяет,
+// что каждый Area — валидный project-scope код из catalog.AllPermissions.
+// Защищает от опечаток типа «project.project.boards».
+func validateProjectRolePermissions(permissions []domain.ProjectRolePermission) error {
+	if len(permissions) == 0 {
+		return nil
+	}
+	var bad []string
+	for _, p := range permissions {
+		if !catalog.IsValidProjectPermission(p.Area) {
+			bad = append(bad, p.Area)
+		}
+	}
+	if len(bad) > 0 {
+		return &domain.InvalidPermissionCodeError{Codes: bad}
+	}
+	return nil
+}
 
 type ProjectRoleService struct {
 	repo repositories.ProjectRoleRepository
@@ -24,7 +44,7 @@ func (s *ProjectRoleService) ListRoles(ctx context.Context, projectID uuid.UUID)
 		return nil, err
 	}
 	for i := range roles {
-		perms, err := s.repo.ListPermissions(ctx, uuid.MustParse(roles[i].ID))
+		perms, err := s.repo.ListPermissions(ctx, roles[i].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -37,6 +57,9 @@ func (s *ProjectRoleService) ListRoles(ctx context.Context, projectID uuid.UUID)
 }
 
 func (s *ProjectRoleService) CreateRole(ctx context.Context, projectID uuid.UUID, name, description string, permissions []domain.ProjectRolePermission) (*domain.ProjectRole, error) {
+	if err := validateProjectRolePermissions(permissions); err != nil {
+		return nil, err
+	}
 	role, err := s.repo.Create(ctx, db.CreateProjRoleDefinitionParams{
 		ProjectID:   uuid.NullUUID{UUID: projectID, Valid: true},
 		Name:        name,
@@ -46,7 +69,7 @@ func (s *ProjectRoleService) CreateRole(ctx context.Context, projectID uuid.UUID
 		return nil, err
 	}
 
-	roleID := uuid.MustParse(role.ID)
+	roleID := role.ID
 	for _, p := range permissions {
 		if err := s.repo.UpsertPermission(ctx, roleID, p.Area, p.Access); err != nil {
 			return nil, err
@@ -61,12 +84,15 @@ func (s *ProjectRoleService) UpdateRole(ctx context.Context, projectID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	if existing.ProjectID != projectID.String() {
+	if existing.ProjectID != projectID {
 		return nil, domain.ErrNotFound
 	}
 	// Администратор проекта: можно менять name и description, но нельзя менять permissions
 	if existing.IsAdmin && permissions != nil {
 		return nil, domain.ErrProjectAdminRole
+	}
+	if err := validateProjectRolePermissions(permissions); err != nil {
+		return nil, err
 	}
 
 	finalName := existing.Name
@@ -110,7 +136,7 @@ func (s *ProjectRoleService) DeleteRole(ctx context.Context, projectID uuid.UUID
 	if err != nil {
 		return err
 	}
-	if existing.ProjectID != projectID.String() {
+	if existing.ProjectID != projectID {
 		return domain.ErrNotFound
 	}
 

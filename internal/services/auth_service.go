@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
+
 	"projektus-backend/config"
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
@@ -23,13 +25,14 @@ type AuthService interface {
 }
 
 type authService struct {
-	cfg        *config.Config
-	users      repositories.UserRepository
-	authRepo   repositories.AuthRepository
-	passwords  PasswordService
-	policySvc  *PasswordPolicyService
-	rateLimit  RateLimitService
-	roleSvc    *RoleService
+	cfg             *config.Config
+	users           repositories.UserRepository
+	authRepo        repositories.AuthRepository
+	passwords       PasswordService
+	policySvc       *PasswordPolicyService
+	rateLimit       RateLimitService
+	roleSvc         *RoleService
+	notificationSvc NotificationService
 }
 
 func NewAuthService(
@@ -40,15 +43,17 @@ func NewAuthService(
 	policySvc *PasswordPolicyService,
 	rateLimit RateLimitService,
 	roleSvc *RoleService,
+	notificationSvc NotificationService,
 ) AuthService {
 	return &authService{
-		cfg:       cfg,
-		users:     users,
-		authRepo:  authRepo,
-		passwords: passwords,
-		policySvc: policySvc,
-		rateLimit: rateLimit,
-		roleSvc:   roleSvc,
+		cfg:             cfg,
+		users:           users,
+		authRepo:        authRepo,
+		passwords:       passwords,
+		policySvc:       policySvc,
+		rateLimit:       rateLimit,
+		roleSvc:         roleSvc,
+		notificationSvc: notificationSvc,
 	}
 }
 
@@ -65,7 +70,37 @@ func (s *authService) Register(ctx context.Context, username, email, password, f
 		return nil, errctx.Wrap(err, "Register", "username", username)
 	}
 	_ = s.users.InsertPasswordHistory(ctx, user.ID, hash)
+	if err := s.notificationSvc.InitializeDefaultSettings(ctx, user.ID.String()); err != nil {
+		return nil, errctx.Wrap(err, "Register", "userID", user.ID)
+	}
+
+	// Каждому новому пользователю назначается базовая системная роль
+	// «Обычный пользователь» — без неё пользователь остался бы с пустым
+	// списком ролей, что запрещено (см. domain.ErrUserRequiresRole).
+	if err := s.assignDefaultSystemRole(ctx, user.ID.String()); err != nil {
+		return nil, errctx.Wrap(err, "Register", "userID", user.ID)
+	}
 	return user, nil
+}
+
+// assignDefaultSystemRole находит системную роль «Обычный пользователь»
+// и привязывает её к только что созданному пользователю. Роль гарантированно
+// присутствует в БД после bootstrap (ensureSystemRoles) или миграции 000030.
+func (s *authService) assignDefaultSystemRole(ctx context.Context, userID string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	roles, err := s.roleSvc.ListSystemRoles(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range roles {
+		if r.Name == SystemRoleNameRegularUser {
+			return s.roleSvc.AssignSystemRolesToUser(ctx, uid, []uuid.UUID{r.ID})
+		}
+	}
+	return domain.ErrUserRequiresRole
 }
 
 func (s *authService) Login(ctx context.Context, username, password, ip string) (string, string, *domain.User, error) {
@@ -83,16 +118,16 @@ func (s *authService) Login(ctx context.Context, username, password, ip string) 
 	}
 
 	// Check if user is currently blocked due to previous failed attempts
-	if blockedUntil, err := s.authRepo.GetBlockedUserUntil(ctx, user.ID); err == nil && blockedUntil != nil && blockedUntil.After(time.Now()) {
+	if blockedUntil, err := s.authRepo.GetBlockedUserUntil(ctx, user.ID.String()); err == nil && blockedUntil != nil && blockedUntil.After(time.Now()) {
 		return "", "", nil, domain.ErrUserBlocked
 	}
 
 	if err := s.passwords.CheckPassword(user.PasswordHash, password); err != nil {
-		_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID, username, ip, false)
+		_ = s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID.String(), username, ip, false)
 		return "", "", nil, domain.ErrInvalidCredentials
 	}
 
-	if err := s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID, username, ip, true); err != nil {
+	if err := s.rateLimit.CheckAndRecordLoginAttempt(ctx, user.ID.String(), username, ip, true); err != nil {
 		if errors.Is(err, domain.ErrUserBlocked) || errors.Is(err, domain.ErrIPBlocked) {
 			return "", "", nil, err
 		}
@@ -102,7 +137,7 @@ func (s *authService) Login(ctx context.Context, username, password, ip string) 
 	access, err := utils.GenerateAccessToken(
 		s.cfg.JWTAccessSecret,
 		s.cfg.AccessTokenTTL,
-		user.ID,
+		user.ID.String(),
 		user.Email,
 		"",
 	)
@@ -112,14 +147,14 @@ func (s *authService) Login(ctx context.Context, username, password, ip string) 
 	refresh, err := utils.GenerateRefreshToken(
 		s.cfg.JWTRefreshSecret,
 		s.cfg.RefreshTokenTTL,
-		user.ID,
+		user.ID.String(),
 	)
 	if err != nil {
 		return "", "", nil, errctx.Wrap(err, "Login", "username", username)
 	}
 
 	hash := sha256.Sum256([]byte(refresh))
-	if err := s.authRepo.CreateRefreshToken(ctx, user.ID, hex.EncodeToString(hash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
+	if err := s.authRepo.CreateRefreshToken(ctx, user.ID.String(), hex.EncodeToString(hash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
 		return "", "", nil, errctx.Wrap(err, "Login", "username", username)
 	}
 
@@ -141,7 +176,11 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 		return "", "", domain.ErrRefreshTokenRevoked
 	}
 
-	user, err := s.users.GetUserByID(ctx, claims.UserID)
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return "", "", domain.ErrInvalidToken
+	}
+	user, err := s.users.GetUserByID(ctx, uid)
 	if err != nil {
 		return "", "", errctx.Wrap(err, "Refresh", "userID", claims.UserID)
 	}
@@ -149,7 +188,7 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 	access, err := utils.GenerateAccessToken(
 		s.cfg.JWTAccessSecret,
 		s.cfg.AccessTokenTTL,
-		user.ID,
+		user.ID.String(),
 		user.Email,
 		"",
 	)
@@ -160,14 +199,14 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (string,
 	newRefresh, err := utils.GenerateRefreshToken(
 		s.cfg.JWTRefreshSecret,
 		s.cfg.RefreshTokenTTL,
-		user.ID,
+		user.ID.String(),
 	)
 	if err != nil {
 		return "", "", errctx.Wrap(err, "Refresh", "userID", user.ID)
 	}
 
 	newHash := sha256.Sum256([]byte(newRefresh))
-	if err := s.authRepo.CreateRefreshToken(ctx, user.ID, hex.EncodeToString(newHash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
+	if err := s.authRepo.CreateRefreshToken(ctx, user.ID.String(), hex.EncodeToString(newHash[:]), time.Now().Add(s.cfg.RefreshTokenTTL)); err != nil {
 		return "", "", errctx.Wrap(err, "Refresh", "userID", user.ID)
 	}
 
@@ -184,7 +223,11 @@ func (s *authService) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
-	user, err := s.users.GetUserByID(ctx, userID)
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return domain.ErrInvalidToken
+	}
+	user, err := s.users.GetUserByID(ctx, uid)
 	if err != nil {
 		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
@@ -197,7 +240,7 @@ func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, n
 		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
-	lastHashes, err := s.users.GetLastPasswordHashes(ctx, userID, 3)
+	lastHashes, err := s.users.GetLastPasswordHashes(ctx, uid, 3)
 	if err != nil {
 		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
@@ -210,10 +253,10 @@ func (s *authService) ChangePassword(ctx context.Context, userID, oldPassword, n
 		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 
-	if err := s.users.UpdatePassword(ctx, userID, newHash); err != nil {
+	if err := s.users.UpdatePassword(ctx, uid, newHash); err != nil {
 		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
-	if err := s.users.InsertPasswordHistory(ctx, userID, newHash); err != nil {
+	if err := s.users.InsertPasswordHistory(ctx, uid, newHash); err != nil {
 		return errctx.Wrap(err, "ChangePassword", "userID", userID)
 	}
 

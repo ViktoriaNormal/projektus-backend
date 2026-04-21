@@ -58,15 +58,17 @@ func parseFieldFilters(c *gin.Context) map[string][]string {
 }
 
 func (h *KanbanAnalyticsHandler) GetSummary(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetSummary(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить сводные данные Kanban")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить сводные данные Kanban")
 		return
 	}
 
@@ -87,15 +89,17 @@ func (h *KanbanAnalyticsHandler) GetSummary(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetCumulativeFlow(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetCumulativeFlow(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные накопительного потока")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить данные накопительного потока")
 		return
 	}
 
@@ -115,15 +119,17 @@ func (h *KanbanAnalyticsHandler) GetCumulativeFlow(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetCycleTimeScatter(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetCycleTimeScatter(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные cycle time scatter")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить данные cycle time scatter")
 		return
 	}
 
@@ -142,15 +148,17 @@ func (h *KanbanAnalyticsHandler) GetCycleTimeScatter(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetThroughput(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetThroughput(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные throughput")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить данные throughput")
 		return
 	}
 
@@ -169,15 +177,17 @@ func (h *KanbanAnalyticsHandler) GetThroughput(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetAvgCycleTime(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetAvgCycleTime(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить данные среднего cycle time")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить данные среднего cycle time")
 		return
 	}
 
@@ -198,15 +208,17 @@ func (h *KanbanAnalyticsHandler) GetAvgCycleTime(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetThroughputTrend(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetThroughputTrend(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить тренд throughput")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить тренд throughput")
 		return
 	}
 
@@ -226,15 +238,17 @@ func (h *KanbanAnalyticsHandler) GetThroughputTrend(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetWipHistory(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetWipHistory(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить историю WIP")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить историю WIP")
 		return
 	}
 
@@ -254,15 +268,17 @@ func (h *KanbanAnalyticsHandler) GetWipHistory(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetCycleTimeDistribution(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetCycleTimeDistribution(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить распределение cycle time")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить распределение cycle time")
 		return
 	}
 
@@ -281,15 +297,17 @@ func (h *KanbanAnalyticsHandler) GetCycleTimeDistribution(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetThroughputDistribution(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	report, err := h.analyticsSvc.GetThroughputDistribution(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить распределение throughput")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить распределение throughput")
 		return
 	}
 
@@ -308,9 +326,8 @@ func (h *KanbanAnalyticsHandler) GetThroughputDistribution(c *gin.Context) {
 }
 
 func (h *KanbanAnalyticsHandler) GetMonteCarlo(c *gin.Context) {
-	projectID, err := uuid.Parse(c.Param("projectId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
@@ -347,7 +364,10 @@ func (h *KanbanAnalyticsHandler) GetMonteCarlo(c *gin.Context) {
 		taskCount, weeks, targetDate,
 	)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось выполнить прогнозирование Монте-Карло")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось выполнить прогнозирование Монте-Карло")
 		return
 	}
 

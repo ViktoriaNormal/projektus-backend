@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
@@ -70,6 +69,7 @@ type TemplateRepository interface {
 	GetRoleByID(ctx context.Context, id uuid.UUID) (db.GetTemplateRoleByIDRow, error)
 	CreateRole(ctx context.Context, params db.CreateTemplateRoleParams) (db.ListTemplateRolesRow, error)
 	UpdateRole(ctx context.Context, params db.UpdateTemplateRoleParams) (db.ListTemplateRolesRow, error)
+	UpdateRoleOrder(ctx context.Context, id uuid.UUID, order int32) error
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 	ListRolePermissions(ctx context.Context, roleID uuid.UUID) ([]db.RolePermission, error)
 	UpsertRolePermission(ctx context.Context, roleID uuid.UUID, area, access string) error
@@ -99,10 +99,7 @@ func (r *templateRepository) List(ctx context.Context) ([]domain.ProjectTemplate
 func (r *templateRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProjectTemplate, error) {
 	row, err := r.q.GetProjectTemplateByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, errctx.Wrap(err, "GetByID", "id", id)
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetByID", "id", id)
 	}
 	t := mapDBTemplateToDomainFull(row, 0)
 	return &t, nil
@@ -111,10 +108,7 @@ func (r *templateRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain
 func (r *templateRepository) GetByType(ctx context.Context, projectType string) (*domain.ProjectTemplate, error) {
 	row, err := r.q.GetProjectTemplateByType(ctx, projectType)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, errctx.Wrap(err, "GetByType", "projectType", projectType)
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetByType", "projectType", projectType)
 	}
 	t := mapDBTemplateToDomainFull(row, 0)
 	return &t, nil
@@ -148,10 +142,7 @@ func (r *templateRepository) Update(ctx context.Context, id uuid.UUID, name stri
 		Description: desc,
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, errctx.Wrap(err, "Update", "id", id)
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "Update", "id", id)
 	}
 	t := mapDBTemplateToDomainFull(row, 0)
 	return &t, nil
@@ -446,10 +437,12 @@ func (r *templateRepository) CreateRole(ctx context.Context, params db.CreateTem
 		return db.ListTemplateRolesRow{}, err
 	}
 	return db.ListTemplateRolesRow{
-		ID:         row.ID,
-		TemplateID: row.TemplateID,
-		Name:       row.Name,
-		IsAdmin:    row.IsAdmin,
+		ID:          row.ID,
+		TemplateID:  row.TemplateID,
+		Name:        row.Name,
+		Description: row.Description,
+		IsAdmin:     row.IsAdmin,
+		SortOrder:   row.SortOrder,
 	}, nil
 }
 
@@ -459,11 +452,17 @@ func (r *templateRepository) UpdateRole(ctx context.Context, params db.UpdateTem
 		return db.ListTemplateRolesRow{}, err
 	}
 	return db.ListTemplateRolesRow{
-		ID:         row.ID,
-		TemplateID: row.TemplateID,
-		Name:       row.Name,
-		IsAdmin:    row.IsAdmin,
+		ID:          row.ID,
+		TemplateID:  row.TemplateID,
+		Name:        row.Name,
+		Description: row.Description,
+		IsAdmin:     row.IsAdmin,
+		SortOrder:   row.SortOrder,
 	}, nil
+}
+
+func (r *templateRepository) UpdateRoleOrder(ctx context.Context, id uuid.UUID, order int32) error {
+	return r.q.UpdateTemplateRoleOrder(ctx, db.UpdateTemplateRoleOrderParams{ID: id, SortOrder: order})
 }
 
 func (r *templateRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {

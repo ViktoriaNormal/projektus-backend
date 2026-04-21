@@ -74,7 +74,7 @@ WHERE id = $1;
 UPDATE columns SET sort_order = $2 WHERE id = $1;
 
 -- name: CountTasksInColumn :one
-SELECT COUNT(*)::int AS count FROM tasks WHERE column_id = $1;
+SELECT COUNT(*)::int AS count FROM tasks WHERE column_id = $1 AND deleted_at IS NULL;
 
 -- Swimlanes
 
@@ -110,7 +110,7 @@ WHERE id = $1;
 UPDATE swimlanes SET sort_order = $2 WHERE id = $1;
 
 -- name: CountTasksInSwimlane :one
-SELECT COUNT(*)::int AS count FROM tasks WHERE swimlane_id = $1;
+SELECT COUNT(*)::int AS count FROM tasks WHERE swimlane_id = $1 AND deleted_at IS NULL;
 
 -- Notes
 

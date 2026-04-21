@@ -24,28 +24,37 @@ RETURNING id, template_id, name, field_type, is_required, options;
 -- name: DeleteTemplateProjectParamByID :exec
 DELETE FROM project_params WHERE id = $1;
 
--- Template roles (in unified roles table, scope='template')
+-- Template roles (in unified roles table, scope='template').
+-- Порядок стабильный: ORDER BY sort_order, id — не зависит от последнего UPDATE.
 
 -- name: ListTemplateRoles :many
-SELECT id, template_id, name, is_admin
+SELECT id, template_id, name, description, is_admin, sort_order
 FROM roles
-WHERE template_id = $1;
+WHERE template_id = $1
+ORDER BY sort_order ASC, id ASC;
 
 -- name: GetTemplateRoleByID :one
-SELECT id, template_id, name, is_admin
+SELECT id, template_id, name, description, is_admin, sort_order
 FROM roles
 WHERE id = $1;
 
 -- name: CreateTemplateRole :one
-INSERT INTO roles (template_id, scope, name, description)
-VALUES ($1, 'template', $2, $3)
-RETURNING id, template_id, name, is_admin;
+-- Новую роль добавляем в конец: sort_order = max(existing) + 1.
+INSERT INTO roles (template_id, scope, name, description, sort_order)
+VALUES ($1, 'template', $2, $3,
+    COALESCE((SELECT MAX(sort_order) FROM roles WHERE template_id = $1), 0) + 1)
+RETURNING id, template_id, name, description, is_admin, sort_order;
 
 -- name: UpdateTemplateRole :one
+-- UPDATE не меняет sort_order — позиция в списке сохраняется.
 UPDATE roles
 SET name = $2, description = $3
 WHERE id = $1
-RETURNING id, template_id, name, is_admin;
+RETURNING id, template_id, name, description, is_admin, sort_order;
+
+-- name: UpdateTemplateRoleOrder :exec
+-- Частичное обновление только позиции. Используется эндпоинтом reorder.
+UPDATE roles SET sort_order = $2 WHERE id = $1;
 
 -- name: DeleteTemplateRoleByID :exec
 DELETE FROM roles WHERE id = $1;

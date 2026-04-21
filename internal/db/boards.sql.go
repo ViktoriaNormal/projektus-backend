@@ -14,7 +14,7 @@ import (
 )
 
 const countTasksInColumn = `-- name: CountTasksInColumn :one
-SELECT COUNT(*)::int AS count FROM tasks WHERE column_id = $1
+SELECT COUNT(*)::int AS count FROM tasks WHERE column_id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) CountTasksInColumn(ctx context.Context, columnID uuid.NullUUID) (int32, error) {
@@ -25,7 +25,7 @@ func (q *Queries) CountTasksInColumn(ctx context.Context, columnID uuid.NullUUID
 }
 
 const countTasksInSwimlane = `-- name: CountTasksInSwimlane :one
-SELECT COUNT(*)::int AS count FROM tasks WHERE swimlane_id = $1
+SELECT COUNT(*)::int AS count FROM tasks WHERE swimlane_id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) CountTasksInSwimlane(ctx context.Context, swimlaneID uuid.NullUUID) (int32, error) {

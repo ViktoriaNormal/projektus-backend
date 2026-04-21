@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -37,7 +36,7 @@ func (h *RoleHandler) mapRoleToResponse(c *gin.Context, r domain.Role) dto.RoleR
 func (h *RoleHandler) ListPermissions(c *gin.Context) {
 	perms, err := h.roleService.ListPermissions(c.Request.Context())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список прав доступа")
+		respondInternal(c, err, "Не удалось получить список прав доступа")
 		return
 	}
 
@@ -57,7 +56,7 @@ func (h *RoleHandler) ListPermissions(c *gin.Context) {
 func (h *RoleHandler) ListSystemRoles(c *gin.Context) {
 	roles, err := h.roleService.ListSystemRoles(c.Request.Context())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список ролей")
+		respondInternal(c, err, "Не удалось получить список ролей")
 		return
 	}
 
@@ -70,20 +69,17 @@ func (h *RoleHandler) ListSystemRoles(c *gin.Context) {
 }
 
 func (h *RoleHandler) GetRole(c *gin.Context) {
-	idStr := c.Param("roleId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор роли")
+	id, ok := paramUUID(c, "roleId")
+	if !ok {
 		return
 	}
 
 	role, err := h.roleService.GetSystemRole(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить роль")
+		respondInternal(c, err, "Не удалось получить роль")
 		return
 	}
 
@@ -91,9 +87,8 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 }
 
 func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
-	var req dto.CreateRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateRoleRequest](c)
+	if !ok {
 		return
 	}
 
@@ -103,11 +98,10 @@ func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
 	}
 	role, err := h.roleService.CreateSystemRole(c.Request.Context(), req.Name, req.Description, perms)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя роли обязательно")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать роль")
+		respondInternal(c, err, "Не удалось создать роль")
 		return
 	}
 
@@ -115,16 +109,13 @@ func (h *RoleHandler) CreateSystemRole(c *gin.Context) {
 }
 
 func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
-	idStr := c.Param("roleId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор роли")
+	id, ok := paramUUID(c, "roleId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateRoleRequest](c)
+	if !ok {
 		return
 	}
 
@@ -134,19 +125,10 @@ func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
 	}
 	role, err := h.roleService.UpdateSystemRole(c.Request.Context(), id, req.Name, req.Description, perms)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Имя роли обязательно")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
-			return
-		}
-		if err == domain.ErrSystemAdminRole {
-			writeError(c, http.StatusForbidden, "SYSTEM_ADMIN_ROLE", "Системная роль администратора неизменяема")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить роль")
+		respondInternal(c, err, "Не удалось обновить роль")
 		return
 	}
 
@@ -154,27 +136,16 @@ func (h *RoleHandler) UpdateSystemRole(c *gin.Context) {
 }
 
 func (h *RoleHandler) DeleteRole(c *gin.Context) {
-	idStr := c.Param("roleId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор роли")
+	id, ok := paramUUID(c, "roleId")
+	if !ok {
 		return
 	}
 
 	if err := h.roleService.DeleteSystemRole(c.Request.Context(), id); err != nil {
-		if err == domain.ErrSystemAdminRole {
-			writeError(c, http.StatusForbidden, "SYSTEM_ADMIN_ROLE", "Нельзя удалить системную роль администратора")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrRoleHasMembers {
-			writeError(c, http.StatusBadRequest, "ROLE_HAS_MEMBERS", "Нельзя удалить роль, назначенную пользователям")
-			return
-		}
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить роль")
+		respondInternal(c, err, "Не удалось удалить роль")
 		return
 	}
 
@@ -182,21 +153,21 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 }
 
 func (h *RoleHandler) AssignUserRoles(c *gin.Context) {
-	userIDStr := c.Param("userId")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор пользователя")
+	userID, ok := paramUUID(c, "userId")
+	if !ok {
 		return
 	}
 
-	var req dto.AssignRolesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AssignRolesRequest](c)
+	if !ok {
 		return
 	}
 
 	if err := h.roleService.AssignSystemRolesToUser(c.Request.Context(), userID, req.RoleIDs); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось назначить роли пользователю")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось назначить роли пользователю")
 		return
 	}
 
@@ -205,16 +176,17 @@ func (h *RoleHandler) AssignUserRoles(c *gin.Context) {
 
 // GetUserRoles — admin endpoint (GET /admin/users/:userId/roles)
 func (h *RoleHandler) GetUserRoles(c *gin.Context) {
-	userIDStr := c.Param("userId")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор пользователя")
+	userID, ok := paramUUID(c, "userId")
+	if !ok {
 		return
 	}
 
 	roles, err := h.roleService.GetUserSystemRoles(c.Request.Context(), userID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить роли пользователя")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить роли пользователя")
 		return
 	}
 
@@ -228,27 +200,27 @@ func (h *RoleHandler) GetUserRoles(c *gin.Context) {
 
 // GetMySystemRoles — non-admin endpoint (GET /users/:id/roles), only own roles
 func (h *RoleHandler) GetMySystemRoles(c *gin.Context) {
-	currentUserID := c.GetString("userID")
-	if currentUserID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	currentUserID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
-	targetUserID := c.Param("id")
-	if currentUserID != targetUserID {
+	userID, ok := paramUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	if currentUserID != userID {
 		writeError(c, http.StatusForbidden, "FORBIDDEN", "Можно запрашивать только свои роли")
-		return
-	}
-
-	userID, err := uuid.Parse(targetUserID)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор пользователя")
 		return
 	}
 
 	roles, err := h.roleService.GetUserSystemRoles(c.Request.Context(), userID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить роли пользователя")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить роли пользователя")
 		return
 	}
 

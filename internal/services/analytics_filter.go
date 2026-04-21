@@ -148,7 +148,7 @@ func BuildTaskFilter(ctx context.Context, dbtx db.DBTX, projectID, boardID uuid.
 				` AND EXISTS (SELECT 1 FROM task_field_values tfv, jsonb_array_elements_text(COALESCE(tfv.value_json, '[]'::jsonb)) AS elem WHERE tfv.task_id = t.id AND tfv.field_id = $%d AND EXISTS (SELECT 1 FROM members m WHERE m.id::text = elem AND m.user_id::text IN (%s)))`,
 				fieldArgIdx, inList,
 			)
-		case "multiselect", "sprint_list":
+		case "multiselect":
 			q += fmt.Sprintf(
 				` AND EXISTS (SELECT 1 FROM task_field_values tfv, jsonb_array_elements_text(COALESCE(tfv.value_json, '[]'::jsonb)) AS elem WHERE tfv.task_id = t.id AND tfv.field_id = $%d AND elem IN (%s))`,
 				fieldArgIdx, inList,

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -21,8 +22,8 @@ func NewMeetingHandler(svc services.MeetingService) *MeetingHandler {
 
 func mapMeetingToResponse(m *domain.Meeting) dto.MeetingResponse {
 	resp := dto.MeetingResponse{
-		ID:          m.ID,
-		OrganizerID: m.CreatedBy,
+		ID:          m.ID.String(),
+		OrganizerID: m.CreatedBy.String(),
 		Name:        m.Name,
 		MeetingType: string(m.Type),
 		Location:    m.Location,
@@ -31,7 +32,8 @@ func mapMeetingToResponse(m *domain.Meeting) dto.MeetingResponse {
 		EndTime:     m.EndTime.Format(time.RFC3339),
 	}
 	if m.ProjectID != nil {
-		resp.ProjectID = m.ProjectID
+		pid := m.ProjectID.String()
+		resp.ProjectID = &pid
 	}
 	if m.Description != nil {
 		resp.Description = m.Description
@@ -41,20 +43,20 @@ func mapMeetingToResponse(m *domain.Meeting) dto.MeetingResponse {
 
 func mapParticipantToResponse(p *domain.MeetingParticipant) dto.MeetingParticipantResponse {
 	return dto.MeetingParticipantResponse{
-		ID:        p.ID,
-		MeetingID: p.MeetingID,
-		UserID:    p.UserID,
+		ID:        p.ID.String(),
+		MeetingID: p.MeetingID.String(),
+		UserID:    p.UserID.String(),
 		Status:    string(p.Status),
 	}
 }
 
 // GET /api/v1/meetings
 func (h *MeetingHandler) ListUserMeetings(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 
 	var fromPtr, toPtr *time.Time
 	if fromStr := c.Query("from"); fromStr != "" {
@@ -74,9 +76,14 @@ func (h *MeetingHandler) ListUserMeetings(c *gin.Context) {
 		toPtr = &t
 	}
 
+	// Всегда возвращаем только встречи, в которых пользователь — организатор
+	// или участник. Для администраторов исключений нет.
 	meetings, err := h.svc.ListUserMeetings(c.Request.Context(), userID, fromPtr, toPtr)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -90,15 +97,14 @@ func (h *MeetingHandler) ListUserMeetings(c *gin.Context) {
 
 // POST /api/v1/meetings
 func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 
-	var req dto.CreateMeetingRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateMeetingRequest](c)
+	if !ok {
 		return
 	}
 
@@ -122,7 +128,12 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 		m.Description = req.Description
 	}
 	if req.ProjectID != nil {
-		m.ProjectID = req.ProjectID
+		pid, err := uuid.Parse(*req.ProjectID)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный project_id")
+			return
+		}
+		m.ProjectID = &pid
 	}
 	if req.MeetingType != nil {
 		m.Type = domain.MeetingType(*req.MeetingType)
@@ -131,16 +142,10 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 
 	created, participants, err := h.svc.CreateMeeting(c.Request.Context(), userID, m, req.ParticipantIDs)
 	if err != nil {
-		switch err {
-		case domain.ErrMeetingInPast:
-			writeError(c, http.StatusBadRequest, "MEETING_IN_PAST", "Нельзя создать встречу на прошедшее время")
-		case domain.ErrInvalidTimeRange:
-			writeError(c, http.StatusBadRequest, "INVALID_TIME_RANGE", "Время окончания должно быть позже времени начала")
-		case domain.ErrInvalidMeeting:
-			writeError(c, http.StatusBadRequest, "INVALID_MEETING", "Некорректные параметры встречи")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -157,23 +162,19 @@ func (h *MeetingHandler) CreateMeeting(c *gin.Context) {
 
 // GET /api/v1/meetings/:meetingId
 func (h *MeetingHandler) GetMeeting(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 	meetingID := c.Param("meetingId")
 
 	m, parts, err := h.svc.GetMeetingWithParticipants(c.Request.Context(), userID, meetingID)
 	if err != nil {
-		switch err {
-		case domain.ErrNotFound:
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет доступа к этой встрече")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -190,37 +191,40 @@ func (h *MeetingHandler) GetMeeting(c *gin.Context) {
 
 // PATCH /api/v1/meetings/:meetingId
 func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 	meetingID := c.Param("meetingId")
 
-	var req dto.UpdateMeetingRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateMeetingRequest](c)
+	if !ok {
 		return
 	}
 
 	// Fetch existing meeting to build a complete domain object.
 	existing, _, err := h.svc.GetMeetingWithParticipants(c.Request.Context(), userID, meetingID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrAccessDenied {
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет прав на изменение встречи")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
 	m := *existing
 	if req.ProjectID.Set {
-		m.ProjectID = req.ProjectID.Ptr()
+		if ptr := req.ProjectID.Ptr(); ptr != nil {
+			pid, err := uuid.Parse(*ptr)
+			if err != nil {
+				writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный project_id")
+				return
+			}
+			m.ProjectID = &pid
+		} else {
+			m.ProjectID = nil
+		}
 	}
 	if req.Name != nil {
 		m.Name = *req.Name
@@ -253,20 +257,10 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 
 	updated, err := h.svc.UpdateMeeting(c.Request.Context(), userID, m)
 	if err != nil {
-		switch err {
-		case domain.ErrNotFound:
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет прав на изменение встречи")
-		case domain.ErrMeetingInPast:
-			writeError(c, http.StatusBadRequest, "MEETING_IN_PAST", "Нельзя назначить встречу на прошедшее время")
-		case domain.ErrInvalidTimeRange:
-			writeError(c, http.StatusBadRequest, "INVALID_TIME_RANGE", "Время окончания должно быть позже времени начала")
-		case domain.ErrInvalidMeeting:
-			writeError(c, http.StatusBadRequest, "INVALID_MEETING", "Некорректные параметры встречи")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -275,25 +269,19 @@ func (h *MeetingHandler) UpdateMeeting(c *gin.Context) {
 
 // POST /api/v1/meetings/:meetingId/cancel
 func (h *MeetingHandler) CancelMeeting(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 	meetingID := c.Param("meetingId")
 
 	cancelled, err := h.svc.CancelMeeting(c.Request.Context(), userID, meetingID)
 	if err != nil {
-		switch err {
-		case domain.ErrNotFound:
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "FORBIDDEN", "Пользователь не является организатором")
-		case domain.ErrAlreadyCancelled:
-			writeError(c, http.StatusBadRequest, "ALREADY_CANCELLED", "Встреча уже отменена")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -302,23 +290,19 @@ func (h *MeetingHandler) CancelMeeting(c *gin.Context) {
 
 // GET /api/v1/meetings/:meetingId/participants
 func (h *MeetingHandler) ListParticipants(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 	meetingID := c.Param("meetingId")
 
 	m, parts, err := h.svc.GetMeetingWithParticipants(c.Request.Context(), userID, meetingID)
 	if err != nil {
-		switch err {
-		case domain.ErrNotFound:
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет доступа к этой встрече")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -335,31 +319,27 @@ func (h *MeetingHandler) ListParticipants(c *gin.Context) {
 
 // POST /api/v1/meetings/:meetingId/participants
 func (h *MeetingHandler) AddParticipants(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 	meetingID := c.Param("meetingId")
 
-	var body struct {
+	type addParticipantsBody struct {
 		UserIDs []string `json:"user_ids"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	body, ok := bindJSON[addParticipantsBody](c)
+	if !ok {
 		return
 	}
 
 	parts, err := h.svc.AddParticipants(c.Request.Context(), userID, meetingID, body.UserIDs)
 	if err != nil {
-		switch err {
-		case domain.ErrNotFound:
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
-		case domain.ErrAccessDenied:
-			writeError(c, http.StatusForbidden, "ACCESS_DENIED", "Нет прав на добавление участников")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
@@ -375,18 +355,18 @@ func (h *MeetingHandler) AddParticipants(c *gin.Context) {
 
 // POST /api/v1/meetings/:meetingId/response
 func (h *MeetingHandler) RespondToInvitation(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userUUID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
+	userID := userUUID.String()
 	meetingID := c.Param("meetingId")
 
-	var body struct {
+	type respondBody struct {
 		Status string `json:"status" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	body, ok := bindJSON[respondBody](c)
+	if !ok {
 		return
 	}
 
@@ -402,15 +382,12 @@ func (h *MeetingHandler) RespondToInvitation(c *gin.Context) {
 	}
 
 	if err := h.svc.RespondToInvitation(c.Request.Context(), userID, meetingID, st); err != nil {
-		switch err {
-		case domain.ErrNotFound:
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Встреча не найдена")
-		default:
-			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Внутренняя ошибка сервера")
+		if respondDomainErr(c, err) {
+			return
 		}
+		respondInternal(c, err, "Внутренняя ошибка сервера")
 		return
 	}
 
 	c.Status(http.StatusNoContent)
 }
-

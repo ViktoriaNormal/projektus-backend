@@ -8,6 +8,7 @@ import (
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type SprintTaskRepository interface {
@@ -38,27 +39,27 @@ func (r *sprintTaskRepository) AddTask(ctx context.Context, sprintID, taskID uui
 		SortOrder: ord,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "AddTaskToSprint", "sprintID", sprintID, "taskID", taskID)
 	}
 	st := mapDBSprintTask(row)
 	return &st, nil
 }
 
 func (r *sprintTaskRepository) RemoveTask(ctx context.Context, sprintID, taskID uuid.UUID) error {
-	return r.q.RemoveTaskFromSprint(ctx, db.RemoveTaskFromSprintParams{
+	return errctx.Wrap(r.q.RemoveTaskFromSprint(ctx, db.RemoveTaskFromSprintParams{
 		SprintID: sprintID,
 		TaskID:   taskID,
-	})
+	}), "RemoveTaskFromSprint", "sprintID", sprintID, "taskID", taskID)
 }
 
 func (r *sprintTaskRepository) RemoveTaskFromAllSprints(ctx context.Context, taskID uuid.UUID) error {
-	return r.q.RemoveTaskFromAllSprints(ctx, taskID)
+	return errctx.Wrap(r.q.RemoveTaskFromAllSprints(ctx, taskID), "RemoveTaskFromAllSprints", "taskID", taskID)
 }
 
 func (r *sprintTaskRepository) ListBySprint(ctx context.Context, sprintID uuid.UUID) ([]domain.SprintTask, error) {
 	rows, err := r.q.GetSprintTasks(ctx, sprintID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetSprintTasks", "sprintID", sprintID)
 	}
 	result := make([]domain.SprintTask, 0, len(rows))
 	for _, row := range rows {
@@ -68,17 +69,17 @@ func (r *sprintTaskRepository) ListBySprint(ctx context.Context, sprintID uuid.U
 }
 
 func (r *sprintTaskRepository) UpdateTaskOrder(ctx context.Context, sprintID, taskID uuid.UUID, order int32) error {
-	return r.q.UpdateTaskOrder(ctx, db.UpdateTaskOrderParams{
+	return errctx.Wrap(r.q.UpdateTaskOrder(ctx, db.UpdateTaskOrderParams{
 		SprintID:  sprintID,
 		TaskID:    taskID,
 		SortOrder: sql.NullInt32{Int32: order, Valid: true},
-	})
+	}), "UpdateTaskOrder", "sprintID", sprintID, "taskID", taskID)
 }
 
 func (r *sprintTaskRepository) ListSprintTasksFull(ctx context.Context, sprintID uuid.UUID) ([]domain.Task, error) {
 	rows, err := r.q.ListSprintTasksFull(ctx, sprintID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "ListSprintTasksFull", "sprintID", sprintID)
 	}
 	result := make([]domain.Task, 0, len(rows))
 	for _, row := range rows {
@@ -89,22 +90,22 @@ func (r *sprintTaskRepository) ListSprintTasksFull(ctx context.Context, sprintID
 
 func mapSprintTaskFullRowToDomain(row db.ListSprintTasksFullRow) domain.Task {
 	t := domain.Task{
-		ID:        row.ID.String(),
+		ID:        row.ID,
 		Key:       row.Key,
-		ProjectID: row.ProjectID.String(),
-		BoardID:   row.BoardID.String(),
-		OwnerID:   row.OwnerID.String(),
+		ProjectID: row.ProjectID,
+		BoardID:   row.BoardID,
+		OwnerID:   row.OwnerID,
 		Name:      row.Name,
 		CreatedAt: row.CreatedAt,
 	}
-	uid := row.OwnerUserID.String()
+	uid := row.OwnerUserID
 	t.OwnerUserID = &uid
 	if row.ExecutorID.Valid {
-		id := row.ExecutorID.UUID.String()
+		id := row.ExecutorID.UUID
 		t.ExecutorID = &id
 	}
 	if row.ExecutorUserID.Valid {
-		euid := row.ExecutorUserID.UUID.String()
+		euid := row.ExecutorUserID.UUID
 		t.ExecutorUserID = &euid
 	}
 	if row.Description.Valid {
@@ -115,11 +116,11 @@ func mapSprintTaskFullRowToDomain(row db.ListSprintTasksFullRow) domain.Task {
 		t.Deadline = &d
 	}
 	if row.ColumnID.Valid {
-		id := row.ColumnID.UUID.String()
+		id := row.ColumnID.UUID
 		t.ColumnID = &id
 	}
 	if row.SwimlaneID.Valid {
-		id := row.SwimlaneID.UUID.String()
+		id := row.SwimlaneID.UUID
 		t.SwimlaneID = &id
 	}
 	if row.DeletedAt.Valid {

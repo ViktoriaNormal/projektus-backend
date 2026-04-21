@@ -10,6 +10,7 @@ import (
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
+	"projektus-backend/internal/repositories"
 	"projektus-backend/internal/services"
 )
 
@@ -21,57 +22,94 @@ func NewAdminUserHandler(adminUserSvc *services.AdminUserService) *AdminUserHand
 	return &AdminUserHandler{adminUserSvc: adminUserSvc}
 }
 
-// ListUsers GET /admin/users — список всех пользователей с пагинацией.
+// ListUsers GET /admin/users — список всех пользователей с пагинацией,
+// серверными фильтрами и карточками статистики.
+//
+// Query-параметры:
+//   - limit, offset — пагинация. limit=0 → только счётчики без users[].
+//   - includeDeleted=true — показать soft-deleted.
+//   - q — ILIKE по username/email/full_name/position.
+//   - is_active=true|false — только активные / только заблокированные.
+//   - role_id=<uuid> — с назначенной системной ролью.
+//
+// В data возвращаются:
+//   - users[] — страница под limit/offset+фильтры;
+//   - total — число подходящих под фильтры записей (без учёта limit/offset);
+//   - active_count / inactive_count — глобальные счётчики по всему множеству
+//     (не зависят от q/is_active/role_id — для карточек статистики на UI).
 func (h *AdminUserHandler) ListUsers(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "20")
 	offsetStr := c.DefaultQuery("offset", "0")
-	includeDeleted := c.Query("includeDeleted") == "true"
 
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
+	// limit=0 (явно) валиден — отдаём только статистику. Отрицательные/невалидные → 20.
+	limit := 20
+	if n, err := strconv.Atoi(limitStr); err == nil {
+		switch {
+		case n == 0:
+			limit = 0
+		case n < 0:
+			limit = 20
+		default:
+			limit = n
+		}
 	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil || offset < 0 {
 		offset = 0
 	}
 
-	users, total, err := h.adminUserSvc.ListUsers(c.Request.Context(), int32(limit), int32(offset), includeDeleted)
+	filter := repositories.AdminUserListFilter{
+		IncludeDeleted: c.Query("includeDeleted") == "true",
+	}
+	if q := c.Query("q"); q != "" {
+		filter.Query = &q
+	}
+	if v := c.Query("is_active"); v != "" {
+		if parsed, err := strconv.ParseBool(v); err == nil {
+			filter.IsActive = &parsed
+		}
+	}
+	if v := c.Query("role_id"); v != "" {
+		if parsed, err := uuid.Parse(v); err == nil {
+			filter.RoleID = &parsed
+		}
+	}
+
+	result, err := h.adminUserSvc.ListUsers(c.Request.Context(), int32(limit), int32(offset), filter)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список пользователей")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список пользователей")
 		return
 	}
 
-	resp := make([]dto.AdminUserResponse, 0, len(users))
-	for _, u := range users {
+	resp := make([]dto.AdminUserResponse, 0, len(result.Users))
+	for _, u := range result.Users {
 		resp = append(resp, mapAdminUserToResponse(u))
 	}
 
 	writeSuccess(c, gin.H{
-		"users": resp,
-		"total": total,
+		"users":          resp,
+		"total":          result.Total,
+		"active_count":   result.ActiveCount,
+		"inactive_count": result.InactiveCount,
 	})
 }
 
 // GetUser GET /admin/users/:id — получение пользователя по ID.
 func (h *AdminUserHandler) GetUser(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пользователя")
+	userID, ok := paramUUID(c, "id")
+	if !ok {
 		return
 	}
 
 	user, err := h.adminUserSvc.GetUser(c.Request.Context(), userID)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить пользователя")
+		respondInternal(c, err, "Не удалось получить пользователя")
 		return
 	}
 
@@ -80,17 +118,17 @@ func (h *AdminUserHandler) GetUser(c *gin.Context) {
 
 // CreateUser POST /admin/users — создание пользователя с начальным паролем.
 func (h *AdminUserHandler) CreateUser(c *gin.Context) {
-	var req dto.AdminCreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AdminCreateUserRequest](c)
+	if !ok {
 		return
 	}
 
+	position := req.Position
 	user, err := h.adminUserSvc.CreateUser(c.Request.Context(), services.AdminCreateUserRequest{
 		Username:                  req.Username,
 		Email:                     req.Email,
 		FullName:                  req.FullName,
-		Position:                  req.Position,
+		Position:                  &position,
 		Password:                  req.Password,
 		IsActive:                  req.IsActive,
 		SystemRoleIDs:             req.RoleIDs,
@@ -100,11 +138,15 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 		AlternativeContactInfo:    req.AlternativeContactInfo,
 	})
 	if err != nil {
+		// ErrPasswordPolicy — auth-специфичная ошибка, нет в таблице.
 		if errors.Is(err, domain.ErrPasswordPolicy) {
 			writeError(c, http.StatusBadRequest, "PASSWORD_POLICY_VIOLATION", "Пароль не соответствует политике безопасности")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать пользователя")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать пользователя")
 		return
 	}
 	c.JSON(http.StatusCreated, dto.APIResponse{
@@ -116,16 +158,24 @@ func (h *AdminUserHandler) CreateUser(c *gin.Context) {
 
 // UpdateUser PUT /admin/users/:id — обновление данных пользователя.
 func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пользователя")
+	userID, ok := paramUUID(c, "id")
+	if !ok {
 		return
 	}
 
-	var req dto.AdminUpdateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AdminUpdateUserRequest](c)
+	if !ok {
+		return
+	}
+
+	if req.Position.Set && (req.Position.Null || req.Position.Value == "") {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			"Поле «Должность» не может быть пустым")
+		return
+	}
+	if req.RoleIDs != nil && len(*req.RoleIDs) == 0 {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			"У пользователя должна быть назначена хотя бы одна системная роль")
 		return
 	}
 
@@ -172,11 +222,10 @@ func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
 		AlternativeContactInfo:    altContactInfo,
 	})
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить пользователя")
+		respondInternal(c, err, "Не удалось обновить пользователя")
 		return
 	}
 
@@ -185,34 +234,26 @@ func (h *AdminUserHandler) UpdateUser(c *gin.Context) {
 
 // DeleteUser DELETE /admin/users/:id — мягкое удаление пользователя.
 func (h *AdminUserHandler) DeleteUser(c *gin.Context) {
-	idStr := c.Param("id")
-	targetID, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор пользователя")
+	targetID, ok := paramUUID(c, "id")
+	if !ok {
 		return
 	}
 
-	currentIDStr := c.GetString("userID")
-	if currentIDStr == "" {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется авторизация")
-		return
-	}
-	currentID, err := uuid.Parse(currentIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Некорректный контекст пользователя")
+	currentID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
 	if err := h.adminUserSvc.DeleteUser(c.Request.Context(), targetID, currentID); err != nil {
+		// Сохраняем специфичный маппинг ErrInvalidInput → «Нельзя удалить свой аккаунт».
 		if errors.Is(err, domain.ErrInvalidInput) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Нельзя удалить свой аккаунт")
 			return
 		}
-		if errors.Is(err, domain.ErrNotFound) {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить пользователя")
+		respondInternal(c, err, "Не удалось удалить пользователя")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -227,7 +268,7 @@ func mapAdminUserToResponse(u services.AdminUserWithRoles) dto.AdminUserResponse
 		})
 	}
 	return dto.AdminUserResponse{
-		ID:                        u.User.ID,
+		ID:                        u.User.ID.String(),
 		Username:                  u.User.Username,
 		Email:                     u.User.Email,
 		FullName:                  u.User.FullName,

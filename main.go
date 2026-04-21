@@ -1,119 +1,38 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"log"
 
 	_ "github.com/lib/pq"
 
 	"projektus-backend/config"
 	"projektus-backend/internal/api"
-	"projektus-backend/internal/api/handlers"
-	"projektus-backend/internal/db"
-	"projektus-backend/internal/repositories"
-	"projektus-backend/internal/services"
+	"projektus-backend/internal/bootstrap"
 )
 
+// main — точка входа. Всё реальное связывание зависимостей живёт в
+// internal/bootstrap; здесь только config → App → Router.
 func main() {
 	cfg := config.Load()
 
-	conn, err := sql.Open("postgres", cfg.DBURL)
+	app, err := bootstrap.NewApp(cfg)
 	if err != nil {
-		log.Fatalf("failed to open db: %v", err)
+		log.Fatalf("%v", err)
 	}
-	defer conn.Close()
+	defer app.Conn.Close()
 
-	if err := conn.PingContext(context.Background()); err != nil {
-		log.Fatalf("failed to ping db: %v", err)
-	}
-
-	queries := db.New(conn)
-
-	userRepo := repositories.NewUserRepository(queries)
-	authRepo := repositories.NewAuthRepository(queries)
-	notificationRepo := repositories.NewNotificationRepository(queries)
-	meetingRepo := repositories.NewMeetingRepository(queries)
-	roleRepo := repositories.NewRoleRepository(queries)
-	projectRepo := repositories.NewProjectRepository(queries)
-	projectMemberRepo := repositories.NewProjectMemberRepository(queries)
-	templateRepo := repositories.NewTemplateRepository(queries)
-	boardRepo := repositories.NewBoardRepository(queries)
-	taskRepo := repositories.NewTaskRepository(queries)
-	sprintRepo := repositories.NewSprintRepository(queries)
-	productBacklogRepo := repositories.NewProductBacklogRepository(queries)
-	sprintTaskRepo := repositories.NewSprintTaskRepository(queries)
-	adminUserRepo := repositories.NewAdminUserRepository(queries)
-	passwordPolicyRepo := repositories.NewPasswordPolicyRepository(queries)
-	roleSvc := services.NewRoleService(roleRepo)
-	permissionSvc := services.NewPermissionService(roleSvc, queries)
-	passwordSvc := services.NewPasswordService()
-	passwordPolicySvc := services.NewPasswordPolicyService(passwordPolicyRepo)
-	rateLimitSvc := services.NewRateLimitService(cfg, authRepo)
-	authSvc := services.NewAuthService(cfg, userRepo, authRepo, passwordSvc, passwordPolicySvc, rateLimitSvc, roleSvc)
-
-	authHandler := handlers.NewAuthHandler(authSvc, roleSvc)
-	userSvc := services.NewUserService(userRepo)
-	userHandler := handlers.NewUserHandler(userSvc, projectMemberRepo, roleRepo)
-	notificationSvc := services.NewNotificationService(notificationRepo)
-	notificationHandler := handlers.NewNotificationHandler(notificationSvc, queries)
-	meetingSvc := services.NewMeetingService(meetingRepo, notificationSvc)
-	meetingHandler := handlers.NewMeetingHandler(meetingSvc)
-
-	roleHandler := handlers.NewRoleHandler(roleSvc)
-
-	projectRoleRepo := repositories.NewProjectRoleRepository(queries)
-	projectRoleSvc := services.NewProjectRoleService(projectRoleRepo)
-	projectRoleHandler := handlers.NewProjectRoleHandler(projectRoleSvc, permissionSvc)
-
-	projectParamRepo := repositories.NewProjectParamRepository(queries)
-	projectParamSvc := services.NewProjectParamService(projectParamRepo, userRepo)
-
-	tagRepo := repositories.NewTagRepository(queries)
-	tagSvc := services.NewTagService(tagRepo)
-	tagHandler := handlers.NewTagHandler(tagSvc)
-
-	boardSvc := services.NewBoardService(boardRepo)
-
-	taskSvc := services.NewTaskService(taskRepo, projectRepo, tagRepo, conn, queries, notificationSvc)
-
-	adminUserSvc := services.NewAdminUserService(userRepo, adminUserRepo, roleSvc, passwordSvc, passwordPolicySvc)
-	adminUserHandler := handlers.NewAdminUserHandler(adminUserSvc)
-	adminPasswordPolicyHandler := handlers.NewAdminPasswordPolicyHandler(passwordPolicySvc)
-
-	sprintSvc := services.NewSprintService(sprintRepo, sprintTaskRepo, productBacklogRepo, taskRepo, boardRepo, projectRepo, tagRepo)
-
-	productBacklogSvc := services.NewProductBacklogService(productBacklogRepo, taskRepo, sprintTaskRepo)
-	productBacklogHandler := handlers.NewProductBacklogHandler(productBacklogSvc)
-	sprintBacklogHandler := handlers.NewSprintBacklogHandler(sprintSvc)
-
-	projectMemberSvc := services.NewProjectMemberService(projectMemberRepo, userRepo, roleRepo, projectRoleRepo)
-	projectMemberHandler := handlers.NewProjectMemberHandler(projectMemberSvc)
-
-	referenceRepo := repositories.NewReferenceRepository()
-	templateSvc := services.NewTemplateService(templateRepo, referenceRepo)
-	templateHandler := handlers.NewTemplateHandler(templateSvc)
-
-	projectSvc := services.NewProjectService(projectRepo, templateSvc, boardRepo, projectRoleRepo, projectParamRepo, projectMemberRepo)
-	taskHandler := handlers.NewTaskHandler(taskSvc, boardSvc, projectSvc)
-	projectHandler := handlers.NewProjectHandler(projectSvc, templateSvc, permissionSvc)
-	boardHandler := handlers.NewBoardHandler(boardSvc, projectSvc, permissionSvc)
-	projectParamHandler := handlers.NewProjectParamHandler(projectParamSvc, projectSvc)
-	sprintHandler := handlers.NewSprintHandler(sprintSvc, projectSvc)
-
-	scrumAnalyticsSvc := services.NewScrumAnalyticsService(sprintRepo, queries, conn)
-	scrumAnalyticsHandler := handlers.NewScrumAnalyticsHandler(scrumAnalyticsSvc)
-
-	kanbanAnalyticsSvc := services.NewKanbanAnalyticsService(queries, conn)
-	kanbanAnalyticsHandler := handlers.NewKanbanAnalyticsHandler(kanbanAnalyticsSvc)
-
-	router := api.SetupRouter(cfg, authHandler, userHandler, notificationHandler, meetingHandler, roleHandler, projectHandler, projectMemberHandler, templateHandler, boardHandler, taskHandler, sprintHandler, productBacklogHandler, sprintBacklogHandler, adminUserHandler, adminPasswordPolicyHandler, projectRoleHandler, projectParamHandler, tagHandler, scrumAnalyticsHandler, kanbanAnalyticsHandler, projectSvc, permissionSvc)
-
-
-	_ = boardSvc // used indirectly via boardHandler
+	h := app.Handlers
+	router := api.SetupRouter(
+		cfg,
+		h.Auth, h.User, h.Notification, h.Meeting, h.Role, h.Project,
+		h.ProjectMember, h.Template, h.Board, h.Task, h.Sprint,
+		h.ProductBacklog, h.SprintBacklog, h.AdminUser, h.AdminPasswordPolicy,
+		h.ProjectRole, h.ProjectParam, h.Tag,
+		h.ScrumAnalytics, h.KanbanAnalytics,
+		app.Services.Project, app.Services.Permission,
+	)
 
 	if err := router.Run(":" + cfg.ServerPort); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
-

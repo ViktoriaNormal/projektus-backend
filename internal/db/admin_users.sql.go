@@ -173,24 +173,74 @@ func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams
 	return i, err
 }
 
+const countActiveUsers = `-- name: CountActiveUsers :one
+SELECT COUNT(*)::bigint FROM users
+WHERE is_active = true
+  AND ($1::boolean IS TRUE OR deleted_at IS NULL)
+`
+
+// Число активных пользователей по всему множеству (is_active=true).
+// include_deleted управляет учётом soft-deleted. Независимо от q/is_active_filter/role_id —
+// чтобы карточка «Активные» не менялась при фильтрации в таблице.
+func (q *Queries) CountActiveUsers(ctx context.Context, dollar_1 bool) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveUsers, dollar_1)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countInactiveUsers = `-- name: CountInactiveUsers :one
+SELECT COUNT(*)::bigint FROM users
+WHERE is_active = false
+  AND ($1::boolean IS TRUE OR deleted_at IS NULL)
+`
+
+// Число заблокированных/деактивированных пользователей по всему множеству (is_active=false).
+func (q *Queries) CountInactiveUsers(ctx context.Context, dollar_1 bool) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countInactiveUsers, dollar_1)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listAllUsers = `-- name: ListAllUsers :many
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
        is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
-FROM users
-WHERE ($3::boolean IS TRUE OR deleted_at IS NULL)
-ORDER BY username ASC
-LIMIT $1 OFFSET $2
+FROM users u
+WHERE ($1::boolean IS TRUE OR u.deleted_at IS NULL)
+  AND ($2::text IS NULL OR $2::text = '' OR (
+       u.username ILIKE '%' || $2 || '%'
+    OR u.email    ILIKE '%' || $2 || '%'
+    OR u.full_name ILIKE '%' || $2 || '%'
+    OR COALESCE(u.position, '') ILIKE '%' || $2 || '%'))
+  AND ($3::boolean IS NULL OR u.is_active = $3::boolean)
+  AND ($4::uuid IS NULL OR EXISTS (
+       SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = $4::uuid))
+ORDER BY LOWER(u.full_name) ASC, u.id ASC
+LIMIT $6 OFFSET $5
 `
 
 type ListAllUsersParams struct {
-	Limit   int32 `json:"limit"`
-	Offset  int32 `json:"offset"`
-	Column3 bool  `json:"column_3"`
+	IncludeDeleted bool           `json:"include_deleted"`
+	Q              sql.NullString `json:"q"`
+	IsActiveFilter sql.NullBool   `json:"is_active_filter"`
+	RoleIDFilter   uuid.NullUUID  `json:"role_id_filter"`
+	PageOffset     int32          `json:"page_offset"`
+	PageLimit      int32          `json:"page_limit"`
 }
 
-// Admin: list all users (with pagination, optional include deleted)
+// Admin: list all users с пагинацией и серверными фильтрами.
+// include_deleted=true подключает soft-deleted; q (ILIKE по username/email/full_name/position),
+// is_active_filter (true/false) и role_id_filter — опциональны, пропуск фильтра = nil.
 func (q *Queries) ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]User, error) {
-	rows, err := q.db.QueryContext(ctx, listAllUsers, arg.Limit, arg.Offset, arg.Column3)
+	rows, err := q.db.QueryContext(ctx, listAllUsers,
+		arg.IncludeDeleted,
+		arg.Q,
+		arg.IsActiveFilter,
+		arg.RoleIDFilter,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -228,15 +278,36 @@ func (q *Queries) ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]U
 }
 
 const listAllUsersCount = `-- name: ListAllUsersCount :one
-SELECT COUNT(*) FROM users
-WHERE ($1::boolean IS TRUE OR deleted_at IS NULL)
+SELECT COUNT(*)::bigint FROM users u
+WHERE ($1::boolean IS TRUE OR u.deleted_at IS NULL)
+  AND ($2::text IS NULL OR $2::text = '' OR (
+       u.username ILIKE '%' || $2 || '%'
+    OR u.email    ILIKE '%' || $2 || '%'
+    OR u.full_name ILIKE '%' || $2 || '%'
+    OR COALESCE(u.position, '') ILIKE '%' || $2 || '%'))
+  AND ($3::boolean IS NULL OR u.is_active = $3::boolean)
+  AND ($4::uuid IS NULL OR EXISTS (
+       SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = $4::uuid))
 `
 
-func (q *Queries) ListAllUsersCount(ctx context.Context, dollar_1 bool) (int64, error) {
-	row := q.db.QueryRowContext(ctx, listAllUsersCount, dollar_1)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+type ListAllUsersCountParams struct {
+	IncludeDeleted bool           `json:"include_deleted"`
+	Q              sql.NullString `json:"q"`
+	IsActiveFilter sql.NullBool   `json:"is_active_filter"`
+	RoleIDFilter   uuid.NullUUID  `json:"role_id_filter"`
+}
+
+// Полное число записей под применённые фильтры (без учёта limit/offset).
+func (q *Queries) ListAllUsersCount(ctx context.Context, arg ListAllUsersCountParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, listAllUsersCount,
+		arg.IncludeDeleted,
+		arg.Q,
+		arg.IsActiveFilter,
+		arg.RoleIDFilter,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const softDeleteUser = `-- name: SoftDeleteUser :exec

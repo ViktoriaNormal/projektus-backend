@@ -3,12 +3,12 @@ package repositories
 import (
 	"context"
 	"database/sql"
-	"errors"
 
 	"github.com/google/uuid"
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type SprintRepository interface {
@@ -37,13 +37,13 @@ func (r *sprintRepository) Create(ctx context.Context, s *domain.Sprint) (*domai
 	row, err := r.q.CreateSprint(ctx, db.CreateSprintParams{
 		ProjectID: s.ProjectID,
 		Name:      s.Name,
-		Goal:      stringPtrToNullString(s.Goal),
+		Goal:      ptrToNullString(s.Goal),
 		StartDate: s.StartDate,
 		EndDate:   s.EndDate,
 		Status:    string(s.Status),
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateSprint", "projectID", s.ProjectID, "name", s.Name)
 	}
 	return mapDBSprint(row), nil
 }
@@ -51,10 +51,7 @@ func (r *sprintRepository) Create(ctx context.Context, s *domain.Sprint) (*domai
 func (r *sprintRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Sprint, error) {
 	row, err := r.q.GetSprintByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetSprintByID", "id", id)
 	}
 	return mapDBSprint(row), nil
 }
@@ -62,7 +59,7 @@ func (r *sprintRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.S
 func (r *sprintRepository) GetProjectSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
 	rows, err := r.q.GetProjectSprints(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetProjectSprints", "projectID", projectID)
 	}
 	result := make([]domain.Sprint, 0, len(rows))
 	for _, row := range rows {
@@ -75,31 +72,25 @@ func (r *sprintRepository) Update(ctx context.Context, s *domain.Sprint) (*domai
 	row, err := r.q.UpdateSprint(ctx, db.UpdateSprintParams{
 		ID:        s.ID,
 		Name:      stringToNullString(s.Name),
-		Goal:      stringPtrToNullString(s.Goal),
+		Goal:      ptrToNullString(s.Goal),
 		StartDate: sql.NullTime{Time: s.StartDate, Valid: true},
 		EndDate:   sql.NullTime{Time: s.EndDate, Valid: true},
 		Status:    stringToNullString(string(s.Status)),
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "UpdateSprint", "id", s.ID)
 	}
 	return mapDBSprint(row), nil
 }
 
 func (r *sprintRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.q.DeleteSprint(ctx, id)
+	return errctx.Wrap(r.q.DeleteSprint(ctx, id), "DeleteSprint", "id", id)
 }
 
 func (r *sprintRepository) GetActiveSprint(ctx context.Context, projectID uuid.UUID) (*domain.Sprint, error) {
 	row, err := r.q.GetActiveSprint(ctx, projectID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetActiveSprint", "projectID", projectID)
 	}
 	return mapDBSprint(row), nil
 }
@@ -107,10 +98,7 @@ func (r *sprintRepository) GetActiveSprint(ctx context.Context, projectID uuid.U
 func (r *sprintRepository) GetNextPlannedSprint(ctx context.Context, projectID uuid.UUID) (*domain.Sprint, error) {
 	row, err := r.q.GetNextPlannedSprint(ctx, projectID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
-		return nil, err
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetNextPlannedSprint", "projectID", projectID)
 	}
 	return mapDBSprint(row), nil
 }
@@ -118,7 +106,7 @@ func (r *sprintRepository) GetNextPlannedSprint(ctx context.Context, projectID u
 func (r *sprintRepository) GetPlannedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
 	rows, err := r.q.GetPlannedSprintsByProject(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetPlannedSprintsByProject", "projectID", projectID)
 	}
 	result := make([]domain.Sprint, 0, len(rows))
 	for _, row := range rows {
@@ -130,7 +118,7 @@ func (r *sprintRepository) GetPlannedSprints(ctx context.Context, projectID uuid
 func (r *sprintRepository) GetNonCompletedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
 	rows, err := r.q.GetNonCompletedSprintsByProject(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetNonCompletedSprintsByProject", "projectID", projectID)
 	}
 	result := make([]domain.Sprint, 0, len(rows))
 	for _, row := range rows {
@@ -142,7 +130,7 @@ func (r *sprintRepository) GetNonCompletedSprints(ctx context.Context, projectID
 func (r *sprintRepository) GetCompletedSprints(ctx context.Context, projectID uuid.UUID) ([]domain.Sprint, error) {
 	rows, err := r.q.GetCompletedSprintsByProject(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetCompletedSprintsByProject", "projectID", projectID)
 	}
 	result := make([]domain.Sprint, 0, len(rows))
 	for _, row := range rows {
@@ -152,7 +140,7 @@ func (r *sprintRepository) GetCompletedSprints(ctx context.Context, projectID uu
 }
 
 func (r *sprintRepository) UpdateStatuses(ctx context.Context) error {
-	return r.q.UpdateSprintStatuses(ctx)
+	return errctx.Wrap(r.q.UpdateSprintStatuses(ctx), "UpdateSprintStatuses")
 }
 
 func mapDBSprint(row db.Sprint) *domain.Sprint {
@@ -173,4 +161,3 @@ func mapDBSprint(row db.Sprint) *domain.Sprint {
 		UpdatedAt: row.UpdatedAt,
 	}
 }
-

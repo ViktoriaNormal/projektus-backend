@@ -28,6 +28,24 @@ func (q *Queries) AssignRoleToUser(ctx context.Context, arg AssignRoleToUserPara
 	return err
 }
 
+const countActiveSystemAdmins = `-- name: CountActiveSystemAdmins :one
+SELECT COUNT(*)::int AS count
+FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN role_permissions rp ON rp.role_id = ur.role_id
+WHERE rp.permission_code = 'system.users.manage'
+  AND rp.access = 'full'
+  AND u.is_active = TRUE
+  AND u.deleted_at IS NULL
+`
+
+func (q *Queries) CountActiveSystemAdmins(ctx context.Context) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countActiveSystemAdmins)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsersWithRole = `-- name: CountUsersWithRole :one
 SELECT COUNT(*)::int AS count
 FROM user_roles

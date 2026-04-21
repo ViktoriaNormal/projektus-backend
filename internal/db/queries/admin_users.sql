@@ -1,15 +1,48 @@
--- Admin: list all users (with pagination, optional include deleted)
+-- Admin: list all users с пагинацией и серверными фильтрами.
 -- name: ListAllUsers :many
+-- include_deleted=true подключает soft-deleted; q (ILIKE по username/email/full_name/position),
+-- is_active_filter (true/false) и role_id_filter — опциональны, пропуск фильтра = nil.
 SELECT id, username, email, password_hash, full_name, avatar_url, position,
        is_active, on_vacation, is_sick, alt_contact_channel, alt_contact_info, deleted_at, blocked_until
-FROM users
-WHERE ($3::boolean IS TRUE OR deleted_at IS NULL)
-ORDER BY username ASC
-LIMIT $1 OFFSET $2;
+FROM users u
+WHERE (sqlc.arg('include_deleted')::boolean IS TRUE OR u.deleted_at IS NULL)
+  AND (sqlc.narg('q')::text IS NULL OR sqlc.narg('q')::text = '' OR (
+       u.username ILIKE '%' || sqlc.narg('q') || '%'
+    OR u.email    ILIKE '%' || sqlc.narg('q') || '%'
+    OR u.full_name ILIKE '%' || sqlc.narg('q') || '%'
+    OR COALESCE(u.position, '') ILIKE '%' || sqlc.narg('q') || '%'))
+  AND (sqlc.narg('is_active_filter')::boolean IS NULL OR u.is_active = sqlc.narg('is_active_filter')::boolean)
+  AND (sqlc.narg('role_id_filter')::uuid IS NULL OR EXISTS (
+       SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = sqlc.narg('role_id_filter')::uuid))
+ORDER BY LOWER(u.full_name) ASC, u.id ASC
+LIMIT sqlc.arg('page_limit') OFFSET sqlc.arg('page_offset');
 
 -- name: ListAllUsersCount :one
-SELECT COUNT(*) FROM users
-WHERE ($1::boolean IS TRUE OR deleted_at IS NULL);
+-- Полное число записей под применённые фильтры (без учёта limit/offset).
+SELECT COUNT(*)::bigint FROM users u
+WHERE (sqlc.arg('include_deleted')::boolean IS TRUE OR u.deleted_at IS NULL)
+  AND (sqlc.narg('q')::text IS NULL OR sqlc.narg('q')::text = '' OR (
+       u.username ILIKE '%' || sqlc.narg('q') || '%'
+    OR u.email    ILIKE '%' || sqlc.narg('q') || '%'
+    OR u.full_name ILIKE '%' || sqlc.narg('q') || '%'
+    OR COALESCE(u.position, '') ILIKE '%' || sqlc.narg('q') || '%'))
+  AND (sqlc.narg('is_active_filter')::boolean IS NULL OR u.is_active = sqlc.narg('is_active_filter')::boolean)
+  AND (sqlc.narg('role_id_filter')::uuid IS NULL OR EXISTS (
+       SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.role_id = sqlc.narg('role_id_filter')::uuid));
+
+-- name: CountActiveUsers :one
+-- Число активных пользователей по всему множеству (is_active=true).
+-- include_deleted управляет учётом soft-deleted. Независимо от q/is_active_filter/role_id —
+-- чтобы карточка «Активные» не менялась при фильтрации в таблице.
+SELECT COUNT(*)::bigint FROM users
+WHERE is_active = true
+  AND ($1::boolean IS TRUE OR deleted_at IS NULL);
+
+-- name: CountInactiveUsers :one
+-- Число заблокированных/деактивированных пользователей по всему множеству (is_active=false).
+SELECT COUNT(*)::bigint FROM users
+WHERE is_active = false
+  AND ($1::boolean IS TRUE OR deleted_at IS NULL);
 
 -- Admin: get user by ID (including deleted)
 -- name: AdminGetUserByID :one

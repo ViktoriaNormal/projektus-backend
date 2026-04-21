@@ -41,6 +41,16 @@ SELECT EXISTS (
       AND rp.permission_code = $2
 ) AS has_permission;
 
+-- name: CountActiveSystemAdmins :one
+SELECT COUNT(*)::int AS count
+FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN role_permissions rp ON rp.role_id = ur.role_id
+WHERE rp.permission_code = 'system.users.manage'
+  AND rp.access = 'full'
+  AND u.is_active = TRUE
+  AND u.deleted_at IS NULL;
+
 -- name: GetSystemPermissionAccess :one
 SELECT rp.access
 FROM user_roles ur

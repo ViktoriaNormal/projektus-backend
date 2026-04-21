@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type MeetingType string
 
@@ -40,8 +44,8 @@ const (
 )
 
 type Meeting struct {
-	ID          string        `json:"id"`
-	ProjectID   *string       `json:"project_id,omitempty"`
+	ID          uuid.UUID     `json:"id"`
+	ProjectID   *uuid.UUID    `json:"project_id,omitempty"`
 	Name        string        `json:"name"`
 	Description *string       `json:"description,omitempty"`
 	Type        MeetingType   `json:"meeting_type"`
@@ -49,12 +53,12 @@ type Meeting struct {
 	Status      MeetingStatus `json:"status"`
 	StartTime   time.Time     `json:"start_time"`
 	EndTime     time.Time     `json:"end_time"`
-	CreatedBy   string        `json:"created_by"`
+	CreatedBy   uuid.UUID     `json:"created_by"`
 }
 
 type MeetingParticipant struct {
-	ID        string            `json:"id"`
-	MeetingID string            `json:"meeting_id"`
-	UserID    string            `json:"user_id"`
+	ID        uuid.UUID         `json:"id"`
+	MeetingID uuid.UUID         `json:"meeting_id"`
+	UserID    uuid.UUID         `json:"user_id"`
 	Status    ParticipantStatus `json:"status"`
 }

@@ -10,19 +10,20 @@ import (
 
 	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
+	"projektus-backend/pkg/errctx"
 )
 
 type NotificationRepository interface {
-	GetSettingsByUser(ctx context.Context, userID string) ([]domain.NotificationSetting, error)
+	GetSettingsByUser(ctx context.Context, userID uuid.UUID) ([]domain.NotificationSetting, error)
 	UpsertSetting(ctx context.Context, setting domain.NotificationSetting) error
-	GetSetting(ctx context.Context, userID string, eventType domain.EventType) (*domain.NotificationSetting, error)
+	GetSetting(ctx context.Context, userID uuid.UUID, eventType domain.EventType) (*domain.NotificationSetting, error)
 
 	CreateNotification(ctx context.Context, n domain.Notification) (*domain.Notification, error)
-	GetUserNotifications(ctx context.Context, userID string, unreadOnly bool, limit, offset int32) ([]domain.Notification, error)
-	MarkNotificationAsRead(ctx context.Context, userID, notificationID string) error
-	MarkAllNotificationsAsRead(ctx context.Context, userID string) error
-	DeleteAllNotifications(ctx context.Context, userID string) error
-	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	GetUserNotifications(ctx context.Context, userID uuid.UUID, unreadOnly bool, limit, offset int32) ([]domain.Notification, error)
+	MarkNotificationAsRead(ctx context.Context, userID, notificationID uuid.UUID) error
+	MarkAllNotificationsAsRead(ctx context.Context, userID uuid.UUID) error
+	DeleteAllNotifications(ctx context.Context, userID uuid.UUID) error
+	GetUnreadCount(ctx context.Context, userID uuid.UUID) (int, error)
 	GetPendingEmailNotifications(ctx context.Context) ([]domain.Notification, error)
 }
 
@@ -34,14 +35,10 @@ func NewNotificationRepository(q *db.Queries) NotificationRepository {
 	return &notificationRepository{q: q}
 }
 
-func (r *notificationRepository) GetSettingsByUser(ctx context.Context, userID string) ([]domain.NotificationSetting, error) {
-	uid, err := uuid.Parse(userID)
+func (r *notificationRepository) GetSettingsByUser(ctx context.Context, userID uuid.UUID) ([]domain.NotificationSetting, error) {
+	rows, err := r.q.GetNotificationSettingsByUser(ctx, userID)
 	if err != nil {
-		return nil, err
-	}
-	rows, err := r.q.GetNotificationSettingsByUser(ctx, uid)
-	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetNotificationSettingsByUser", "userID", userID)
 	}
 	result := make([]domain.NotificationSetting, len(rows))
 	for i, s := range rows {
@@ -51,42 +48,30 @@ func (r *notificationRepository) GetSettingsByUser(ctx context.Context, userID s
 }
 
 func (r *notificationRepository) UpsertSetting(ctx context.Context, setting domain.NotificationSetting) error {
-	uid, err := uuid.Parse(setting.UserID)
-	if err != nil {
-		return err
-	}
-	return r.q.UpsertNotificationSetting(ctx, db.UpsertNotificationSettingParams{
-		UserID:    uid,
+	return errctx.Wrap(r.q.UpsertNotificationSetting(ctx, db.UpsertNotificationSettingParams{
+		UserID:    setting.UserID,
 		EventType: string(setting.EventType),
 		InSystem:  setting.InSystem,
 		InEmail:   setting.InEmail,
-	})
+	}), "UpsertNotificationSetting", "userID", setting.UserID, "eventType", setting.EventType)
 }
 
-func (r *notificationRepository) GetSetting(ctx context.Context, userID string, eventType domain.EventType) (*domain.NotificationSetting, error) {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
+func (r *notificationRepository) GetSetting(ctx context.Context, userID uuid.UUID, eventType domain.EventType) (*domain.NotificationSetting, error) {
 	row, err := r.q.GetNotificationSetting(ctx, db.GetNotificationSettingParams{
-		UserID:    uid,
+		UserID:    userID,
 		EventType: string(eventType),
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, errctx.Wrap(err, "GetNotificationSetting", "userID", userID, "eventType", eventType)
 	}
 	s := mapDBNotificationSettingToDomain(row)
 	return &s, nil
 }
 
 func (r *notificationRepository) CreateNotification(ctx context.Context, n domain.Notification) (*domain.Notification, error) {
-	uid, err := uuid.Parse(n.UserID)
-	if err != nil {
-		return nil, err
-	}
 	body := sql.NullString{}
 	if n.Body != nil {
 		body = sql.NullString{String: *n.Body, Valid: true}
@@ -96,32 +81,28 @@ func (r *notificationRepository) CreateNotification(ctx context.Context, n domai
 		payload = pqtype.NullRawMessage{RawMessage: n.PayloadJSON, Valid: true}
 	}
 	row, err := r.q.CreateNotification(ctx, db.CreateNotificationParams{
-		UserID:    uid,
+		UserID:    n.UserID,
 		EventType: string(n.EventType),
 		Title:     n.Title,
 		Body:      body,
 		Payload:   payload,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "CreateNotification", "userID", n.UserID, "eventType", n.EventType)
 	}
 	d := mapDBNotificationToDomain(row)
 	return &d, nil
 }
 
-func (r *notificationRepository) GetUserNotifications(ctx context.Context, userID string, unreadOnly bool, limit, offset int32) ([]domain.Notification, error) {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return nil, err
-	}
+func (r *notificationRepository) GetUserNotifications(ctx context.Context, userID uuid.UUID, unreadOnly bool, limit, offset int32) ([]domain.Notification, error) {
 	rows, err := r.q.GetUserNotifications(ctx, db.GetUserNotificationsParams{
-		UserID:  uid,
+		UserID:  userID,
 		Column2: unreadOnly,
 		Limit:   limit,
 		Offset:  offset,
 	})
 	if err != nil {
-		return nil, err
+		return nil, errctx.Wrap(err, "GetUserNotifications", "userID", userID)
 	}
 	result := make([]domain.Notification, len(rows))
 	for i, n := range rows {
@@ -130,44 +111,27 @@ func (r *notificationRepository) GetUserNotifications(ctx context.Context, userI
 	return result, nil
 }
 
-func (r *notificationRepository) MarkNotificationAsRead(ctx context.Context, userID, notificationID string) error {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	nid, err := uuid.Parse(notificationID)
-	if err != nil {
-		return err
-	}
-	return r.q.MarkNotificationAsRead(ctx, db.MarkNotificationAsReadParams{
-		ID:     nid,
-		UserID: uid,
-	})
+func (r *notificationRepository) MarkNotificationAsRead(ctx context.Context, userID, notificationID uuid.UUID) error {
+	return errctx.Wrap(r.q.MarkNotificationAsRead(ctx, db.MarkNotificationAsReadParams{
+		ID:     notificationID,
+		UserID: userID,
+	}), "MarkNotificationAsRead", "userID", userID, "notificationID", notificationID)
 }
 
-func (r *notificationRepository) MarkAllNotificationsAsRead(ctx context.Context, userID string) error {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	return r.q.MarkAllNotificationsAsRead(ctx, uid)
+func (r *notificationRepository) MarkAllNotificationsAsRead(ctx context.Context, userID uuid.UUID) error {
+	return errctx.Wrap(r.q.MarkAllNotificationsAsRead(ctx, userID), "MarkAllNotificationsAsRead", "userID", userID)
 }
 
-func (r *notificationRepository) DeleteAllNotifications(ctx context.Context, userID string) error {
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	return r.q.DeleteAllNotifications(ctx, uid)
+func (r *notificationRepository) DeleteAllNotifications(ctx context.Context, userID uuid.UUID) error {
+	return errctx.Wrap(r.q.DeleteAllNotifications(ctx, userID), "DeleteAllNotifications", "userID", userID)
 }
 
-func (r *notificationRepository) GetUnreadCount(ctx context.Context, userID string) (int, error) {
-	uid, err := uuid.Parse(userID)
+func (r *notificationRepository) GetUnreadCount(ctx context.Context, userID uuid.UUID) (int, error) {
+	n, err := r.q.GetUnreadNotificationCount(ctx, userID)
 	if err != nil {
-		return 0, err
+		return 0, errctx.Wrap(err, "GetUnreadNotificationCount", "userID", userID)
 	}
-	n, err := r.q.GetUnreadNotificationCount(ctx, uid)
-	return int(n), err
+	return int(n), nil
 }
 
 func (r *notificationRepository) GetPendingEmailNotifications(_ context.Context) ([]domain.Notification, error) {
@@ -177,8 +141,8 @@ func (r *notificationRepository) GetPendingEmailNotifications(_ context.Context)
 
 func mapDBNotificationSettingToDomain(s db.NotificationSetting) domain.NotificationSetting {
 	return domain.NotificationSetting{
-		ID:        s.ID.String(),
-		UserID:    s.UserID.String(),
+		ID:        s.ID,
+		UserID:    s.UserID,
 		EventType: domain.EventType(s.EventType),
 		InSystem:  s.InSystem,
 		InEmail:   s.InEmail,
@@ -195,8 +159,8 @@ func mapDBNotificationToDomain(n db.Notification) domain.Notification {
 		payload = n.Payload.RawMessage
 	}
 	return domain.Notification{
-		ID:          n.ID.String(),
-		UserID:      n.UserID.String(),
+		ID:          n.ID,
+		UserID:      n.UserID,
 		EventType:   domain.EventType(n.EventType),
 		Title:       n.Title,
 		Body:        body,

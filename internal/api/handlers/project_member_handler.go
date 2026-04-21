@@ -1,10 +1,7 @@
 package handlers
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"projektus-backend/internal/api/dto"
 	"projektus-backend/internal/domain"
@@ -19,17 +16,32 @@ func NewProjectMemberHandler(service *services.ProjectMemberService) *ProjectMem
 	return &ProjectMemberHandler{service: service}
 }
 
+// toMemberRoleRefsDTO конвертирует domain-тип роли участника в DTO. Используется
+// во всех местах ответа по участникам проекта — чтобы слои не ссылались друг
+// на друга типами.
+func toMemberRoleRefsDTO(rs []domain.ProjectMemberRoleRef) []dto.ProjectMemberRoleRef {
+	if len(rs) == 0 {
+		return nil
+	}
+	out := make([]dto.ProjectMemberRoleRef, len(rs))
+	for i, r := range rs {
+		out[i] = dto.ProjectMemberRoleRef{ID: r.ID, Name: r.Name}
+	}
+	return out
+}
+
 func (h *ProjectMemberHandler) ListMembers(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	members, err := h.service.ListMembers(c.Request.Context(), projectID)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список участников")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список участников")
 		return
 	}
 
@@ -39,33 +51,29 @@ func (h *ProjectMemberHandler) ListMembers(c *gin.Context) {
 			ID:        m.ID,
 			ProjectID: m.ProjectID,
 			UserID:    m.UserID,
-			Roles:     m.Roles,
+			Roles:     toMemberRoleRefsDTO(m.Roles),
 		})
 	}
 	writeSuccess(c, resp)
 }
 
 func (h *ProjectMemberHandler) AddMember(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
-	var req dto.AddMemberRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.AddMemberRequest](c)
+	if !ok {
 		return
 	}
 
 	member, err := h.service.AddMember(c.Request.Context(), projectID, req.UserID, req.Roles)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Пользователь не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось добавить участника")
+		respondInternal(c, err, "Не удалось добавить участника")
 		return
 	}
 
@@ -73,24 +81,21 @@ func (h *ProjectMemberHandler) AddMember(c *gin.Context) {
 		ID:        member.ID,
 		ProjectID: member.ProjectID,
 		UserID:    member.UserID,
-		Roles:     member.Roles,
+		Roles:     toMemberRoleRefsDTO(member.Roles),
 	})
 }
 
 func (h *ProjectMemberHandler) RemoveMember(c *gin.Context) {
-	memberIDStr := c.Param("memberId")
-	memberID, err := uuid.Parse(memberIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор участника")
+	memberID, ok := paramUUID(c, "memberId")
+	if !ok {
 		return
 	}
 
 	if err := h.service.RemoveMember(c.Request.Context(), memberID); err != nil {
-		if err == domain.ErrLastProjectAdmin {
-			writeError(c, http.StatusBadRequest, "LAST_PROJECT_ADMIN", "Нельзя удалить последнего участника с ролью «Администратор проекта»")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить участника")
+		respondInternal(c, err, "Не удалось удалить участника")
 		return
 	}
 
@@ -98,32 +103,26 @@ func (h *ProjectMemberHandler) RemoveMember(c *gin.Context) {
 }
 
 func (h *ProjectMemberHandler) UpdateMemberRoles(c *gin.Context) {
-	projectIDStr := c.Param("projectId")
-	projectID, err := uuid.Parse(projectIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор проекта")
+	projectID, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
-	memberIDStr := c.Param("memberId")
-	memberID, err := uuid.Parse(memberIDStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор участника")
+	memberID, ok := paramUUID(c, "memberId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateMemberRolesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateMemberRolesRequest](c)
+	if !ok {
 		return
 	}
 
 	member, err := h.service.UpdateMemberRoles(c.Request.Context(), memberID, projectID, req.Roles)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Участник не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить роли участника")
+		respondInternal(c, err, "Не удалось обновить роли участника")
 		return
 	}
 
@@ -131,7 +130,6 @@ func (h *ProjectMemberHandler) UpdateMemberRoles(c *gin.Context) {
 		ID:        member.ID,
 		ProjectID: member.ProjectID,
 		UserID:    member.UserID,
-		Roles:     member.Roles,
+		Roles:     toMemberRoleRefsDTO(member.Roles),
 	})
 }
-

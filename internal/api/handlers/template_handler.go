@@ -25,7 +25,7 @@ func NewTemplateHandler(service *services.TemplateService) *TemplateHandler {
 func (h *TemplateHandler) GetReferences(c *gin.Context) {
 	refs, err := h.service.GetReferences(c.Request.Context())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось загрузить справочники")
+		respondInternal(c, err, "Не удалось загрузить справочники")
 		return
 	}
 
@@ -76,7 +76,10 @@ func (h *TemplateHandler) GetReferences(c *gin.Context) {
 func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 	templates, allData, err := h.service.List(c.Request.Context())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить шаблоны проектов")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить шаблоны проектов")
 		return
 	}
 	resp := make([]dto.ProjectTemplateResponse, 0, len(templates))
@@ -89,9 +92,8 @@ func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 
 // POST /v1/admin/project-templates
 func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
-	var req dto.CreateTemplateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateRequest](c)
+	if !ok {
 		return
 	}
 
@@ -102,7 +104,10 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 
 	tmpl, data, err := h.service.Create(c.Request.Context(), req.Name, desc, req.ProjectType)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать шаблон")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать шаблон")
 		return
 	}
 
@@ -112,19 +117,17 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 
 // GET /v1/admin/project-templates/:templateId
 func (h *TemplateHandler) GetTemplate(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
 
 	tmpl, data, err := h.service.GetByID(c.Request.Context(), templateID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Шаблон не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить шаблон")
+		respondInternal(c, err, "Не удалось получить шаблон")
 		return
 	}
 
@@ -134,25 +137,22 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId
 func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateTemplateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateRequest](c)
+	if !ok {
 		return
 	}
 
 	tmpl, data, err := h.service.Update(c.Request.Context(), templateID, req.Name, req.Description)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Шаблон не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить шаблон")
+		respondInternal(c, err, "Не удалось обновить шаблон")
 		return
 	}
 
@@ -162,23 +162,21 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 
 // DELETE /v1/admin/project-templates/:templateId
 func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
 
-	err = h.service.Delete(c.Request.Context(), templateID)
+	err := h.service.Delete(c.Request.Context(), templateID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Шаблон не найден")
-			return
-		}
 		if strings.Contains(err.Error(), "TEMPLATE_IN_USE") {
 			writeError(c, http.StatusBadRequest, "TEMPLATE_IN_USE", "Шаблон используется проектами")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить шаблон")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить шаблон")
 		return
 	}
 
@@ -187,25 +185,22 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 
 // POST /v1/admin/project-templates/:templateId/boards
 func (h *TemplateHandler) CreateBoard(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
 
-	var req dto.CreateTemplateBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateBoardRequest](c)
+	if !ok {
 		return
 	}
 
 	board, err := h.service.CreateBoard(c.Request.Context(), templateID, req.Name, req.Description, req.IsDefault, req.PriorityType, req.EstimationUnit, req.SwimlaneGroupBy)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Шаблон не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать доску")
+		respondInternal(c, err, "Не удалось создать доску")
 		return
 	}
 
@@ -214,20 +209,17 @@ func (h *TemplateHandler) CreateBoard(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId
 func (h *TemplateHandler) UpdateBoard(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateBoardRequest](c)
+	if !ok {
 		return
 	}
 
@@ -253,13 +245,12 @@ func (h *TemplateHandler) UpdateBoard(c *gin.Context) {
 		}
 	}
 
-	board, err := h.service.UpdateBoard(c.Request.Context(), templateID, boardID, req.Name, desc, req.IsDefault, req.Order, req.PriorityType, req.EstimationUnit, swimlaneGroupBy, clearSwimlaneGroup)
+	board, err := h.service.UpdateBoard(c.Request.Context(), templateID, boardID, req.Name, desc, req.IsDefault, req.Order, req.PriorityType, req.EstimationUnit, swimlaneGroupBy, clearSwimlaneGroup, req.PriorityOptions)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить доску")
+		respondInternal(c, err, "Не удалось обновить доску")
 		return
 	}
 
@@ -268,23 +259,17 @@ func (h *TemplateHandler) UpdateBoard(c *gin.Context) {
 
 // DELETE /v1/admin/project-templates/:templateId/boards/:boardId
 func (h *TemplateHandler) DeleteBoard(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	err = h.service.DeleteBoard(c.Request.Context(), templateID, boardID)
+	err := h.service.DeleteBoard(c.Request.Context(), templateID, boardID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
-			return
-		}
 		if strings.Contains(err.Error(), "DEFAULT_BOARD_DELETE") {
 			writeError(c, http.StatusBadRequest, "DEFAULT_BOARD_DELETE", "Нельзя удалить доску по умолчанию")
 			return
@@ -293,7 +278,10 @@ func (h *TemplateHandler) DeleteBoard(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "LAST_BOARD_DELETE", "Нельзя удалить единственную доску")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить доску")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить доску")
 		return
 	}
 
@@ -302,15 +290,13 @@ func (h *TemplateHandler) DeleteBoard(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/reorder
 func (h *TemplateHandler) ReorderBoards(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
 
-	var req dto.ReorderRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.ReorderRequest](c)
+	if !ok {
 		return
 	}
 
@@ -320,7 +306,10 @@ func (h *TemplateHandler) ReorderBoards(c *gin.Context) {
 	}
 
 	if err := h.service.ReorderBoards(c.Request.Context(), templateID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок досок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок досок")
 		return
 	}
 
@@ -329,20 +318,17 @@ func (h *TemplateHandler) ReorderBoards(c *gin.Context) {
 
 // POST /v1/admin/project-templates/:templateId/boards/:boardId/columns
 func (h *TemplateHandler) CreateColumn(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	var req dto.CreateTemplateBoardColumnRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateBoardColumnRequest](c)
+	if !ok {
 		return
 	}
 
@@ -352,15 +338,15 @@ func (h *TemplateHandler) CreateColumn(c *gin.Context) {
 	}
 	col, err := h.service.CreateColumn(c.Request.Context(), templateID, boardID, req.Name, req.SystemType, req.WipLimit, req.Order, note)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
-			return
-		}
+		// Сохраняем исторический маппинг — VALIDATION_ERROR вместо COMPLETED_COLUMN_WIP.
 		if err == domain.ErrCompletedColumnWip {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать колонку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать колонку")
 		return
 	}
 
@@ -369,25 +355,21 @@ func (h *TemplateHandler) CreateColumn(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId/columns/:columnId
 func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	columnID, err := uuid.Parse(c.Param("columnId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	columnID, ok := paramUUID(c, "columnId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardColumnRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateBoardColumnRequest](c)
+	if !ok {
 		return
 	}
 
@@ -414,10 +396,6 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 
 	col, err := h.service.UpdateColumn(c.Request.Context(), templateID, boardID, columnID, req.Name, req.SystemType, wipLimit, clearWipLimit, note, clearNote)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Колонка не найдена")
-			return
-		}
 		if strings.Contains(err.Error(), "COLUMN_LOCKED") {
 			writeError(c, http.StatusBadRequest, "COLUMN_LOCKED", "Нельзя редактировать заблокированную колонку")
 			return
@@ -430,7 +408,10 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "WIP-лимит нельзя установить для колонок с типом \"Завершено\"")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить колонку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось обновить колонку")
 		return
 	}
 
@@ -439,28 +420,21 @@ func (h *TemplateHandler) UpdateColumn(c *gin.Context) {
 
 // DELETE /v1/admin/project-templates/:templateId/boards/:boardId/columns/:columnId
 func (h *TemplateHandler) DeleteColumn(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	columnID, err := uuid.Parse(c.Param("columnId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	columnID, ok := paramUUID(c, "columnId")
+	if !ok {
 		return
 	}
 
-	err = h.service.DeleteColumn(c.Request.Context(), templateID, boardID, columnID)
+	err := h.service.DeleteColumn(c.Request.Context(), templateID, boardID, columnID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Колонка не найдена")
-			return
-		}
 		if strings.Contains(err.Error(), "COLUMN_LOCKED") {
 			writeError(c, http.StatusBadRequest, "COLUMN_LOCKED", "Нельзя удалить заблокированную колонку")
 			return
@@ -469,7 +443,10 @@ func (h *TemplateHandler) DeleteColumn(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "После удаления нарушится порядок типов")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить колонку")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить колонку")
 		return
 	}
 
@@ -478,20 +455,17 @@ func (h *TemplateHandler) DeleteColumn(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId/columns/reorder
 func (h *TemplateHandler) ReorderColumns(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	var req dto.ReorderColumnsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.ReorderColumnsRequest](c)
+	if !ok {
 		return
 	}
 
@@ -500,7 +474,7 @@ func (h *TemplateHandler) ReorderColumns(c *gin.Context) {
 		orders[o.ColumnID] = o.Order
 	}
 
-	err = h.service.ReorderColumns(c.Request.Context(), templateID, boardID, orders)
+	err := h.service.ReorderColumns(c.Request.Context(), templateID, boardID, orders)
 	if err != nil {
 		if strings.Contains(err.Error(), "COLUMN_LOCKED") {
 			writeError(c, http.StatusBadRequest, "COLUMN_LOCKED", "Нельзя перемещать заблокированные колонки")
@@ -510,7 +484,10 @@ func (h *TemplateHandler) ReorderColumns(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "INVALID_COLUMN_ORDER", "Нарушен порядок типов колонок")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок колонок")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок колонок")
 		return
 	}
 
@@ -519,34 +496,26 @@ func (h *TemplateHandler) ReorderColumns(c *gin.Context) {
 
 // POST /v1/admin/project-templates/:templateId/boards/:boardId/swimlanes
 func (h *TemplateHandler) CreateSwimlane(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор шаблона")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор доски")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	var req dto.CreateTemplateBoardSwimlaneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateBoardSwimlaneRequest](c)
+	if !ok {
 		return
 	}
 
 	sw, err := h.service.CreateSwimlane(c.Request.Context(), templateID, boardID, req.Name, req.WipLimit, req.Order)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrScrumWipNotAllowed {
-			writeError(c, http.StatusBadRequest, "SCRUM_WIP_NOT_ALLOWED", "WIP-лимиты дорожек не поддерживаются в Scrum")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать дорожку")
+		respondInternal(c, err, "Не удалось создать дорожку")
 		return
 	}
 
@@ -555,25 +524,21 @@ func (h *TemplateHandler) CreateSwimlane(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId/swimlanes/:swimlaneId
 func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	swimlaneID, err := uuid.Parse(c.Param("swimlaneId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	swimlaneID, ok := paramUUID(c, "swimlaneId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardSwimlaneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateBoardSwimlaneRequest](c)
+	if !ok {
 		return
 	}
 
@@ -598,15 +563,10 @@ func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 
 	sw, err := h.service.UpdateSwimlane(c.Request.Context(), templateID, boardID, swimlaneID, wipLimit, clearWipLimit, note, clearNote)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrScrumWipNotAllowed {
-			writeError(c, http.StatusBadRequest, "SCRUM_WIP_NOT_ALLOWED", "WIP-лимиты дорожек не поддерживаются в Scrum")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить дорожку")
+		respondInternal(c, err, "Не удалось обновить дорожку")
 		return
 	}
 
@@ -615,29 +575,25 @@ func (h *TemplateHandler) UpdateSwimlane(c *gin.Context) {
 
 // DELETE /v1/admin/project-templates/:templateId/boards/:boardId/swimlanes/:swimlaneId
 func (h *TemplateHandler) DeleteSwimlane(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	swimlaneID, err := uuid.Parse(c.Param("swimlaneId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	swimlaneID, ok := paramUUID(c, "swimlaneId")
+	if !ok {
 		return
 	}
 
-	err = h.service.DeleteSwimlane(c.Request.Context(), templateID, boardID, swimlaneID)
+	err := h.service.DeleteSwimlane(c.Request.Context(), templateID, boardID, swimlaneID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Дорожка не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить дорожку")
+		respondInternal(c, err, "Не удалось удалить дорожку")
 		return
 	}
 
@@ -646,20 +602,17 @@ func (h *TemplateHandler) DeleteSwimlane(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId/swimlanes/reorder
 func (h *TemplateHandler) ReorderSwimlanes(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	var req dto.ReorderSwimlanesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.ReorderSwimlanesRequest](c)
+	if !ok {
 		return
 	}
 
@@ -669,7 +622,10 @@ func (h *TemplateHandler) ReorderSwimlanes(c *gin.Context) {
 	}
 
 	if err := h.service.ReorderSwimlanes(c.Request.Context(), templateID, boardID, orders); err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось изменить порядок дорожек")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок дорожек")
 		return
 	}
 
@@ -678,38 +634,31 @@ func (h *TemplateHandler) ReorderSwimlanes(c *gin.Context) {
 
 // POST /v1/admin/project-templates/:templateId/boards/:boardId/custom-fields
 func (h *TemplateHandler) CreateCustomField(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
 
-	var req dto.CreateTemplateBoardCustomFieldRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateBoardCustomFieldRequest](c)
+	if !ok {
 		return
 	}
 
 	field, err := h.service.CreateCustomField(c.Request.Context(), templateID, boardID, req.Name, req.FieldType, req.IsRequired, req.Options)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Доска не найдена")
-			return
-		}
-		if err == domain.ErrInvalidFieldType {
-			writeError(c, http.StatusBadRequest, "INVALID_FIELD_TYPE", "Тип поля недопустим для данного типа проекта")
-			return
-		}
+		// Сохраняем специфичный код DUPLICATE_NAME (не в таблице).
 		if err == domain.ErrConflict {
 			writeError(c, http.StatusConflict, "DUPLICATE_NAME", "Поле с таким именем уже существует")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать поле")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать поле")
 		return
 	}
 
@@ -718,74 +667,127 @@ func (h *TemplateHandler) CreateCustomField(c *gin.Context) {
 
 // PATCH /v1/admin/project-templates/:templateId/boards/:boardId/custom-fields/:fieldId
 func (h *TemplateHandler) UpdateCustomField(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	fieldID, err := uuid.Parse(c.Param("fieldId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	fieldID, ok := paramUUID(c, "fieldId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateTemplateBoardCustomFieldRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateBoardCustomFieldRequest](c)
+	if !ok {
+		return
+	}
+
+	// Особый кейс: системные поля «Приоритизация» и «Оценка трудозатрат».
+	// У них нет строк в таблице template_board_fields — они генерируются
+	// из констант в runtime. Обновление options таких полей перенаправляется
+	// на соответствующие поля доски.
+	if field, handled, err := h.updateSystemFieldIfAny(c, templateID, boardID, fieldID, req); handled {
+		if err != nil {
+			if respondDomainErr(c, err) {
+				return
+			}
+			respondInternal(c, err, "Не удалось обновить системное поле")
+			return
+		}
+		writeSuccess(c, mapCustomFieldToResponse(field))
 		return
 	}
 
 	field, err := h.service.UpdateCustomField(c.Request.Context(), templateID, boardID, fieldID, req.Name, req.IsRequired, req.Options)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
-			return
-		}
-		if err == domain.ErrSystemField {
-			writeError(c, http.StatusBadRequest, "SYSTEM_FIELD", "Нельзя изменять системное поле")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить поле")
+		respondInternal(c, err, "Не удалось обновить поле")
 		return
 	}
 
 	writeSuccess(c, mapCustomFieldToResponse(field))
 }
 
+// updateSystemFieldIfAny обрабатывает PATCH на системные поля доски
+// (Приоритизация, Оценка трудозатрат), которые хранятся не в отдельной
+// таблице, а в полях самой доски. Возвращает (field, handled, err).
+// Когда handled=false — это обычное кастомное поле, дальше работает
+// стандартный путь через service.UpdateCustomField.
+func (h *TemplateHandler) updateSystemFieldIfAny(c *gin.Context, templateID, boardID, fieldID uuid.UUID, req dto.UpdateTemplateBoardCustomFieldRequest) (domain.TemplateBoardCustomField, bool, error) {
+	priorityID := domain.SystemBoardFieldIDs["priority"]
+	estimationID := domain.SystemBoardFieldIDs["estimation"]
+
+	switch fieldID {
+	case priorityID:
+		// Меняем priority_options на уровне доски — именно оттуда они
+		// подтягиваются в системное поле через GenerateSystemBoardFields.
+		// Передаём опции в UpdateBoard как *[]string; остальные параметры nil.
+		var opts *[]string
+		if req.Options != nil {
+			v := req.Options
+			opts = &v
+		}
+		if _, err := h.service.UpdateBoard(c.Request.Context(), templateID, boardID,
+			nil, nil, nil, nil, nil, nil, nil, false, opts); err != nil {
+			return domain.TemplateBoardCustomField{}, true, err
+		}
+		// Перечитываем доску, чтобы отдать актуальный набор опций обратно.
+		board, err := h.service.GetBoardByID(c.Request.Context(), templateID, boardID)
+		if err != nil {
+			return domain.TemplateBoardCustomField{}, true, err
+		}
+		options := board.PriorityOptions
+		if options == nil {
+			options = []string{}
+		}
+		return domain.TemplateBoardCustomField{
+			ID: priorityID, Name: "Приоритизация", FieldType: "priority",
+			IsSystem: true, IsRequired: false, Options: options,
+		}, true, nil
+
+	case estimationID:
+		// «Оценка трудозатрат» — это выбор единицы (story_points/time),
+		// хранится в board.estimation_unit. Здесь массив options не имеет
+		// смысла как таковой, поэтому просто возвращаем текущее состояние
+		// идемпотентно — не ломая контракт.
+		board, err := h.service.GetBoardByID(c.Request.Context(), templateID, boardID)
+		if err != nil {
+			return domain.TemplateBoardCustomField{}, true, err
+		}
+		return domain.TemplateBoardCustomField{
+			ID: estimationID, Name: "Оценка трудозатрат", FieldType: "estimation",
+			IsSystem: true, IsRequired: false, Options: []string{board.EstimationUnit},
+		}, true, nil
+	}
+	return domain.TemplateBoardCustomField{}, false, nil
+}
+
 // DELETE /v1/admin/project-templates/:templateId/boards/:boardId/custom-fields/:fieldId
 func (h *TemplateHandler) DeleteCustomField(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	boardID, err := uuid.Parse(c.Param("boardId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	boardID, ok := paramUUID(c, "boardId")
+	if !ok {
 		return
 	}
-	fieldID, err := uuid.Parse(c.Param("fieldId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	fieldID, ok := paramUUID(c, "fieldId")
+	if !ok {
 		return
 	}
 
-	err = h.service.DeleteCustomField(c.Request.Context(), templateID, boardID, fieldID)
+	err := h.service.DeleteCustomField(c.Request.Context(), templateID, boardID, fieldID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Поле не найдено")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить поле")
+		respondInternal(c, err, "Не удалось удалить поле")
 		return
 	}
 
@@ -795,81 +797,68 @@ func (h *TemplateHandler) DeleteCustomField(c *gin.Context) {
 // --- Project Params handlers ---
 
 func (h *TemplateHandler) CreateProjectParam(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	var req dto.CreateTemplateProjectParamRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateProjectParamRequest](c)
+	if !ok {
 		return
 	}
 	p, err := h.service.CreateProjectParam(c.Request.Context(), templateID, req.Name, req.FieldType, req.IsRequired, req.Options)
 	if err != nil {
-		if err == domain.ErrInvalidFieldType {
-			writeError(c, http.StatusBadRequest, "INVALID_FIELD_TYPE", "Тип поля недопустим для параметров проекта")
-			return
-		}
+		// Сохраняем специфичный код DUPLICATE_NAME (не в таблице).
 		if err == domain.ErrConflict {
 			writeError(c, http.StatusConflict, "DUPLICATE_NAME", "Параметр с таким именем уже существует")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать параметр")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось создать параметр")
 		return
 	}
 	writeSuccess(c, mapProjectParamToResponse(p))
 }
 
 func (h *TemplateHandler) UpdateProjectParam(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	paramID, err := uuid.Parse(c.Param("paramId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	paramID, ok := paramUUID(c, "paramId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateTemplateProjectParamRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateProjectParamRequest](c)
+	if !ok {
 		return
 	}
 	p, err := h.service.UpdateProjectParam(c.Request.Context(), templateID, paramID, req.Name, req.IsRequired, req.Options)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить параметр")
+		respondInternal(c, err, "Не удалось обновить параметр")
 		return
 	}
 	writeSuccess(c, mapProjectParamToResponse(p))
 }
 
 func (h *TemplateHandler) DeleteProjectParam(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	paramID, err := uuid.Parse(c.Param("paramId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	paramID, ok := paramUUID(c, "paramId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteProjectParam(c.Request.Context(), templateID, paramID); err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Параметр не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить параметр")
+		respondInternal(c, err, "Не удалось удалить параметр")
 		return
 	}
 	writeSuccess(c, nil)
@@ -878,14 +867,12 @@ func (h *TemplateHandler) DeleteProjectParam(c *gin.Context) {
 // --- Roles handlers ---
 
 func (h *TemplateHandler) CreateRole(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	var req dto.CreateTemplateRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.CreateTemplateRoleRequest](c)
+	if !ok {
 		return
 	}
 	perms := make([]domain.TemplateRolePermission, 0, len(req.Permissions))
@@ -894,30 +881,26 @@ func (h *TemplateHandler) CreateRole(c *gin.Context) {
 	}
 	role, err := h.service.CreateRole(c.Request.Context(), templateID, req.Name, req.Description, perms)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать роль")
+		respondInternal(c, err, "Не удалось создать роль")
 		return
 	}
 	writeSuccess(c, mapRoleToResponse(role))
 }
 
 func (h *TemplateHandler) UpdateRole(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	roleID, err := uuid.Parse(c.Param("roleId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	roleID, ok := paramUUID(c, "roleId")
+	if !ok {
 		return
 	}
-	var req dto.UpdateTemplateRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные")
+	req, ok := bindJSON[dto.UpdateTemplateRoleRequest](c)
+	if !ok {
 		return
 	}
 	var perms []domain.TemplateRolePermission
@@ -929,45 +912,54 @@ func (h *TemplateHandler) UpdateRole(c *gin.Context) {
 	}
 	role, err := h.service.UpdateRole(c.Request.Context(), templateID, roleID, req.Name, req.Description, perms)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Название не может быть пустым")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
-			return
-		}
-		if err == domain.ErrTemplateAdminRole {
-			writeError(c, http.StatusBadRequest, "TEMPLATE_ADMIN_ROLE", "Нельзя изменять права доступа роли администратора проекта в шаблоне")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить роль")
+		respondInternal(c, err, "Не удалось обновить роль")
 		return
 	}
 	writeSuccess(c, mapRoleToResponse(role))
 }
 
-func (h *TemplateHandler) DeleteRole(c *gin.Context) {
-	templateID, err := uuid.Parse(c.Param("templateId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+// ReorderRoles PATCH /v1/admin/project-templates/:templateId/roles/reorder
+// Принимает массив { role_id, order } — применяет новые позиции одной батч-операцией.
+func (h *TemplateHandler) ReorderRoles(c *gin.Context) {
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
 		return
 	}
-	roleID, err := uuid.Parse(c.Param("roleId"))
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор")
+	req, ok := bindJSON[dto.ReorderTemplateRolesRequest](c)
+	if !ok {
+		return
+	}
+	orders := make(map[uuid.UUID]int32, len(req.Orders))
+	for _, o := range req.Orders {
+		orders[o.RoleID] = o.Order
+	}
+	if err := h.service.ReorderRoles(c.Request.Context(), templateID, orders); err != nil {
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось изменить порядок ролей")
+		return
+	}
+	writeSuccess(c, nil)
+}
+
+func (h *TemplateHandler) DeleteRole(c *gin.Context) {
+	templateID, ok := paramUUID(c, "templateId")
+	if !ok {
+		return
+	}
+	roleID, ok := paramUUID(c, "roleId")
+	if !ok {
 		return
 	}
 	if err := h.service.DeleteRole(c.Request.Context(), templateID, roleID); err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Роль не найдена")
+		if respondDomainErr(c, err) {
 			return
 		}
-		if err == domain.ErrTemplateAdminRole {
-			writeError(c, http.StatusBadRequest, "TEMPLATE_ADMIN_ROLE", "Нельзя удалить роль администратора проекта из шаблона")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить роль")
+		respondInternal(c, err, "Не удалось удалить роль")
 		return
 	}
 	writeSuccess(c, nil)
@@ -990,7 +982,7 @@ func injectSystemFields(tmpl *domain.ProjectTemplate, data *services.TemplateFul
 				opts = []string{}
 			}
 			sysTemplateFields = append(sysTemplateFields, domain.TemplateBoardCustomField{
-				ID: uuid.MustParse(sf.ID), Name: sf.Name,
+				ID: sf.ID, Name: sf.Name,
 				FieldType: sf.FieldType, IsSystem: true, IsRequired: sf.IsRequired, Options: opts,
 			})
 		}
@@ -1002,7 +994,7 @@ func injectSystemFields(tmpl *domain.ProjectTemplate, data *services.TemplateFul
 	sysTemplateParams := make([]domain.TemplateProjectParam, 0, len(sysParams))
 	for _, sp := range sysParams {
 		sysTemplateParams = append(sysTemplateParams, domain.TemplateProjectParam{
-			ID: uuid.MustParse(sp.ID), Name: sp.Name,
+			ID: sp.ID, Name: sp.Name,
 			FieldType: sp.FieldType, IsSystem: true, IsRequired: sp.IsRequired,
 			Options: []string{},
 		})
@@ -1052,7 +1044,7 @@ func mapRoleToResponse(r domain.TemplateRole) dto.TemplateRoleResponse {
 	}
 	return dto.TemplateRoleResponse{
 		ID: r.ID, Name: r.Name, Description: r.Description,
-		IsAdmin: r.IsAdmin, Permissions: perms,
+		IsAdmin: r.IsAdmin, Order: r.Order, Permissions: perms,
 	}
 }
 

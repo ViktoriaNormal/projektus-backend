@@ -18,11 +18,10 @@ type ProjectStatus string
 const (
 	ProjectStatusActive   ProjectStatus = "active"
 	ProjectStatusArchived ProjectStatus = "archived"
-	ProjectStatusPaused   ProjectStatus = "paused"
 )
 
 type ProjectOwner struct {
-	ID        string
+	ID        uuid.UUID
 	FullName  string
 	AvatarURL *string
 	Email     string

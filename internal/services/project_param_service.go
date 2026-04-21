@@ -29,6 +29,14 @@ func (s *ProjectParamService) ListParams(ctx context.Context, projectID uuid.UUI
 }
 
 func (s *ProjectParamService) CreateParam(ctx context.Context, projectID uuid.UUID, name, fieldType string, isRequired bool, options []string, value *string) (*domain.ProjectParam, error) {
+	// Таблица project_params хранит только кастомные параметры (системные —
+	// виртуальные, приходят из GenerateSystemProjectParams). Поэтому любой
+	// приходящий сюда is_required=true означает попытку сделать кастомный
+	// параметр обязательным, что запрещено политикой.
+	if isRequired {
+		return nil, domain.ErrRequiredCustomFieldNotAllowed
+	}
+
 	// Validate value against fieldType if provided.
 	if value != nil && *value != "" {
 		if err := s.validateParamValue(ctx, name, fieldType, *value, options); err != nil {
@@ -57,11 +65,15 @@ func (s *ProjectParamService) CreateParam(ctx context.Context, projectID uuid.UU
 }
 
 func (s *ProjectParamService) UpdateParam(ctx context.Context, projectID uuid.UUID, paramID uuid.UUID, name *string, isRequired *bool, options []string, value *string, clearValue bool) (*domain.ProjectParam, error) {
+	// Кастомный параметр не может стать обязательным.
+	if isRequired != nil && *isRequired {
+		return nil, domain.ErrRequiredCustomFieldNotAllowed
+	}
 	existing, err := s.repo.GetByID(ctx, paramID)
 	if err != nil {
 		return nil, err
 	}
-	if existing.ProjectID != projectID.String() {
+	if existing.ProjectID != projectID {
 		return nil, domain.ErrNotFound
 	}
 
@@ -132,7 +144,7 @@ func (s *ProjectParamService) DeleteParam(ctx context.Context, projectID uuid.UU
 	if err != nil {
 		return err
 	}
-	if existing.ProjectID != projectID.String() {
+	if existing.ProjectID != projectID {
 		return domain.ErrNotFound
 	}
 	if existing.IsSystem && existing.IsRequired {
@@ -187,11 +199,12 @@ func (s *ProjectParamService) validateParamValue(ctx context.Context, paramName,
 		}
 
 	case "user":
-		if _, err := uuid.Parse(value); err != nil {
+		uid, err := uuid.Parse(value)
+		if err != nil {
 			return domain.NewParamValidationError(
 				"Значение параметра «%s» должно быть валидным UUID пользователя", paramName)
 		}
-		if _, err := s.users.GetUserByID(ctx, value); err != nil {
+		if _, err := s.users.GetUserByID(ctx, uid); err != nil {
 			return domain.NewParamValidationError(
 				"Пользователь, указанный в параметре «%s», не найден", paramName)
 		}
@@ -203,11 +216,12 @@ func (s *ProjectParamService) validateParamValue(ctx context.Context, paramName,
 			if id == "" {
 				continue
 			}
-			if _, err := uuid.Parse(id); err != nil {
+			uid, err := uuid.Parse(id)
+			if err != nil {
 				return domain.NewParamValidationError(
 					"Значение «%s» в параметре «%s» не является валидным UUID", id, paramName)
 			}
-			if _, err := s.users.GetUserByID(ctx, id); err != nil {
+			if _, err := s.users.GetUserByID(ctx, uid); err != nil {
 				return domain.NewParamValidationError(
 					"Пользователь «%s» в параметре «%s» не найден", id, paramName)
 			}

@@ -25,17 +25,17 @@ func NewProjectHandler(service *services.ProjectService, templateSvc *services.T
 func (h *ProjectHandler) GetReferences(c *gin.Context) {
 	refs, err := h.templateSvc.GetReferences(c.Request.Context())
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось загрузить справочники")
+		respondInternal(c, err, "Не удалось загрузить справочники")
 		return
 	}
 
 	resp := dto.ProjectReferencesResponse{
-		ColumnSystemTypes:    make([]dto.ReferenceColumnType, 0, len(refs.ColumnSystemTypes)),
-		FieldTypes:           make([]dto.ReferenceFieldType, 0, len(refs.FieldTypes)),
-		EstimationUnits:      make([]dto.ReferenceAvailable, 0, len(refs.EstimationUnits)),
-		PriorityTypeOptions:  make([]dto.ReferencePriorityType, 0, len(refs.PriorityTypeOptions)),
-		PermissionAreas:      make([]dto.ReferencePermissionArea, 0, len(refs.PermissionAreas)),
-		AccessLevels:         make([]dto.ReferenceKeyName, 0, len(refs.AccessLevels)),
+		ColumnSystemTypes:   make([]dto.ReferenceColumnType, 0, len(refs.ColumnSystemTypes)),
+		FieldTypes:          make([]dto.ReferenceFieldType, 0, len(refs.FieldTypes)),
+		EstimationUnits:     make([]dto.ReferenceAvailable, 0, len(refs.EstimationUnits)),
+		PriorityTypeOptions: make([]dto.ReferencePriorityType, 0, len(refs.PriorityTypeOptions)),
+		PermissionAreas:     make([]dto.ReferencePermissionArea, 0, len(refs.PermissionAreas)),
+		AccessLevels:        make([]dto.ReferenceKeyName, 0, len(refs.AccessLevels)),
 	}
 
 	for _, ct := range refs.ColumnSystemTypes {
@@ -71,10 +71,8 @@ func (h *ProjectHandler) GetReferences(c *gin.Context) {
 }
 
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
-	userIDStr := c.GetString("userID")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	userID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
@@ -98,13 +96,17 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	sysAccess := h.permissionSvc.GetProjectManageAccess(c.Request.Context(), userID)
 
 	var projects []domain.Project
+	var err error
 	if sysAccess == "full" || sysAccess == "view" {
 		projects, err = h.service.ListAllProjects(c.Request.Context(), queryPtr, statusPtr, typePtr)
 	} else {
 		projects, err = h.service.ListProjects(c.Request.Context(), userID, queryPtr, statusPtr, typePtr)
 	}
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить список проектов")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить список проектов")
 		return
 	}
 
@@ -116,16 +118,13 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 }
 
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
-	userIDStr := c.GetString("userID")
-	currentUserID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Требуется аутентификация")
+	currentUserID, ok := requireUserUUID(c)
+	if !ok {
 		return
 	}
 
-	var req dto.CreateProjectRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.CreateProjectRequest](c)
+	if !ok {
 		return
 	}
 
@@ -141,11 +140,10 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 
 	p, err := h.service.CreateProject(c.Request.Context(), ownerID, req.Name, req.Description, req.ProjectType)
 	if err != nil {
-		if err == domain.ErrInvalidInput {
-			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры проекта")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось создать проект")
+		respondInternal(c, err, "Не удалось создать проект")
 		return
 	}
 
@@ -153,20 +151,17 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 }
 
 func (h *ProjectHandler) GetProject(c *gin.Context) {
-	idStr := c.Param("projectId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор проекта")
+	id, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	p, err := h.service.GetProject(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Проект не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
+		respondInternal(c, err, "Не удалось получить проект")
 		return
 	}
 
@@ -174,27 +169,23 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 }
 
 func (h *ProjectHandler) UpdateProject(c *gin.Context) {
-	idStr := c.Param("projectId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор проекта")
+	id, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
-	var req dto.UpdateProjectRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные данные запроса")
+	req, ok := bindJSON[dto.UpdateProjectRequest](c)
+	if !ok {
 		return
 	}
 
 	// Получаем текущий проект
 	p, err := h.service.GetProject(c.Request.Context(), id)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Проект не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось получить проект")
+		respondInternal(c, err, "Не удалось получить проект")
 		return
 	}
 
@@ -226,11 +217,10 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 
 	updated, err := h.service.UpdateProject(c.Request.Context(), p, newOwnerID)
 	if err != nil {
-		if err == domain.ErrNotFound {
-			writeError(c, http.StatusNotFound, "NOT_FOUND", "Проект не найден")
+		if respondDomainErr(c, err) {
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось обновить проект")
+		respondInternal(c, err, "Не удалось обновить проект")
 		return
 	}
 
@@ -238,20 +228,22 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 }
 
 func (h *ProjectHandler) DeleteProject(c *gin.Context) {
-	idStr := c.Param("projectId")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Неверный идентификатор проекта")
+	id, ok := paramUUID(c, "projectId")
+	if !ok {
 		return
 	}
 
 	confirm := c.Query("confirm") == "true"
 	if err := h.service.DeleteProject(c.Request.Context(), id, confirm); err != nil {
+		// Особый случай: ErrInvalidInput здесь означает отсутствие confirm=true
 		if err == domain.ErrInvalidInput {
 			writeError(c, http.StatusBadRequest, "CONFIRM_REQUIRED", "Для удаления проекта требуется confirm=true")
 			return
 		}
-		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Не удалось удалить проект")
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось удалить проект")
 		return
 	}
 
@@ -277,7 +269,7 @@ func mapProjectToDTO(p *domain.Project) dto.ProjectResponse {
 	}
 	if p.Owner != nil {
 		resp.Owner = &dto.ProjectOwnerResponse{
-			ID:        p.Owner.ID,
+			ID:        p.Owner.ID.String(),
 			FullName:  p.Owner.FullName,
 			AvatarURL: p.Owner.AvatarURL,
 			Email:     p.Owner.Email,
@@ -285,4 +277,3 @@ func mapProjectToDTO(p *domain.Project) dto.ProjectResponse {
 	}
 	return resp
 }
-
