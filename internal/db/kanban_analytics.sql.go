@@ -223,6 +223,76 @@ func (q *Queries) GetProjectTaskHistoryForKanban(ctx context.Context, arg GetPro
 	return items, nil
 }
 
+const getWipAgeTasksForKanban = `-- name: GetWipAgeTasksForKanban :many
+SELECT
+    t.id AS task_id,
+    t.key AS task_key,
+    c.name AS column_name,
+    COALESCE(
+        (SELECT h.entered_at
+         FROM task_status_history h
+         WHERE h.task_id = t.id
+           AND h.column_id = t.column_id
+           AND h.left_at IS NULL
+         ORDER BY h.entered_at DESC
+         LIMIT 1),
+        (SELECT MIN(h2.entered_at)
+         FROM task_status_history h2
+         JOIN columns c2 ON c2.id = h2.column_id
+         WHERE h2.task_id = t.id
+           AND c2.system_type IN ('in_progress', 'paused')),
+        t.created_at
+    )::timestamptz AS work_started_at
+FROM tasks t
+JOIN columns c ON t.column_id = c.id
+WHERE t.project_id = $1
+  AND t.board_id = $2
+  AND t.deleted_at IS NULL
+  AND c.system_type IN ('in_progress', 'paused')
+`
+
+type GetWipAgeTasksForKanbanParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	BoardID   uuid.UUID `json:"board_id"`
+}
+
+type GetWipAgeTasksForKanbanRow struct {
+	TaskID        uuid.UUID `json:"task_id"`
+	TaskKey       string    `json:"task_key"`
+	ColumnName    string    `json:"column_name"`
+	WorkStartedAt time.Time `json:"work_started_at"`
+}
+
+// Возраст отсчитываем от входа в текущую рабочую колонку (открытая запись в истории);
+// при отсутствии открытой записи — от первого попадания в любую колонку in_progress/paused.
+func (q *Queries) GetWipAgeTasksForKanban(ctx context.Context, arg GetWipAgeTasksForKanbanParams) ([]GetWipAgeTasksForKanbanRow, error) {
+	rows, err := q.db.QueryContext(ctx, getWipAgeTasksForKanban, arg.ProjectID, arg.BoardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetWipAgeTasksForKanbanRow{}
+	for rows.Next() {
+		var i GetWipAgeTasksForKanbanRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.TaskKey,
+			&i.ColumnName,
+			&i.WorkStartedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getWipTaskIDsForKanban = `-- name: GetWipTaskIDsForKanban :many
 SELECT t.id
 FROM tasks t

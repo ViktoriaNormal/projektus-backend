@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,37 +54,6 @@ func parseFieldFilters(c *gin.Context) map[string][]string {
 		}
 	}
 	return filters
-}
-
-func (h *KanbanAnalyticsHandler) GetSummary(c *gin.Context) {
-	projectID, ok := paramUUID(c, "projectId")
-	if !ok {
-		return
-	}
-
-	report, err := h.analyticsSvc.GetSummary(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
-	if err != nil {
-		if respondDomainErr(c, err) {
-			return
-		}
-		respondInternal(c, err, "Не удалось получить сводные данные Kanban")
-		return
-	}
-
-	writeSuccess(c, dto.KanbanSummaryResponse{
-		Data: dto.KanbanSummaryData{
-			AverageVelocity:     math.Round(report.AverageVelocity*10) / 10,
-			AverageVelocityUnit: report.AverageVelocityUnit,
-			VelocityTrend:       report.VelocityTrend,
-			CycleTime:           report.CycleTime,
-			CycleTimeTrend:      report.CycleTimeTrend,
-			Throughput:          report.Throughput,
-			ThroughputTrend:     report.ThroughputTrend,
-			Wip:                 report.Wip,
-			WipChange:           report.WipChange,
-		},
-		Interpretation: report.Interpretation,
-	})
 }
 
 func (h *KanbanAnalyticsHandler) GetCumulativeFlow(c *gin.Context) {
@@ -162,11 +130,12 @@ func (h *KanbanAnalyticsHandler) GetThroughput(c *gin.Context) {
 		return
 	}
 
-	data := make([]dto.ThroughputWeekDTO, 0, len(report.Points))
+	data := make([]dto.ThroughputPointDTO, 0, len(report.Points))
 	for _, p := range report.Points {
-		data = append(data, dto.ThroughputWeekDTO{
-			Week:  p.Week,
-			Count: p.Count,
+		data = append(data, dto.ThroughputPointDTO{
+			Week:   p.Week,
+			Actual: p.Actual,
+			Trend:  p.Trend,
 		})
 	}
 
@@ -176,62 +145,31 @@ func (h *KanbanAnalyticsHandler) GetThroughput(c *gin.Context) {
 	})
 }
 
-func (h *KanbanAnalyticsHandler) GetAvgCycleTime(c *gin.Context) {
+func (h *KanbanAnalyticsHandler) GetWipAge(c *gin.Context) {
 	projectID, ok := paramUUID(c, "projectId")
 	if !ok {
 		return
 	}
 
-	report, err := h.analyticsSvc.GetAvgCycleTime(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
+	report, err := h.analyticsSvc.GetWipAge(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
 	if err != nil {
 		if respondDomainErr(c, err) {
 			return
 		}
-		respondInternal(c, err, "Не удалось получить данные среднего cycle time")
+		respondInternal(c, err, "Не удалось получить данные возраста WIP")
 		return
 	}
 
-	data := make([]dto.AvgCycleTimeWeekDTO, 0, len(report.Points))
+	data := make([]dto.WipAgePointDTO, 0, len(report.Points))
 	for _, p := range report.Points {
-		data = append(data, dto.AvgCycleTimeWeekDTO{
-			Week: p.Week,
-			Avg:  p.Avg,
-			P50:  p.P50,
-			P85:  p.P85,
+		data = append(data, dto.WipAgePointDTO{
+			TaskKey:    p.TaskKey,
+			AgeDays:    p.AgeDays,
+			ColumnName: p.ColumnName,
 		})
 	}
 
-	writeSuccess(c, dto.AvgCycleTimeResponse{
-		Data:           data,
-		Interpretation: report.Interpretation,
-	})
-}
-
-func (h *KanbanAnalyticsHandler) GetThroughputTrend(c *gin.Context) {
-	projectID, ok := paramUUID(c, "projectId")
-	if !ok {
-		return
-	}
-
-	report, err := h.analyticsSvc.GetThroughputTrend(c.Request.Context(), projectID, parseBoardID(c), parseFieldFilters(c))
-	if err != nil {
-		if respondDomainErr(c, err) {
-			return
-		}
-		respondInternal(c, err, "Не удалось получить тренд throughput")
-		return
-	}
-
-	data := make([]dto.ThroughputTrendPointDTO, 0, len(report.Points))
-	for _, p := range report.Points {
-		data = append(data, dto.ThroughputTrendPointDTO{
-			Week:   p.Week,
-			Actual: p.Actual,
-			Trend:  p.Trend,
-		})
-	}
-
-	writeSuccess(c, dto.ThroughputTrendResponse{
+	writeSuccess(c, dto.WipAgeResponse{
 		Data:           data,
 		Interpretation: report.Interpretation,
 	})

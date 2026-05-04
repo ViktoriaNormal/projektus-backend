@@ -1421,31 +1421,6 @@ paths:
                         $ref: '#/components/schemas/BurndownResponse'
 
   # ─── Kanban Analytics ───────────────────────────────────────────────
-  /projects/{project_id}/analytics/kanban/summary:
-    get:
-      tags: [KanbanAnalytics]
-      summary: Get Kanban summary metrics
-      description: |-
-        Returns aggregated Kanban metrics (velocity, cycle time, throughput, WIP) with trends and interpretation.
-
-        Supports optional task filtering — see **Analytics filter parameters** below.
-      parameters:
-        - $ref: '#/components/parameters/ProjectIdPath'
-        - $ref: '#/components/parameters/BoardIdQuery'
-        - $ref: '#/components/parameters/AnalyticsFieldFilter'
-      responses:
-        '200':
-          description: Kanban summary
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessEnvelope'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/KanbanSummaryResponse'
-
   /projects/{project_id}/analytics/kanban/cumulative-flow:
     get:
       tags: [KanbanAnalytics]
@@ -1499,9 +1474,9 @@ paths:
   /projects/{project_id}/analytics/kanban/throughput:
     get:
       tags: [KanbanAnalytics]
-      summary: Get weekly throughput
+      summary: Get throughput with trend line
       description: |-
-        Returns count of completed tasks per week for the last 8 weeks.
+        Returns weekly completed-task counts for the last 8 weeks with a linear regression trend line.
 
         Supports optional task filtering — see **Analytics filter parameters** below.
       parameters:
@@ -1510,7 +1485,7 @@ paths:
         - $ref: '#/components/parameters/AnalyticsFieldFilter'
       responses:
         '200':
-          description: Throughput data
+          description: Throughput and trend data
           content:
             application/json:
               schema:
@@ -1521,12 +1496,12 @@ paths:
                       data:
                         $ref: '#/components/schemas/ThroughputResponse'
 
-  /projects/{project_id}/analytics/kanban/avg-cycle-time:
+  /projects/{project_id}/analytics/kanban/wip-age:
     get:
       tags: [KanbanAnalytics]
-      summary: Get average cycle time per week
+      summary: Get WIP age for in-progress tasks
       description: |-
-        Returns weekly avg, p50, and p85 cycle time for completed tasks.
+        Returns tasks currently in in_progress or paused columns with age in days since entering the work column.
 
         Supports optional task filtering — see **Analytics filter parameters** below.
       parameters:
@@ -1535,7 +1510,7 @@ paths:
         - $ref: '#/components/parameters/AnalyticsFieldFilter'
       responses:
         '200':
-          description: Average cycle time data
+          description: WIP age data
           content:
             application/json:
               schema:
@@ -1544,32 +1519,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/AvgCycleTimeResponse'
-
-  /projects/{project_id}/analytics/kanban/throughput-trend:
-    get:
-      tags: [KanbanAnalytics]
-      summary: Get throughput with trend line
-      description: |-
-        Returns weekly throughput with linear regression trend values.
-
-        Supports optional task filtering — see **Analytics filter parameters** below.
-      parameters:
-        - $ref: '#/components/parameters/ProjectIdPath'
-        - $ref: '#/components/parameters/BoardIdQuery'
-        - $ref: '#/components/parameters/AnalyticsFieldFilter'
-      responses:
-        '200':
-          description: Throughput trend data
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessEnvelope'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/ThroughputTrendResponse'
+                        $ref: '#/components/schemas/WipAgeResponse'
 
   /projects/{project_id}/analytics/kanban/wip:
     get:
@@ -5432,23 +5382,6 @@ components:
         ideal: { type: number }
 
     # ── Kanban Analytics ──
-    KanbanSummaryResponse:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            average_velocity: { type: number }
-            average_velocity_unit: { type: string }
-            velocity_trend: { type: number, description: Percentage change }
-            cycle_time: { type: number, description: Average cycle time in days }
-            cycle_time_trend: { type: number, description: Percentage change }
-            throughput: { type: number, description: Tasks per week }
-            throughput_trend: { type: number, description: Percentage change }
-            wip: { type: integer, description: Current WIP count }
-            wip_change: { type: integer, description: Absolute change from previous week }
-        interpretation: { type: string }
-
     CumulativeFlowResponse:
       type: object
       properties:
@@ -5484,47 +5417,31 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/ThroughputWeek'
+            $ref: '#/components/schemas/ThroughputPoint'
         interpretation: { type: string }
 
-    ThroughputWeek:
-      type: object
-      properties:
-        week: { type: string }
-        count: { type: integer }
-
-    AvgCycleTimeResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/AvgCycleTimeWeek'
-        interpretation: { type: string }
-
-    AvgCycleTimeWeek:
-      type: object
-      properties:
-        week: { type: string }
-        avg: { type: number }
-        p50: { type: number }
-        p85: { type: number }
-
-    ThroughputTrendResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/ThroughputTrendPoint'
-        interpretation: { type: string }
-
-    ThroughputTrendPoint:
+    ThroughputPoint:
       type: object
       properties:
         week: { type: string }
         actual: { type: integer }
         trend: { type: number }
+
+    WipAgeResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WipAgePoint'
+        interpretation: { type: string }
+
+    WipAgePoint:
+      type: object
+      properties:
+        task_key: { type: string }
+        age_days: { type: number }
+        column_name: { type: string }
 
     WipHistoryResponse:
       type: object

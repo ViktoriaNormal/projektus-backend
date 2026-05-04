@@ -125,12 +125,10 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			// Kanban analytics
 			kanban := projects.Group("/:projectId/analytics/kanban")
 			{
-				kanban.GET("/summary", kanbanAnalyticsHandler.GetSummary)
 				kanban.GET("/cumulative-flow", kanbanAnalyticsHandler.GetCumulativeFlow)
 				kanban.GET("/cycle-time-scatter", kanbanAnalyticsHandler.GetCycleTimeScatter)
 				kanban.GET("/throughput", kanbanAnalyticsHandler.GetThroughput)
-				kanban.GET("/avg-cycle-time", kanbanAnalyticsHandler.GetAvgCycleTime)
-				kanban.GET("/throughput-trend", kanbanAnalyticsHandler.GetThroughputTrend)
+				kanban.GET("/wip-age", kanbanAnalyticsHandler.GetWipAge)
 				kanban.GET("/wip", kanbanAnalyticsHandler.GetWipHistory)
 				kanban.GET("/cycle-time-distribution", kanbanAnalyticsHandler.GetCycleTimeDistribution)
 				kanban.GET("/throughput-distribution", kanbanAnalyticsHandler.GetThroughputDistribution)

@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,19 +25,6 @@ func NewKanbanAnalyticsService(queries *db.Queries, dbtx db.DBTX) *KanbanAnalyti
 }
 
 // ========== Report structs ==========
-
-type KanbanSummaryReport struct {
-	AverageVelocity     float64
-	AverageVelocityUnit string
-	VelocityTrend       float64
-	CycleTime           float64
-	CycleTimeTrend      float64
-	Throughput          float64
-	ThroughputTrend     float64
-	Wip                 int
-	WipChange           int
-	Interpretation      string
-}
 
 type CFDReport struct {
 	ColumnNames    []string
@@ -59,38 +47,32 @@ type scatterPoint struct {
 	CycleTimeDays float64
 }
 
+// weeklyThroughputBucket — внутреннее представление недели для расчёта throughput и тренда.
+type weeklyThroughputBucket struct {
+	Week  string
+	Count int
+}
+
 type ThroughputReport struct {
-	Points         []throughputWeek
+	Points         []throughputPoint
 	Interpretation string
 }
 
-type throughputWeek struct {
-	Week  string
-	Count int
-}
-
-type AvgCycleTimeReport struct {
-	Points         []avgCycleTimeWeek
-	Interpretation string
-}
-
-type avgCycleTimeWeek struct {
-	Week  string
-	Avg   float64
-	P50   float64
-	P85   float64
-	Count int
-}
-
-type ThroughputTrendReport struct {
-	Points         []throughputTrendPoint
-	Interpretation string
-}
-
-type throughputTrendPoint struct {
+type throughputPoint struct {
 	Week   string
 	Actual int
 	Trend  float64
+}
+
+type WipAgeReport struct {
+	Points         []wipAgePoint
+	Interpretation string
+}
+
+type wipAgePoint struct {
+	TaskKey    string
+	AgeDays    float64
+	ColumnName string
 }
 
 type WipHistoryReport struct {
@@ -171,17 +153,6 @@ func (s *KanbanAnalyticsService) getCompletedTasks(ctx context.Context, projectI
 		return tasks[i].CompletedAt.Before(tasks[j].CompletedAt)
 	})
 	return tasks, nil
-}
-
-func estimationUnitLabel(unit string) string {
-	switch unit {
-	case "story_points":
-		return "SP"
-	case "hours":
-		return "ч."
-	default:
-		return "задач"
-	}
 }
 
 func weekKey(t time.Time) string {
@@ -286,204 +257,6 @@ func buildDistribution(values []float64, bucketSize float64) []distributionBucke
 		last--
 	}
 	return buckets[:last+1]
-}
-
-func percentChange(prev, curr float64) float64 {
-	if prev == 0 {
-		if curr == 0 {
-			return 0
-		}
-		return 100
-	}
-	return math.Round((curr-prev)/prev*100*10) / 10
-}
-
-// ========== GetSummary ==========
-
-func (s *KanbanAnalyticsService) GetSummary(ctx context.Context, projectID uuid.UUID, boardID *uuid.UUID, fieldFilters map[string][]string) (*KanbanSummaryReport, error) {
-	bid, estUnit, err := s.resolveBoard(ctx, projectID, boardID)
-	if err != nil {
-		return nil, err
-	}
-
-	var filterSet map[uuid.UUID]struct{}
-	if len(fieldFilters) > 0 {
-		filterSet, err = BuildTaskFilter(ctx, s.dbtx, projectID, bid, fieldFilters)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	tasks, err := s.getCompletedTasks(ctx, projectID, bid)
-	if err != nil {
-		return nil, err
-	}
-	if filterSet != nil {
-		tasks = filterCompletedTasks(tasks, filterSet)
-	}
-
-	var wip int
-	if filterSet != nil {
-		wipIDs, err := s.queries.GetWipTaskIDsForKanban(ctx, db.GetWipTaskIDsForKanbanParams{
-			ProjectID: projectID, BoardID: bid,
-		})
-		if err != nil {
-			return nil, err
-		}
-		wip = countInSet(wipIDs, filterSet)
-	} else {
-		wipCount, err := s.queries.GetCurrentWipCount(ctx, db.GetCurrentWipCountParams{
-			ProjectID: projectID, BoardID: bid,
-		})
-		if err != nil {
-			return nil, err
-		}
-		wip = int(wipCount)
-	}
-
-	report := &KanbanSummaryReport{
-		AverageVelocityUnit: estimationUnitLabel(estUnit),
-		Wip:                 wip,
-	}
-
-	now := time.Now()
-	last4w := now.AddDate(0, 0, -28)
-	last2w := now.AddDate(0, 0, -14)
-
-	var recentTasks, prevTasks []completedTask
-	for _, t := range tasks {
-		if t.CompletedAt.After(last4w) {
-			if t.CompletedAt.After(last2w) {
-				recentTasks = append(recentTasks, t)
-			} else {
-				prevTasks = append(prevTasks, t)
-			}
-		}
-	}
-
-	// Throughput
-	recentThroughput := float64(len(recentTasks)) / 2
-	prevThroughput := float64(len(prevTasks)) / 2
-	report.Throughput = math.Round(recentThroughput*10) / 10
-	report.ThroughputTrend = percentChange(prevThroughput, recentThroughput)
-
-	// Cycle time
-	var recentCT, prevCT []float64
-	for _, t := range recentTasks {
-		recentCT = append(recentCT, t.CycleTimeDays)
-	}
-	for _, t := range prevTasks {
-		prevCT = append(prevCT, t.CycleTimeDays)
-	}
-	if len(recentCT) > 0 {
-		var sum float64
-		for _, v := range recentCT {
-			sum += v
-		}
-		report.CycleTime = math.Round(sum/float64(len(recentCT))*10) / 10
-	}
-	if len(prevCT) > 0 {
-		var sum float64
-		for _, v := range prevCT {
-			sum += v
-		}
-		prevAvg := sum / float64(len(prevCT))
-		report.CycleTimeTrend = percentChange(prevAvg, report.CycleTime)
-	}
-
-	// Velocity (estimation-based)
-	var recentEst, prevEst float64
-	for _, t := range recentTasks {
-		recentEst += t.Estimation
-	}
-	for _, t := range prevTasks {
-		prevEst += t.Estimation
-	}
-	if estUnit == "story_points" || estUnit == "hours" {
-		report.AverageVelocity = math.Round(recentEst/2*10) / 10
-		report.VelocityTrend = percentChange(prevEst/2, recentEst/2)
-	} else {
-		// Для task_count velocity = throughput
-		report.AverageVelocity = report.Throughput
-		report.VelocityTrend = report.ThroughputTrend
-	}
-
-	// WIP change: разница с прошлой неделей (приблизительно через history)
-	// Упрощённо: берём WIP change как 0 если нет данных, иначе из throughput
-	history, _ := s.queries.GetProjectTaskHistoryForKanban(ctx, db.GetProjectTaskHistoryForKanbanParams{
-		ProjectID: projectID, BoardID: bid,
-	})
-	if filterSet != nil {
-		history = filterHistoryRows(history, filterSet)
-	}
-	if len(history) > 0 {
-		weekAgo := now.AddDate(0, 0, -7)
-		wipWeekAgo := computeWipAtDate(history, weekAgo)
-		report.WipChange = wip - wipWeekAgo
-	}
-
-	report.Interpretation = s.generateSummaryInterpretation(report)
-	return report, nil
-}
-
-func computeWipAtDate(history []db.GetProjectTaskHistoryForKanbanRow, date time.Time) int {
-	eod := time.Date(date.Year(), date.Month(), date.Day(), 23, 59, 59, 0, date.Location())
-	taskCol := make(map[uuid.UUID]string) // task -> column system_type
-	for _, h := range history {
-		if h.EnteredAt.After(eod) {
-			continue
-		}
-		st := ""
-		if h.ColumnSystemType.Valid {
-			st = h.ColumnSystemType.String
-		}
-		if !h.LeftAt.Valid || h.LeftAt.Time.After(eod) {
-			taskCol[h.TaskID] = st
-		} else {
-			delete(taskCol, h.TaskID)
-		}
-	}
-	count := 0
-	for _, st := range taskCol {
-		if st == "in_progress" || st == "paused" {
-			count++
-		}
-	}
-	return count
-}
-
-func (s *KanbanAnalyticsService) generateSummaryInterpretation(r *KanbanSummaryReport) string {
-	if r.Throughput == 0 && r.CycleTime == 0 {
-		return "Нет данных для анализа. Завершите хотя бы одну задачу для появления метрик."
-	}
-
-	result := fmt.Sprintf("Сводка по Kanban-проекту. Пропускная способность: %s %s в неделю",
-		formatValue(r.Throughput), pluralForm(int(math.Round(r.Throughput)), "задача", "задачи", "задач"))
-
-	if r.ThroughputTrend > 10 {
-		result += fmt.Sprintf(" (рост на %.0f%%)", r.ThroughputTrend)
-	} else if r.ThroughputTrend < -10 {
-		result += fmt.Sprintf(" (снижение на %.0f%%)", math.Abs(r.ThroughputTrend))
-	}
-
-	result += fmt.Sprintf(". Среднее время выполнения задачи: %s дн.", formatValue(r.CycleTime))
-
-	if r.CycleTimeTrend < -10 {
-		result += " (улучшается)"
-	} else if r.CycleTimeTrend > 10 {
-		result += " (растёт — обратите внимание)"
-	}
-
-	result += fmt.Sprintf(". В работе сейчас: %d %s.",
-		r.Wip, pluralForm(r.Wip, "задача", "задачи", "задач"))
-
-	if r.WipChange > 0 {
-		result += fmt.Sprintf(" WIP вырос на %d за неделю — возможна перегрузка.", r.WipChange)
-	} else if r.WipChange < 0 {
-		result += fmt.Sprintf(" WIP снизился на %d за неделю.", -r.WipChange)
-	}
-
-	return result
 }
 
 // ========== GetCumulativeFlow ==========
@@ -706,6 +479,32 @@ func (s *KanbanAnalyticsService) generateScatterInterpretation(cycleTimes []floa
 	return result
 }
 
+func (s *KanbanAnalyticsService) groupByWeeks(tasks []completedTask, maxWeeks int) []weeklyThroughputBucket {
+	now := time.Now()
+
+	// Генерируем все недели в диапазоне, включая пустые
+	weekCounts := make(map[string]int)
+	for _, t := range tasks {
+		weekCounts[weekKey(t.CompletedAt)]++
+	}
+
+	seen := make(map[string]bool)
+	result := make([]weeklyThroughputBucket, 0, maxWeeks)
+	for i := 0; i < maxWeeks; i++ {
+		d := now.AddDate(0, 0, -(maxWeeks-1-i)*7)
+		key := weekKey(d)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, weeklyThroughputBucket{
+			Week:  weekLabel(len(result)),
+			Count: weekCounts[key],
+		})
+	}
+	return result
+}
+
 // ========== GetThroughput ==========
 
 func (s *KanbanAnalyticsService) GetThroughput(ctx context.Context, projectID uuid.UUID, boardID *uuid.UUID, fieldFilters map[string][]string) (*ThroughputReport, error) {
@@ -738,212 +537,6 @@ func (s *KanbanAnalyticsService) GetThroughput(ctx context.Context, projectID uu
 	}
 
 	weeks := s.groupByWeeks(tasks, 8)
-	report.Points = weeks
-	report.Interpretation = s.generateThroughputInterpretation(weeks)
-	return report, nil
-}
-
-func (s *KanbanAnalyticsService) groupByWeeks(tasks []completedTask, maxWeeks int) []throughputWeek {
-	now := time.Now()
-
-	// Генерируем все недели в диапазоне, включая пустые
-	weekCounts := make(map[string]int)
-	for _, t := range tasks {
-		weekCounts[weekKey(t.CompletedAt)]++
-	}
-
-	seen := make(map[string]bool)
-	result := make([]throughputWeek, 0, maxWeeks)
-	for i := 0; i < maxWeeks; i++ {
-		d := now.AddDate(0, 0, -(maxWeeks-1-i)*7)
-		key := weekKey(d)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		result = append(result, throughputWeek{
-			Week:  weekLabel(len(result)),
-			Count: weekCounts[key],
-		})
-	}
-	return result
-}
-
-func (s *KanbanAnalyticsService) generateThroughputInterpretation(weeks []throughputWeek) string {
-	n := len(weeks)
-	if n == 0 {
-		return "Нет данных о пропускной способности."
-	}
-
-	var sum float64
-	values := make([]float64, n)
-	for i, w := range weeks {
-		sum += float64(w.Count)
-		values[i] = float64(w.Count)
-	}
-	avg := sum / float64(n)
-
-	result := fmt.Sprintf("Диаграмма показывает количество завершённых задач по неделям. За %d %s в среднем завершалось %s %s в неделю.",
-		n, pluralForm(n, "неделю", "недели", "недель"), formatValue(avg), pluralForm(int(math.Round(avg)), "задача", "задачи", "задач"))
-
-	// Тренд
-	slope, _ := linearRegressionLine(values)
-	if slope > 0.5 {
-		result += " Тренд растущий — пропускная способность увеличивается."
-	} else if slope < -0.5 {
-		result += " Тренд снижающийся — пропускная способность падает. Стоит разобраться в причинах."
-	} else {
-		result += " Пропускная способность стабильна."
-	}
-
-	return result
-}
-
-// ========== GetAvgCycleTime ==========
-
-func (s *KanbanAnalyticsService) GetAvgCycleTime(ctx context.Context, projectID uuid.UUID, boardID *uuid.UUID, fieldFilters map[string][]string) (*AvgCycleTimeReport, error) {
-	bid, _, err := s.resolveBoard(ctx, projectID, boardID)
-	if err != nil {
-		return nil, err
-	}
-
-	var filterSet map[uuid.UUID]struct{}
-	if len(fieldFilters) > 0 {
-		filterSet, err = BuildTaskFilter(ctx, s.dbtx, projectID, bid, fieldFilters)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	tasks, err := s.getCompletedTasks(ctx, projectID, bid)
-	if err != nil {
-		return nil, err
-	}
-	if filterSet != nil {
-		tasks = filterCompletedTasks(tasks, filterSet)
-	}
-
-	report := &AvgCycleTimeReport{}
-
-	if len(tasks) == 0 {
-		report.Interpretation = "Нет завершённых задач для анализа среднего времени выполнения."
-		return report, nil
-	}
-
-	now := time.Now()
-	cutoff := now.AddDate(0, 0, -8*7)
-
-	// Группируем по неделям
-	type weekData struct {
-		key    string
-		values []float64
-	}
-	weekMap := make(map[string]*weekData)
-	weekOrder := make([]string, 0)
-
-	for _, t := range tasks {
-		if t.CompletedAt.Before(cutoff) {
-			continue
-		}
-		key := weekKey(t.CompletedAt)
-		if _, exists := weekMap[key]; !exists {
-			weekMap[key] = &weekData{key: key}
-			weekOrder = append(weekOrder, key)
-		}
-		weekMap[key].values = append(weekMap[key].values, t.CycleTimeDays)
-	}
-
-	sort.Strings(weekOrder)
-
-	points := make([]avgCycleTimeWeek, 0, len(weekOrder))
-	for i, key := range weekOrder {
-		wd := weekMap[key]
-		sorted := make([]float64, len(wd.values))
-		copy(sorted, wd.values)
-		sort.Float64s(sorted)
-
-		var sum float64
-		for _, v := range sorted {
-			sum += v
-		}
-		avg := sum / float64(len(sorted))
-
-		points = append(points, avgCycleTimeWeek{
-			Week:  weekLabel(i),
-			Avg:   math.Round(avg*10) / 10,
-			P50:   math.Round(computePercentile(sorted, 50)*10) / 10,
-			P85:   math.Round(computePercentile(sorted, 85)*10) / 10,
-			Count: len(sorted),
-		})
-	}
-
-	report.Points = points
-	report.Interpretation = s.generateAvgCycleTimeInterpretation(points)
-	return report, nil
-}
-
-func (s *KanbanAnalyticsService) generateAvgCycleTimeInterpretation(points []avgCycleTimeWeek) string {
-	n := len(points)
-	if n == 0 {
-		return "Нет данных о среднем времени выполнения."
-	}
-
-	last := points[n-1]
-	result := fmt.Sprintf("Диаграмма показывает среднее время выполнения задач по неделям. На последней неделе: среднее %s дн., медиана %s дн., 85-й процентиль %s дн.",
-		formatValue(last.Avg), formatValue(last.P50), formatValue(last.P85))
-
-	// Тренд по avg
-	avgs := make([]float64, n)
-	for i, p := range points {
-		avgs[i] = p.Avg
-	}
-	slope, _ := linearRegressionLine(avgs)
-
-	if slope < -0.2 {
-		result += " Время выполнения снижается — процесс улучшается."
-	} else if slope > 0.2 {
-		result += " Время выполнения растёт — стоит проверить, не появились ли блокеры или перегрузка."
-	} else {
-		result += " Время выполнения стабильно."
-	}
-
-	result += " Для прогнозов и обещаний клиентам используйте 85-й процентиль."
-
-	return result
-}
-
-// ========== GetThroughputTrend ==========
-
-func (s *KanbanAnalyticsService) GetThroughputTrend(ctx context.Context, projectID uuid.UUID, boardID *uuid.UUID, fieldFilters map[string][]string) (*ThroughputTrendReport, error) {
-	bid, _, err := s.resolveBoard(ctx, projectID, boardID)
-	if err != nil {
-		return nil, err
-	}
-
-	var filterSet map[uuid.UUID]struct{}
-	if len(fieldFilters) > 0 {
-		filterSet, err = BuildTaskFilter(ctx, s.dbtx, projectID, bid, fieldFilters)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	tasks, err := s.getCompletedTasks(ctx, projectID, bid)
-	if err != nil {
-		return nil, err
-	}
-	if filterSet != nil {
-		tasks = filterCompletedTasks(tasks, filterSet)
-	}
-
-	report := &ThroughputTrendReport{}
-
-	if len(tasks) == 0 {
-		report.Interpretation = "Нет завершённых задач для анализа тренда пропускной способности."
-		return report, nil
-	}
-
-	weeks := s.groupByWeeks(tasks, 8)
 
 	values := make([]float64, len(weeks))
 	for i, w := range weeks {
@@ -952,9 +545,9 @@ func (s *KanbanAnalyticsService) GetThroughputTrend(ctx context.Context, project
 
 	slope, trendLine := linearRegressionLine(values)
 
-	points := make([]throughputTrendPoint, len(weeks))
+	points := make([]throughputPoint, len(weeks))
 	for i, w := range weeks {
-		points[i] = throughputTrendPoint{
+		points[i] = throughputPoint{
 			Week:   w.Week,
 			Actual: w.Count,
 			Trend:  trendLine[i],
@@ -962,14 +555,14 @@ func (s *KanbanAnalyticsService) GetThroughputTrend(ctx context.Context, project
 	}
 
 	report.Points = points
-	report.Interpretation = s.generateThroughputTrendInterpretation(weeks, slope)
+	report.Interpretation = s.generateThroughputInterpretation(weeks, slope)
 	return report, nil
 }
 
-func (s *KanbanAnalyticsService) generateThroughputTrendInterpretation(weeks []throughputWeek, slope float64) string {
+func (s *KanbanAnalyticsService) generateThroughputInterpretation(weeks []weeklyThroughputBucket, slope float64) string {
 	n := len(weeks)
 	if n == 0 {
-		return "Нет данных о тренде пропускной способности."
+		return "Нет данных о пропускной способности."
 	}
 
 	var sum float64
@@ -987,6 +580,129 @@ func (s *KanbanAnalyticsService) generateThroughputTrendInterpretation(weeks []t
 		result += fmt.Sprintf(" Тренд снижающийся (%s задач в неделю) — возможны проблемы с процессом или нагрузкой.", formatValue(slope))
 	} else {
 		result += " Тренд стабильный — пропускная способность не меняется."
+	}
+
+	return result
+}
+
+// ========== GetWipAge ==========
+
+func (s *KanbanAnalyticsService) GetWipAge(ctx context.Context, projectID uuid.UUID, boardID *uuid.UUID, fieldFilters map[string][]string) (*WipAgeReport, error) {
+	bid, _, err := s.resolveBoard(ctx, projectID, boardID)
+	if err != nil {
+		return nil, err
+	}
+
+	var filterSet map[uuid.UUID]struct{}
+	if len(fieldFilters) > 0 {
+		filterSet, err = BuildTaskFilter(ctx, s.dbtx, projectID, bid, fieldFilters)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	rows, err := s.queries.GetWipAgeTasksForKanban(ctx, db.GetWipAgeTasksForKanbanParams{
+		ProjectID: projectID,
+		BoardID:   bid,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if filterSet != nil {
+		filtered := rows[:0]
+		for _, r := range rows {
+			if _, ok := filterSet[r.TaskID]; ok {
+				filtered = append(filtered, r)
+			}
+		}
+		rows = filtered
+	}
+
+	now := time.Now()
+	points := make([]wipAgePoint, 0, len(rows))
+	for _, r := range rows {
+		age := now.Sub(r.WorkStartedAt).Hours() / 24
+		if age < 0 {
+			age = 0
+		}
+		age = math.Round(age*100) / 100
+		points = append(points, wipAgePoint{
+			TaskKey:    r.TaskKey,
+			AgeDays:    age,
+			ColumnName: r.ColumnName,
+		})
+	}
+
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].AgeDays > points[j].AgeDays
+	})
+
+	report := &WipAgeReport{
+		Points:         points,
+		Interpretation: s.generateWipAgeInterpretation(points),
+	}
+	return report, nil
+}
+
+func (s *KanbanAnalyticsService) generateWipAgeInterpretation(points []wipAgePoint) string {
+	n := len(points)
+	if n == 0 {
+		return "Нет задач в колонках «в работе» и «на паузе». Когда карточки появятся в этих колонках, здесь отобразится их возраст — сколько дней они уже в активной работе."
+	}
+
+	var sum float64
+	ages := make([]float64, n)
+	for i, p := range points {
+		sum += p.AgeDays
+		ages[i] = p.AgeDays
+	}
+	avg := sum / float64(n)
+
+	sorted := make([]float64, n)
+	copy(sorted, ages)
+	sort.Float64s(sorted)
+	median := computePercentile(sorted, 50)
+
+	result := fmt.Sprintf("Сейчас в работе (включая паузу) %d %s. Средний возраст карточек в этих колонках: %s дн., медиана: %s дн.",
+		n, pluralForm(n, "задача", "задачи", "задач"),
+		formatValue(avg), formatValue(median))
+
+	outliers := make([]wipAgePoint, 0)
+	if n >= 4 {
+		q1 := computePercentile(sorted, 25)
+		q3 := computePercentile(sorted, 75)
+		iqr := q3 - q1
+		threshold := q3 + math.Max(1.5*iqr, 1)
+		for _, p := range points {
+			if p.AgeDays >= threshold && p.AgeDays > median {
+				outliers = append(outliers, p)
+			}
+		}
+	} else if n == 2 {
+		a, b := points[0].AgeDays, points[1].AgeDays // points отсортированы по убыванию возраста
+		if a >= b*2+3 || (b > 0 && a/b >= 2.5) {
+			outliers = append(outliers, points[0])
+		}
+	} else if n > 2 && n < 4 {
+		for _, p := range points {
+			if p.AgeDays >= median*2 && p.AgeDays-median >= 3 {
+				outliers = append(outliers, p)
+			}
+		}
+	} else if n == 1 && points[0].AgeDays >= 14 {
+		outliers = append(outliers, points[0])
+	}
+
+	if len(outliers) > 0 {
+		parts := make([]string, 0, len(outliers))
+		for _, p := range outliers {
+			parts = append(parts, fmt.Sprintf("%s (~%s дн., «%s»)", p.TaskKey, formatValue(p.AgeDays), p.ColumnName))
+		}
+		result += fmt.Sprintf(" **Внимание:** по сравнению с остальными выделяются «застывшие» задачи: %s. Вынесите их на ближайший дейли — обсудите блокеры, разбиение или передачу работы.",
+			strings.Join(parts, "; "))
+	} else {
+		result += " Ярких выбросов по возрасту нет — распределение относительно ровное. При появлении долго висящих карточек отчёт подсветит их автоматически."
 	}
 
 	return result
