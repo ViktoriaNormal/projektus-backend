@@ -33,6 +33,36 @@ const (
 	MetricEstimationHours MetricType = "estimation_hours"
 )
 
+const (
+	// velocityTrendRelativeThreshold — порог значимости тренда скорости как
+	// доля от средней скорости команды. Тренд |slope| < 5 % средней скорости
+	// считается практически нулевым (стабильным).
+	velocityTrendRelativeThreshold = 0.05
+	// velocityLowVariationPct, velocityModerateVariationPct,
+	// velocityHighVariationPct — границы зон коэффициента вариации согласно
+	// классической классификации однородности совокупности: до 10 % —
+	// незначительный разброс, 10–20 % — умеренный, 20–33 % — значительный,
+	// свыше 33 % — совокупность неоднородна.
+	velocityLowVariationPct      = 10.0
+	velocityModerateVariationPct = 20.0
+	velocityHighVariationPct     = 33.0
+	// velocityLowCompletionPct — нижняя граница корректного коридора
+	// планирования по практикам Atlassian (75–85 %): процент выполнения
+	// ниже этого значения интерпретируется как систематическое
+	// перепланирование команды.
+	velocityLowCompletionPct = 75.0
+	// burndownCriticalLagPct — пороговое отставание реального остатка
+	// работы от идеальной линии в долях от общего объёма спринта.
+	// Симметрично 25-процентному отклонению от плана (1 − 0.75) в
+	// коридоре корректного планирования Atlassian: команда «потеряла»
+	// более четверти спринта по графику.
+	burndownCriticalLagPct = 25.0
+	// burndownCriticalProgressMinDays — короткое плечо в начале
+	// спринта, в течение которого вывод о критическом отставании
+	// не делается из-за недостаточной информативности первых дней.
+	burndownCriticalProgressMinDays = 2
+)
+
 // VelocityResult — данные velocity для одного спринта
 type VelocityResult struct {
 	SprintID   uuid.UUID
@@ -43,7 +73,7 @@ type VelocityResult struct {
 
 // VelocityReport — полный отчёт velocity
 type VelocityReport struct {
-	Data           []VelocityResult
+	Data               []VelocityResult
 	AverageVelocity    float64
 	VelocityTrend      float64
 	CompletionRate     float64
@@ -217,24 +247,24 @@ func pluralForm(n int, form1, form2, form5 string) string {
 
 func (s *ScrumAnalyticsService) generateVelocityInterpretation(report *VelocityReport, metricType MetricType) string {
 	if report.SprintCount == 0 {
-		return "Нет данных для анализа velocity."
+		return "Нет данных для анализа. Завершите хотя бы один спринт."
 	}
 
 	unit := metricUnitName(metricType)
+	sprintWord := pluralForm(report.SprintCount, "спринт", "спринта", "спринтов")
 
-	intro := "Диаграмма показывает запланированный и выполненный объём работы по спринтам."
+	result := "ℹ️ **О графике:** Показывает способность команды прогнозировать объём работы. Сравнивает обещания (план) и реальность (факт). Обычно анализируется за несколько последних спринтов. Хороший показатель — когда команда выполняет 75–85% плана, а линия факта ровная или плавно растёт. Плохо — когда скорость сильно скачет или мы систематически выполняем меньше 75%.\n\n"
 
 	if report.SprintCount == 1 {
-		result := fmt.Sprintf("%s За 1 спринт команда выполнила %s %s из %s запланированных (%.0f%%).",
-			intro, formatValue(report.AverageVelocity), unit, formatValue(report.AverageSprintScope), report.CompletionRate)
-		if report.CompletionRate >= 80 {
-			result += " Хороший результат."
+		result += fmt.Sprintf("За 1 спринт команда выполнила %s %s из %s запланированных (%.0f%%). ",
+			formatValue(report.AverageVelocity), unit, formatValue(report.AverageSprintScope), report.CompletionRate)
+		if report.CompletionRate >= velocityLowCompletionPct {
+			result += "Отличный старт! "
 		}
-		result += " Для выявления тенденций нужно завершить ещё 2–3 спринта."
+		result += "Для выявления долгосрочных тенденций нужно завершить ещё 2–3 спринта."
 		return result
 	}
 
-	// Расчёт стабильности
 	var sumSq float64
 	for _, d := range report.Data {
 		diff := d.Completed - report.AverageVelocity
@@ -242,42 +272,41 @@ func (s *ScrumAnalyticsService) generateVelocityInterpretation(report *VelocityR
 	}
 	cv := float64(0)
 	if report.AverageVelocity > 0 {
-		stdDev := math.Sqrt(sumSq / float64(report.SprintCount))
-		cv = stdDev / report.AverageVelocity * 100
+		cv = (math.Sqrt(sumSq/float64(report.SprintCount)) / report.AverageVelocity) * 100
 	}
 
-	sprintWord := pluralForm(report.SprintCount, "спринт", "спринта", "спринтов")
+	// Порог значимости тренда — относительный, как доля от средней скорости.
+	// Это делает порог корректным для любой метрики (задачи, story points, часы).
+	trendThreshold := velocityTrendRelativeThreshold * report.AverageVelocity
 
-	result := fmt.Sprintf("%s За %d %s команда в среднем выполняет %s %s из %s запланированных (%.0f%%).",
-		intro, report.SprintCount, sprintWord, formatValue(report.AverageVelocity), unit, formatValue(report.AverageSprintScope), report.CompletionRate)
+	result += fmt.Sprintf("За %d %s команда в среднем выполняет %s %s из %s запланированных (%.0f%%). ",
+		report.SprintCount, sprintWord, formatValue(report.AverageVelocity), unit, formatValue(report.AverageSprintScope), report.CompletionRate)
 
-	// Тренд
-	if report.VelocityTrend > 0.5 {
-		result += fmt.Sprintf(" Скорость растёт (+%.1f %s за спринт).", report.VelocityTrend, unit)
-	} else if report.VelocityTrend < -0.5 {
-		result += fmt.Sprintf(" Скорость снижается (%.1f %s за спринт).", report.VelocityTrend, unit)
+	if report.VelocityTrend > trendThreshold {
+		result += fmt.Sprintf("Скорость стабильно растёт (+%s %s за спринт). Молодцы! ", formatValue(report.VelocityTrend), unit)
+	} else if report.VelocityTrend < -trendThreshold {
+		result += fmt.Sprintf("Скорость снижается (%s %s за спринт). ", formatValue(report.VelocityTrend), unit)
 	}
 
-	// Стабильность
-	if cv >= 30 {
-		result += fmt.Sprintf(" Результаты нестабильны (разброс %.0f%%).", cv)
-	} else if cv >= 15 {
-		result += " Результаты умеренно стабильны."
+	if cv >= velocityHighVariationPct {
+		result += "При этом результаты очень нестабильны: совокупность спринтов неоднородна, среднее значение теряет прогностическую ценность.\n\n"
+	} else if cv >= velocityModerateVariationPct {
+		result += "Разброс выраженный, но в пределах однородности — среднее значение ещё пригодно для планирования.\n\n"
+	} else if cv >= velocityLowVariationPct {
+		result += "Разброс умеренный — результаты достаточно стабильны.\n\n"
 	} else {
-		result += " Результаты стабильны."
+		result += "Результаты отлично стабилизировались — разброс минимальный.\n\n"
 	}
 
-	// Оценка и рекомендация
-	if report.CompletionRate < 60 {
-		result += fmt.Sprintf(" Выполнение (%.0f%%) значительно ниже нормы (≥ 80%%) — команда систематически берёт больше, чем успевает. Рекомендация: сократите объём на 30–50%% и наращивайте постепенно.", report.CompletionRate)
-	} else if report.CompletionRate < 80 {
-		result += fmt.Sprintf(" Выполнение (%.0f%%) ниже нормы (≥ 80%%). Рекомендация: планируйте меньше, ориентируясь на фактическую скорость команды.", report.CompletionRate)
-	} else if cv >= 30 {
-		result += " Планирование хорошее, но скорость нестабильна. Рекомендация: проверьте, не различаются ли задачи слишком сильно по сложности."
-	} else if report.VelocityTrend < -0.5 {
-		result += " Скорость падает — возможен рост технического долга или усталость команды. Стоит обсудить на ретроспективе."
+	result += "💡 **Что с этим делать:** "
+	if report.CompletionRate < velocityLowCompletionPct {
+		result += "Команда систематически переоценивает свои силы и берет слишком много работы. Сократите объём следующего спринта на 20–30% и наращивайте его постепенно."
+	} else if cv >= velocityHighVariationPct {
+		result += "Планирование хорошее, но скорость нестабильна. Проверьте, не различаются ли задачи слишком сильно по сложности. Старайтесь декомпозировать их равномерно."
+	} else if report.VelocityTrend < -trendThreshold {
+		result += "Скорость падает — возможен рост технического долга, нечеткие требования или усталость команды. Обязательно обсудите это на ретроспективе!"
 	} else {
-		result += " Команда работает стабильно и предсказуемо — используйте среднюю скорость для планирования."
+		result += "Команда работает как часы стабильно и предсказуемо! Смело используйте среднюю скорость для планирования будущих спринтов."
 	}
 
 	return result
@@ -447,7 +476,7 @@ func isTaskCompletedAtTime(entries []statusEntry, t time.Time) bool {
 
 func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownReport, totalWork float64, metricType MetricType) string {
 	if len(report.Data) == 0 {
-		return "Нет данных для анализа burndown."
+		return "Нет данных для анализа."
 	}
 
 	unit := metricUnitName(metricType)
@@ -459,17 +488,18 @@ func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownR
 	}
 	completed := totalWork - last.Remaining
 
-	result := fmt.Sprintf("Диаграмма показывает остаток работы по дням спринта: пунктир — идеальный темп, линия — факт. В «%s» из %s %s выполнено %s (%.0f%%).",
-		report.SprintName, formatValue(totalWork), unit, formatValue(completed), completedPercent)
+	result := "ℹ️ **О графике:** Показывает сгорание работы день за днем внутри одного текущего спринта. Пунктир — это идеальный темп, сплошная линия — реальность. Отлично — когда реальная линия идет ровно по идеальной или чуть ниже. Плохо — когда линия долго идет горизонтально (задачи висят) или вдруг уходит вверх (кто-то вкинул новые задачи посреди спринта).\n\n"
+
+	result += fmt.Sprintf("В спринте «%s» на данный момент выполнено %s из %s %s (%.0f%%). ",
+		report.SprintName, formatValue(completed), formatValue(totalWork), unit, completedPercent)
 
 	if last.Remaining <= last.Ideal {
-		result += " Команда опережает идеальный график."
+		result += "Команда молодец, идём с опережением или точно по графику! "
 	} else {
 		diff := last.Remaining - last.Ideal
-		result += fmt.Sprintf(" Команда отстаёт от идеального графика на %s %s.", formatValue(diff), unit)
+		result += fmt.Sprintf("Сейчас мы отстаём от идеального графика на %s %s. ", formatValue(diff), unit)
 	}
 
-	// Скачки объёма
 	var scopeChanges int
 	for i := 1; i < len(report.Data); i++ {
 		if report.Data[i].Remaining > report.Data[i-1].Remaining {
@@ -478,20 +508,25 @@ func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownR
 	}
 	if scopeChanges > 0 {
 		scopeNote := pluralForm(scopeChanges, "раз", "раза", "раз")
-		result += fmt.Sprintf(" Объём работы увеличивался %d %s — в спринт добавлялись задачи.", scopeChanges, scopeNote)
+		result += fmt.Sprintf("\n⚠️ Внимание: Объём работы увеличивался %d %s — в активный спринт добавлялись новые задачи! ", scopeChanges, scopeNote)
 	}
 
-	// Рекомендация
+	// Критическим считается отставание реального остатка от идеального
+	// более чем на burndownCriticalLagPct процентов общего объёма работы,
+	// при условии что прошло достаточно дней для информативного вывода.
+	criticalLag := totalWork * burndownCriticalLagPct / 100
+	lag := last.Remaining - last.Ideal
+	result += "\n\n💡 **Что делать прямо сейчас:** "
 	if last.Remaining <= last.Ideal {
-		result += " Если темп сохранится, спринт будет завершён в срок. Следите за равномерностью — скачки в конце спринта говорят о проблемах с декомпозицией."
-	} else if completedPercent < 30 && len(report.Data) > 2 {
-		result += " Прогресс низкий — стоит обсудить на дейли, есть ли блокеры, и при необходимости снять второстепенные задачи."
+		result += "Продолжайте в том же духе. Если темп сохранится, спринт будет завершён в срок."
+	} else if lag > criticalLag && len(report.Data) > burndownCriticalProgressMinDays {
+		result += "Прогресс критически низкий. Стоит обсудить на ближайшем Daily, есть ли блокеры, и при необходимости безжалостно выкинуть из спринта второстепенные задачи."
 	} else {
-		result += " Рекомендация: обсудите прогресс на дейли и сфокусируйтесь на приоритетных задачах."
+		result += "Сфокусируйтесь на доведении начатых задач до конца (Stop starting, start finishing), чтобы вернуться в график."
 	}
 
 	if scopeChanges > 1 {
-		result += " Частое добавление задач в спринт снижает предсказуемость — фиксируйте объём при планировании."
+		result += " И перестаньте добавлять новые задачи в спринт на лету — это полностью убивает предсказуемость команды."
 	}
 
 	return result

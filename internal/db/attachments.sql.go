@@ -84,6 +84,46 @@ func (q *Queries) GetAttachmentByID(ctx context.Context, id uuid.UUID) (Attachme
 	return i, err
 }
 
+const listCommentAttachments = `-- name: ListCommentAttachments :many
+SELECT id, task_id, comment_id, file_name, file_path, file_size, content_type, uploaded_by, uploaded_at
+FROM attachments
+WHERE comment_id = $1
+ORDER BY uploaded_at ASC
+`
+
+func (q *Queries) ListCommentAttachments(ctx context.Context, commentID uuid.NullUUID) ([]Attachment, error) {
+	rows, err := q.db.QueryContext(ctx, listCommentAttachments, commentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Attachment{}
+	for rows.Next() {
+		var i Attachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.CommentID,
+			&i.FileName,
+			&i.FilePath,
+			&i.FileSize,
+			&i.ContentType,
+			&i.UploadedBy,
+			&i.UploadedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskAttachments = `-- name: ListTaskAttachments :many
 SELECT id, task_id, comment_id, file_name, file_path, file_size, content_type, uploaded_by, uploaded_at
 FROM attachments

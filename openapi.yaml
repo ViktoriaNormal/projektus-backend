@@ -2884,6 +2884,34 @@ paths:
                       data: { $ref: '#/components/schemas/CommentResponse' }
 
   /tasks/comments/{comment_id}:
+    patch:
+      tags: [Comments]
+      summary: Update comment
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+      responses:
+        '200':
+          description: Updated comment
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CommentResponse' }
     delete:
       tags: [Comments]
       summary: Delete comment
@@ -2921,6 +2949,59 @@ paths:
       summary: Upload attachment
       parameters:
         - $ref: '#/components/parameters/TaskIdPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Uploaded attachment
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AttachmentResponse' }
+
+  /tasks/comments/{comment_id}/attachments:
+    get:
+      tags: [Attachments]
+      summary: List comment attachments
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Attachments list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AttachmentResponse' }
+    post:
+      tags: [Attachments]
+      summary: Upload comment attachment
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:

@@ -92,7 +92,7 @@ func (q *Queries) GetActiveSprint(ctx context.Context, projectID uuid.UUID) (Spr
 const getCompletedSprintsByProject = `-- name: GetCompletedSprintsByProject :many
 SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
 FROM sprints
-WHERE project_id = $1 AND status IN ('completed', 'active')
+WHERE project_id = $1 AND status = 'completed'
 ORDER BY start_date ASC
 `
 

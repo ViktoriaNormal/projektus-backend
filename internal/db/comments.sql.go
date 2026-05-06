@@ -142,3 +142,40 @@ func (q *Queries) ListTaskComments(ctx context.Context, taskID uuid.UUID) ([]Lis
 	}
 	return items, nil
 }
+
+const updateComment = `-- name: UpdateComment :one
+UPDATE comments
+SET content = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, task_id, author_id, content, parent_comment_id, created_at, updated_at
+`
+
+type UpdateCommentParams struct {
+	ID      uuid.UUID `json:"id"`
+	Content string    `json:"content"`
+}
+
+type UpdateCommentRow struct {
+	ID              uuid.UUID     `json:"id"`
+	TaskID          uuid.UUID     `json:"task_id"`
+	AuthorID        uuid.UUID     `json:"author_id"`
+	Content         string        `json:"content"`
+	ParentCommentID uuid.NullUUID `json:"parent_comment_id"`
+	CreatedAt       time.Time     `json:"created_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
+}
+
+func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (UpdateCommentRow, error) {
+	row := q.db.QueryRowContext(ctx, updateComment, arg.ID, arg.Content)
+	var i UpdateCommentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.AuthorID,
+		&i.Content,
+		&i.ParentCommentID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

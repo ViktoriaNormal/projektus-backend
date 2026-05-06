@@ -220,7 +220,10 @@ func SetupRouter(cfg *config.Config, authHandler *handlers.AuthHandler, userHand
 			// Comments
 			tasks.GET("/:taskId/comments", taskHandler.ListComments)
 			tasks.POST("/:taskId/comments", taskHandler.CreateComment)
+			tasks.PATCH("/comments/:commentId", taskHandler.UpdateComment)
 			tasks.DELETE("/comments/:commentId", taskHandler.DeleteComment)
+			tasks.GET("/comments/:commentId/attachments", taskHandler.ListCommentAttachments)
+			tasks.POST("/comments/:commentId/attachments", taskHandler.UploadCommentAttachment)
 
 			// Attachments
 			tasks.GET("/:taskId/attachments", taskHandler.ListAttachments)

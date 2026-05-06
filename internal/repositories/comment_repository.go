@@ -13,6 +13,7 @@ import (
 type CommentRepository interface {
 	List(ctx context.Context, taskID uuid.UUID) ([]domain.Comment, error)
 	Create(ctx context.Context, taskID, authorID uuid.UUID, content string, parentCommentID *uuid.UUID) (*domain.Comment, error)
+	Update(ctx context.Context, commentID uuid.UUID, content string) (*domain.Comment, error)
 	GetByID(ctx context.Context, commentID uuid.UUID) (*domain.Comment, error)
 	Delete(ctx context.Context, commentID uuid.UUID) error
 }
@@ -82,6 +83,29 @@ func (r *commentRepository) GetByID(ctx context.Context, commentID uuid.UUID) (*
 	row, err := r.q.GetCommentByID(ctx, commentID)
 	if err != nil {
 		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "GetCommentByID", "commentID", commentID)
+	}
+	c := &domain.Comment{
+		ID:        row.ID,
+		TaskID:    row.TaskID,
+		AuthorID:  row.AuthorID,
+		Content:   row.Content,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+	if row.ParentCommentID.Valid {
+		id := row.ParentCommentID.UUID
+		c.ParentCommentID = &id
+	}
+	return c, nil
+}
+
+func (r *commentRepository) Update(ctx context.Context, commentID uuid.UUID, content string) (*domain.Comment, error) {
+	row, err := r.q.UpdateComment(ctx, db.UpdateCommentParams{
+		ID:      commentID,
+		Content: content,
+	})
+	if err != nil {
+		return nil, errctx.Wrap(mapSQLErr(err, domain.ErrNotFound), "UpdateComment", "commentID", commentID)
 	}
 	c := &domain.Comment{
 		ID:        row.ID,

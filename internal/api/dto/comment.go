@@ -20,3 +20,7 @@ type CreateCommentRequest struct {
 	Content         string     `json:"content" binding:"required"`
 	ParentCommentID *uuid.UUID `json:"parent_comment_id,omitempty"`
 }
+
+type UpdateCommentRequest struct {
+	Content string `json:"content" binding:"required"`
+}

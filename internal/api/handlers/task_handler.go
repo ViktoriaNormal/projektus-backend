@@ -411,6 +411,26 @@ func (h *TaskHandler) CreateComment(c *gin.Context) {
 	writeSuccess(c, mapCommentToDTO(comment))
 }
 
+func (h *TaskHandler) UpdateComment(c *gin.Context) {
+	commentID, ok := paramUUID(c, "commentId")
+	if !ok {
+		return
+	}
+	req, ok := bindJSON[dto.UpdateCommentRequest](c)
+	if !ok {
+		return
+	}
+	comment, err := h.service.UpdateComment(c.Request.Context(), commentID, req.Content)
+	if err != nil {
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось обновить комментарий")
+		return
+	}
+	writeSuccess(c, mapCommentToDTO(comment))
+}
+
 func (h *TaskHandler) DeleteComment(c *gin.Context) {
 	commentID, ok := paramUUID(c, "commentId")
 	if !ok {
@@ -439,6 +459,26 @@ func (h *TaskHandler) ListAttachments(c *gin.Context) {
 			return
 		}
 		respondInternal(c, err, "Не удалось получить вложения")
+		return
+	}
+	resp := make([]dto.AttachmentResponse, 0, len(attachments))
+	for _, a := range attachments {
+		resp = append(resp, mapAttachmentToDTO(&a))
+	}
+	writeSuccess(c, resp)
+}
+
+func (h *TaskHandler) ListCommentAttachments(c *gin.Context) {
+	commentID, ok := paramUUID(c, "commentId")
+	if !ok {
+		return
+	}
+	attachments, err := h.service.ListCommentAttachments(c.Request.Context(), commentID)
+	if err != nil {
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось получить вложения комментария")
 		return
 	}
 	resp := make([]dto.AttachmentResponse, 0, len(attachments))
@@ -490,6 +530,52 @@ func (h *TaskHandler) UploadAttachment(c *gin.Context) {
 			return
 		}
 		respondInternal(c, err, "Не удалось сохранить информацию о вложении")
+		return
+	}
+	writeSuccess(c, mapAttachmentToDTO(attachment))
+}
+
+func (h *TaskHandler) UploadCommentAttachment(c *gin.Context) {
+	commentID, ok := paramUUID(c, "commentId")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserUUID(c)
+	if !ok {
+		return
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Файл не найден в запросе")
+		return
+	}
+
+	ext := filepath.Ext(file.Filename)
+	uniqueName := uuid.New().String() + ext
+	dir := "uploads/attachments"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		respondInternal(c, err, "Не удалось создать директорию для файлов")
+		return
+	}
+	filePath := dir + "/" + uniqueName
+
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
+		respondInternal(c, err, "Не удалось сохранить файл")
+		return
+	}
+
+	contentType := file.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	attachment, err := h.service.CreateCommentAttachment(c.Request.Context(), commentID, userID, file.Filename, filePath, contentType, file.Size)
+	if err != nil {
+		if respondDomainErr(c, err) {
+			return
+		}
+		respondInternal(c, err, "Не удалось сохранить вложение комментария")
 		return
 	}
 	writeSuccess(c, mapAttachmentToDTO(attachment))

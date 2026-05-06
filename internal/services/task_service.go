@@ -595,6 +595,14 @@ func (s *TaskService) GetCommentByID(ctx context.Context, commentID uuid.UUID) (
 	return s.commentRepo.GetByID(ctx, commentID)
 }
 
+func (s *TaskService) UpdateComment(ctx context.Context, commentID uuid.UUID, content string) (*domain.Comment, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.commentRepo.Update(ctx, commentID, content)
+}
+
 func (s *TaskService) DeleteComment(ctx context.Context, commentID uuid.UUID) error {
 	return s.commentRepo.Delete(ctx, commentID)
 }
@@ -605,8 +613,16 @@ func (s *TaskService) ListAttachments(ctx context.Context, taskID uuid.UUID) ([]
 	return s.attachmentRepo.List(ctx, taskID)
 }
 
+func (s *TaskService) ListCommentAttachments(ctx context.Context, commentID uuid.UUID) ([]domain.Attachment, error) {
+	return s.attachmentRepo.ListByComment(ctx, commentID)
+}
+
 func (s *TaskService) CreateAttachment(ctx context.Context, taskID, uploadedBy uuid.UUID, fileName, filePath, contentType string, fileSize int64) (*domain.Attachment, error) {
 	return s.attachmentRepo.Create(ctx, taskID, uploadedBy, fileName, filePath, contentType, fileSize)
+}
+
+func (s *TaskService) CreateCommentAttachment(ctx context.Context, commentID, uploadedBy uuid.UUID, fileName, filePath, contentType string, fileSize int64) (*domain.Attachment, error) {
+	return s.attachmentRepo.CreateForComment(ctx, commentID, uploadedBy, fileName, filePath, contentType, fileSize)
 }
 
 func (s *TaskService) GetAttachmentByID(ctx context.Context, attachmentID uuid.UUID) (*domain.Attachment, error) {
