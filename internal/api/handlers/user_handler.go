@@ -227,7 +227,7 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 
 // GET /api/v1/users/:id/project-roles
 func (h *UserHandler) GetMyProjectRoles(c *gin.Context) {
-	currentUserUUID, ok := requireUserUUID(c)
+	_, ok := requireUserUUID(c)
 	if !ok {
 		return
 	}
@@ -237,10 +237,10 @@ func (h *UserHandler) GetMyProjectRoles(c *gin.Context) {
 		return
 	}
 
-	if currentUserUUID != uid {
-		writeError(c, http.StatusForbidden, "FORBIDDEN", "Можно запрашивать только свои проектные роли")
-		return
-	}
+	//if currentUserUUID != uid {
+	//	writeError(c, http.StatusForbidden, "FORBIDDEN", "Можно запрашивать только свои проектные роли")
+	//	return
+	//}
 
 	memberships, err := h.members.ListByUser(c.Request.Context(), uid)
 	if err != nil {

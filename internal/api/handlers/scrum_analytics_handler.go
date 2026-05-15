@@ -26,7 +26,7 @@ func (h *ScrumAnalyticsHandler) GetVelocity(c *gin.Context) {
 		return
 	}
 
-	metricType := parseMetricType(c.Query("metricType"))
+	metricType := parseMetricType(c.Query("metric_type"))
 	limit := 0
 	if l := c.Query("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil {
@@ -75,7 +75,7 @@ func (h *ScrumAnalyticsHandler) GetBurndown(c *gin.Context) {
 	metricType := parseMetricType(c.Query("metricType"))
 
 	var sprintIDPtr *uuid.UUID
-	if sprintIDStr := c.Query("sprintId"); sprintIDStr != "" {
+	if sprintIDStr := c.Query("sprint_id"); sprintIDStr != "" {
 		sprintID, err := uuid.Parse(sprintIDStr)
 		if err != nil {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректный идентификатор спринта")
