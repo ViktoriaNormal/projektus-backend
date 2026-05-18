@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,15 +28,15 @@ const (
 	// cfdBottleneckCoverageDays — длительность поставки, которую должно
 	// «съесть» накопление в колонке, чтобы считаться узким местом.
 	// 7 дней = одна полная неделя пропускной способности команды.
-	cfdBottleneckCoverageDays = 7
+	cfdBottleneckCoverageDays         = 7
 	throughputTrendWindowWeeks        = 8
 	throughputDistributionWindowWeeks = 12
 	// throughputTrendRelativeThreshold — порог значимости тренда
 	// пропускной способности как доля от средней недельной поставки.
 	// Симметрично с velocityTrendRelativeThreshold: тренд считается
 	// значимым начиная с 5 % средней пропускной способности.
-	throughputTrendRelativeThreshold = 0.05
-	wipRiskPercentile                = 85.0
+	throughputTrendRelativeThreshold    = 0.05
+	wipRiskPercentile                   = 85.0
 	cycleTimePredictableCVThreshold     = 0.5
 	cycleTimeUnpredictableCVThreshold   = 1.0
 	throughputConservativePercentile    = 15.0
@@ -61,6 +62,7 @@ type CFDReport struct {
 	Points               []cfdDayPoint
 	Interpretation       string
 	completedColumnNames []string
+	columnSystemTypes    map[string]string // column name -> system_type
 }
 
 type cfdDayPoint struct {
@@ -189,6 +191,15 @@ func (s *KanbanAnalyticsService) getCompletedTasks(ctx context.Context, projectI
 func weekKey(t time.Time) string {
 	y, w := t.ISOWeek()
 	return fmt.Sprintf("%d-W%02d", y, w)
+}
+
+// scatterDisplayOrder — стабильный псевдослучайный порядок задач на оси X scatter-графика.
+func scatterDisplayOrder(taskKey string) uint32 {
+	var h uint32
+	for i := 0; i < len(taskKey); i++ {
+		h = h*31 + uint32(taskKey[i])
+	}
+	return h
 }
 
 func weekLabel(index int) string {
@@ -341,16 +352,21 @@ func (s *KanbanAnalyticsService) GetCumulativeFlow(ctx context.Context, projectI
 
 	colNames := make([]string, 0, len(columns))
 	completedColumnNames := make([]string, 0)
+	columnSystemTypes := make(map[string]string, len(columns))
 	for _, c := range columns {
 		colNames = append(colNames, c.Name)
-		if c.SystemType.Valid && c.SystemType.String == string(domain.StatusCompleted) {
-			completedColumnNames = append(completedColumnNames, c.Name)
+		if c.SystemType.Valid {
+			columnSystemTypes[c.Name] = c.SystemType.String
+			if c.SystemType.String == string(domain.StatusCompleted) {
+				completedColumnNames = append(completedColumnNames, c.Name)
+			}
 		}
 	}
 
 	report := &CFDReport{
 		ColumnNames:          colNames,
 		completedColumnNames: completedColumnNames,
+		columnSystemTypes:    columnSystemTypes,
 	}
 
 	if len(history) == 0 {
@@ -429,56 +445,177 @@ func (s *KanbanAnalyticsService) medianWeeklyThroughput(
 	return computePercentile(values, 50)
 }
 
+func isKanbanInProgressColumn(systemType string) bool {
+	return systemType == string(domain.StatusInProgress)
+}
+
+type cfdColumnGrowth struct {
+	name   string
+	growth int
+}
+
+func cfdGrowthWeeks(growth int, weeklyThroughput float64) float64 {
+	if weeklyThroughput <= 0 {
+		return 0
+	}
+	return float64(growth) / weeklyThroughput
+}
+
+// cfdStuckVerb: «зависла» — с «неделя» (≈1 нед.), иначе нейтральное «зависло».
+func cfdStuckVerb(weeks float64) string {
+	if weeks >= 0.95 && weeks < 1.15 {
+		return "зависла"
+	}
+	return "зависло"
+}
+
+func cfdWeeksWorkPhrase(weeks float64) string {
+	w := math.Round(weeks*10) / 10
+	if w >= 0.95 && w < 1.15 {
+		return "примерно 1 неделя работы команды"
+	}
+	n := int(math.Round(w))
+	if math.Abs(w-float64(n)) < 0.05 && n >= 2 {
+		return fmt.Sprintf("примерно %d %s работы команды", n, pluralForm(n, "недели", "недели", "недель"))
+	}
+	return fmt.Sprintf("примерно %s недели работы команды", formatValue(w))
+}
+
+func cfdJoinQuotedNames(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return "«" + names[0] + "»"
+	case 2:
+		return "«" + names[0] + "» и «" + names[1] + "»"
+	default:
+		return "«" + strings.Join(names[:len(names)-1], "», «") + "» и «" + names[len(names)-1] + "»"
+	}
+}
+
+func cfdColumnMaxJump(points []cfdDayPoint, column string) (delta int, fromDate, toDate string) {
+	if len(points) < 2 {
+		return 0, "", ""
+	}
+	bestDelta := 0
+	bestFrom := ""
+	bestTo := ""
+	for i := 1; i < len(points); i++ {
+		prev := points[i-1].Counts[column]
+		cur := points[i].Counts[column]
+		d := cur - prev
+		if d > bestDelta {
+			bestDelta = d
+			bestFrom = points[i-1].Date
+			bestTo = points[i].Date
+		}
+	}
+	return bestDelta, bestFrom, bestTo
+}
+
 func (s *KanbanAnalyticsService) generateCFDInterpretation(r *CFDReport, weeklyThroughput float64) string {
 	if len(r.Points) < 2 {
 		return "Недостаточно данных для анализа потока."
 	}
+	_ = weeklyThroughput
 
 	first, last := r.Points[0], r.Points[len(r.Points)-1]
-	result := "ℹ️ **О графике:** Это «рентгеновский снимок» вашего процесса за последние 30 дней. Ширина каждого цветового слоя — это количество задач на данном этапе. Идеально — когда полосы идут параллельно (работа течет ровно). Плохо — когда какая-то полоса резко расширяется. Это означает затор (бутылочное горлышко), где задачи скапливаются быстрее, чем их успевают делать.\n\n"
 
-	// Узкое место — колонка с наибольшим положительным накоплением,
-	// чьё накопление сопоставимо с недельной пропускной способностью команды
-	// (то есть «съело» хотя бы одну неделю поставки). Это инвариантно
-	// к размеру команды и согласовано с законом Литтла.
-	var bottleneck string
-	maxGrowth := 0
+	var wipCongestion []cfdColumnGrowth
+	var wipReleased []cfdColumnGrowth
+	totalWipGrowth := 0
 	for _, name := range r.ColumnNames {
+		if !isKanbanInProgressColumn(r.columnSystemTypes[name]) {
+			continue
+		}
 		growth := last.Counts[name] - first.Counts[name]
-		if growth > maxGrowth {
-			maxGrowth = growth
-			bottleneck = name
+		totalWipGrowth += growth
+		if growth > 0 {
+			wipCongestion = append(wipCongestion, cfdColumnGrowth{name: name, growth: growth})
+		}
+		if growth < 0 {
+			wipReleased = append(wipReleased, cfdColumnGrowth{name: name, growth: growth})
 		}
 	}
+	sort.Slice(wipCongestion, func(i, j int) bool {
+		return wipCongestion[i].growth > wipCongestion[j].growth
+	})
+	sort.Slice(wipReleased, func(i, j int) bool {
+		return wipReleased[i].growth < wipReleased[j].growth
+	})
 
-	// Стабильная поставка — фактическое число завершённых задач за период
-	// не меньше половины ожидаемой поставки (медианная недельная пропускная
-	// способность × число недель в окне / 2). Половина ожидаемого защищает
-	// от случайных нулевых недель.
 	doneGrowth := 0
 	for _, name := range r.completedColumnNames {
 		doneGrowth += last.Counts[name] - first.Counts[name]
 	}
-	periodWeeks := float64(len(r.Points)-1) / 7.0
-	stableDeliveryThreshold := weeklyThroughput * periodWeeks / 2
 
-	if weeklyThroughput > 0 && float64(doneGrowth) >= stableDeliveryThreshold {
-		result += fmt.Sprintf("Команда стабильно поставляет результат (завершено %d задач за период). ", doneGrowth)
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(
+		"За период %s–%s показывает, как менялся баланс между завершением и накоплением задач по стадиям.\n",
+		r.Points[0].Date, r.Points[len(r.Points)-1].Date,
+	))
+
+	switch {
+	case doneGrowth > 0:
+		b.WriteString(fmt.Sprintf(
+			"Полоса «Готово» выросла на %d %s, то есть поток завершения в целом сохранялся.\n",
+			doneGrowth,
+			pluralForm(doneGrowth, "задачу", "задачи", "задач"),
+		))
+	case doneGrowth == 0:
+		b.WriteString("Полоса «Готово» почти не изменилась, поэтому завершение задач в этот период было редким.\n")
+	default:
+		b.WriteString("Размер «Готово» снизился, поэтому стоит проверить историю перемещений: часть задач могла вернуться из финальной стадии в работу.\n")
 	}
 
-	bottleneckThreshold := int(math.Ceil(weeklyThroughput * cfdBottleneckCoverageDays / 7))
-	if bottleneckThreshold < 1 {
-		bottleneckThreshold = 1
-	}
+	if len(wipCongestion) > 0 {
+		main := wipCongestion[0]
+		jump, fromDate, toDate := cfdColumnMaxJump(r.Points, main.name)
+		b.WriteString(fmt.Sprintf(
+			"На этом фоне наиболее заметно расширилась полоса «%s»: %+d %s за период (с %d до %d задач).",
+			main.name,
+			main.growth,
+			pluralForm(main.growth, "задача", "задачи", "задач"),
+			first.Counts[main.name],
+			last.Counts[main.name],
+		))
+		if jump > 0 {
+			b.WriteString(fmt.Sprintf(" Самый резкий скачок пришёлся на %s–%s: +%d.", fromDate, toDate, jump))
+		}
+		b.WriteString("\n")
 
-	if bottleneck != "" && maxGrowth >= bottleneckThreshold {
-		result += fmt.Sprintf("\n🚨 Найдено узкое место: В колонке «%s» задачи накапливаются слишком быстро (+%d задач за период).\n", bottleneck, maxGrowth)
-		result += "\n💡 **Что с этим делать:** Помогите разгрести завал в этой колонке. Временно перекиньте туда специалистов или ограничьте взятие новых задач в работу, пока пробка не рассосется."
+		if len(wipCongestion) > 1 {
+			otherNames := make([]string, 0, len(wipCongestion)-1)
+			for _, c := range wipCongestion[1:] {
+				otherNames = append(otherNames, c.name)
+			}
+			b.WriteString(fmt.Sprintf(
+				"Дополнительно расширялись %s, поэтому затор выглядит не локальным, а распределённым по нескольким стадиям.\n",
+				cfdJoinQuotedNames(otherNames),
+			))
+		}
+
+		b.WriteString("Рекомендация: в ближайшем цикле полезно мягко ограничить вход новых задач в расширившиеся стадии и сфокусироваться на продвижении уже начатых элементов.")
 	} else {
-		result += "Поток выглядит сбалансированным, явных узких мест (заторов) не обнаружено. Продолжайте в том же духе!"
+		b.WriteString("Полосы рабочих колонок заметно не расширялись, поэтому выраженного накопления незавершённой работы на графике не видно.\n")
 	}
 
-	return result
+	if totalWipGrowth > 0 && doneGrowth <= 0 {
+		b.WriteString("Важно и то, что фронт работ сместился в незавершённые стадии: WIP растёт быстрее, чем объём завершений.\n")
+	}
+
+	if len(wipReleased) > 0 {
+		mainRelease := wipReleased[0]
+		b.WriteString(fmt.Sprintf(
+			"При этом есть позитивный сигнал: в «%s» объём сократился на %d %s, а значит стадия уже частично разгружается.\n",
+			mainRelease.name,
+			-mainRelease.growth,
+			pluralForm(-mainRelease.growth, "задачу", "задачи", "задач"),
+		))
+	}
+
+	return strings.TrimSpace(b.String())
 }
 
 // ========== GetCycleTimeScatter ==========
@@ -521,6 +658,11 @@ func (s *KanbanAnalyticsService) GetCycleTimeScatter(ctx context.Context, projec
 		})
 		cycleTimes = append(cycleTimes, t.CycleTimeDays)
 	}
+	// Порядок по псевдослучайному ключу задачи — не по cycle time / дате завершения,
+	// чтобы на scatter-диаграмме формировалось «облако», а не одна линия.
+	sort.Slice(points, func(i, j int) bool {
+		return scatterDisplayOrder(points[i].TaskKey) < scatterDisplayOrder(points[j].TaskKey)
+	})
 	report.Points = points
 
 	report.Interpretation = s.generateScatterInterpretation(cycleTimes)
@@ -533,45 +675,66 @@ func (s *KanbanAnalyticsService) generateScatterInterpretation(cycleTimes []floa
 	copy(sorted, cycleTimes)
 	sort.Float64s(sorted)
 
-	var sum float64
-	for _, v := range sorted {
-		sum += v
+	if n == 0 {
+		return "Недостаточно данных для интерпретации графика."
 	}
-	avg := sum / float64(n)
+
+	q1 := computePercentile(sorted, 25)
 	median := computePercentile(sorted, 50)
-	p85 := computePercentile(sorted, wipRiskPercentile)
+	q3 := computePercentile(sorted, 75)
+	iqr := q3 - q1
+	upperFence := q3 + 1.5*iqr
+	maxVal := sorted[n-1]
 
-	var sumSq float64
+	outliers := 0
 	for _, v := range sorted {
-		diff := v - avg
-		sumSq += diff * diff
+		if v > upperFence {
+			outliers++
+		}
 	}
-	stdDev := math.Sqrt(sumSq / float64(n))
-	cv := float64(0)
-	if avg > 0 {
-		cv = stdDev / avg
+	bodyCount := n - outliers
+	visibleTail := false
+	if iqr > 0 && outliers >= 4 {
+		share := float64(outliers) / float64(n)
+		visibleTail = share >= 0.08 && maxVal > q3+2*iqr
 	}
 
-	result := "ℹ️ **О графике:** Показывает время выполнения каждой из исторических задач (каждая точка — это задача). Нужен для того, чтобы давать обещания клиентам по срокам. Для этого используется 85-й процентиль: линия, ниже которой лежит 85% всех задач. Отлично — когда точки лежат кучно. Плохо — когда есть высокие одинокие выбросы («висяки»).\n\n"
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(
+		"На графике основная плотность точек сосредоточена в диапазоне %s–%s дн., а центр облака находится около %s дн.\n",
+		formatValue(q1), formatValue(q3), formatValue(median),
+	))
+	b.WriteString(fmt.Sprintf(
+		"Полный разброс между самыми короткими и самыми длинными задачами составляет %s–%s дн., однако большая часть точек остаётся рядом с центральной зоной.\n",
+		formatValue(sorted[0]), formatValue(maxVal),
+	))
 
-	result += fmt.Sprintf("Из %d завершённых задач типичная задача (Медиана) закрывалась за %s дн. А наш безопасный 85-й процентиль составляет %s дн. ",
-		n, formatValue(median), formatValue(p85))
-
-	if cv < cycleTimePredictableCVThreshold {
-		result += "Процесс высоко предсказуем, разброс времени небольшой!\n\n"
-	} else if cv < cycleTimeUnpredictableCVThreshold {
-		result += "Разброс умеренный — некоторые задачи занимают значительно больше времени.\n\n"
+	if visibleTail {
+		b.WriteString(fmt.Sprintf(
+			"В правой части графика выделяется группа более длинных задач: %d %s выше основного диапазона, максимум достигает %s дн.\n",
+			outliers,
+			pluralForm(outliers, "точка", "точки", "точек"),
+			formatValue(maxVal),
+		))
 	} else {
-		result += "Разброс времени очень большой и хаотичный — процесс непредсказуем.\n\n"
+		b.WriteString("Сильного отрыва точек от основной массы не наблюдается, поэтому облако выглядит ровным и однородным.\n")
 	}
 
-	result += "💡 **Что с этим делать:** "
-	result += fmt.Sprintf("Если клиент спрашивает сроки, всегда называйте цифру **%s дн.** ", formatValue(p85))
-	if cv >= cycleTimeUnpredictableCVThreshold {
-		result += "А из-за сильного хаоса в сроках вам жизненно необходимо ввести правило: принудительно разбивать крупные задачи на более мелкие (декомпозировать)."
+	if bodyCount > 0 {
+		share := math.Round(float64(bodyCount)/float64(n)*1000) / 10
+		b.WriteString(fmt.Sprintf(
+			"Около %s%% задач находится внутри основного диапазона, а это обычно соответствует управляемому и повторяемому ритму.\n",
+			formatValue(share),
+		))
 	}
 
-	return result
+	if visibleTail {
+		b.WriteString("Рекомендация: полезно отдельно разобрать самые долгие задачи и спокойно проверить, где чаще возникают блокировки, ожидания или избыточный объём в одном элементе.")
+	} else {
+		b.WriteString("Рекомендация: можно сохранить текущий размер задач и периодически просматривать верхние точки, чтобы они не начали формировать устойчивую группу задержек.")
+	}
+
+	return b.String()
 }
 
 func (s *KanbanAnalyticsService) groupByWeeks(tasks []completedTask, maxWeeks int) []weeklyThroughputBucket {
@@ -660,37 +823,68 @@ func (s *KanbanAnalyticsService) generateThroughputInterpretation(weeks []weekly
 		return "Нет данных о пропускной способности."
 	}
 
-	var sum float64
+	var sum int
+	maxIdx := 0
+	minIdx := 0
+	zigzags := 0
+	lastSign := 0
 	for _, w := range weeks {
-		sum += float64(w.Count)
+		sum += w.Count
 	}
-	avg := sum / float64(n)
-
-	result := "ℹ️ **О графике:** Оценивает ритмичность команды. Показывает количество закрытых задач с наложенной линией тренда (прямая линия, сглаживающая случайные скачки). Хорошо — когда тренд растет или стабильно идет ровно. Плохо — когда тренд упрямо ползет вниз.\n\n"
-
-	result += fmt.Sprintf("В среднем мы закрываем %s %s в неделю. ",
-		formatValue(avg), pluralForm(int(math.Round(avg)), "задача", "задачи", "задач"))
-
-	// Относительный порог значимости тренда — доля от средней пропускной способности.
-	// Делает порог инвариантным к размеру команды.
+	for i, w := range weeks {
+		if w.Count > weeks[maxIdx].Count {
+			maxIdx = i
+		}
+		if w.Count < weeks[minIdx].Count {
+			minIdx = i
+		}
+		if i == 0 {
+			continue
+		}
+		delta := weeks[i].Count - weeks[i-1].Count
+		sign := 0
+		if delta > 0 {
+			sign = 1
+		} else if delta < 0 {
+			sign = -1
+		}
+		if sign != 0 && lastSign != 0 && sign != lastSign {
+			zigzags++
+		}
+		if sign != 0 {
+			lastSign = sign
+		}
+	}
+	avg := float64(sum) / float64(n)
 	trendThreshold := throughputTrendRelativeThreshold * avg
 
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(
+		"На графике недельной пропускной способности видно, что максимум пришёлся на %s (%d задач), а минимум — на %s (%d задач).\n",
+		weeks[maxIdx].Week, weeks[maxIdx].Count, weeks[minIdx].Week, weeks[minIdx].Count,
+	))
+	b.WriteString(fmt.Sprintf("Средний фактический уровень за период составляет %s задач в неделю, и это можно считать базовым рабочим ритмом команды.\n", formatValue(avg)))
 	if slope > trendThreshold {
-		result += fmt.Sprintf("Тренд растущий (+%s задач/нед) — команда отлично разгоняется!\n\n", formatValue(slope))
+		b.WriteString(fmt.Sprintf("Линия тренда направлена вверх (%s задач/нед), поэтому к концу периода столбцы в среднем выше.\n", formatValue(slope)))
 	} else if slope < -trendThreshold {
-		result += fmt.Sprintf("Тренд снижающийся (%s задач/нед) — темп падает.\n\n", formatValue(slope))
+		b.WriteString(fmt.Sprintf("Линия тренда идёт вниз (%s задач/нед), поэтому к концу периода столбцы в среднем ниже.\n", formatValue(slope)))
 	} else {
-		result += "Тренд стабильный — пропускная способность не меняется.\n\n"
+		b.WriteString("Линия тренда почти горизонтальна, а значит базовый недельный ритм держится без выраженного сдвига.\n")
 	}
 
-	result += "💡 **Что с этим делать:** "
+	if zigzags >= 3 {
+		b.WriteString("При этом форма столбцов остаётся зигзагообразной: подъёмы и просадки регулярно сменяют друг друга.\n")
+	} else {
+		b.WriteString("Колебания между соседними неделями умеренные, без выраженной «пилы», поэтому динамика выглядит достаточно спокойной.\n")
+	}
+
 	if slope < -trendThreshold {
-		result += "Падение скорости поставки — тревожный сигнал. Убедитесь, что задачи не блокируются, требования понятны, а команда не перегружена посторонней работой."
+		b.WriteString("Рекомендация: имеет смысл на ретро последовательно разобрать недели с просадкой и уточнить, где поток терял темп — на блокировках, ожиданиях или частых переключениях контекста.")
 	} else {
-		result += "Сохраняйте этот стабильный ритм, он отлично подходит для долгосрочного планирования."
+		b.WriteString("Рекомендация: можно зафиксировать текущий ритм как рабочий стандарт и отдельно разбирать только недели, где столбцы заметно ниже обычного диапазона.")
 	}
 
-	return result
+	return b.String()
 }
 
 // ========== GetWipAge ==========
@@ -734,7 +928,8 @@ func (s *KanbanAnalyticsService) GetWipAge(ctx context.Context, projectID uuid.U
 		if age < 0 {
 			age = 0
 		}
-		age = math.Round(age*100) / 100
+		// Один знак после запятой — как formatValue в интерпретациях.
+		age = math.Round(age*10) / 10
 		points = append(points, wipAgePoint{
 			TaskKey:    r.TaskKey,
 			AgeDays:    age,
@@ -775,35 +970,81 @@ func (s *KanbanAnalyticsService) GetWipAge(ctx context.Context, projectID uuid.U
 
 	report := &WipAgeReport{
 		Points:         points,
-		Interpretation: s.generateWipAgeInterpretation(len(points), alertCount, p85),
+		Interpretation: s.generateWipAgeInterpretation(points, alertCount, p85),
 	}
 	return report, nil
 }
 
-func (s *KanbanAnalyticsService) generateWipAgeInterpretation(wipCount, alertCount int, p85 float64) string {
+func (s *KanbanAnalyticsService) generateWipAgeInterpretation(points []wipAgePoint, alertCount int, p85 float64) string {
+	wipCount := len(points)
 	if wipCount == 0 {
-		return "На доске нет задач в работе. Отличный повод взять новую!"
+		return "На доске нет задач в работе. Можно взять новую задачу."
 	}
 
-	result := "ℹ️ **О графике:** Это радар текущих рисков. Показывает возраст задач, находящихся в работе *прямо сейчас*. Норма — когда возраст текущих задач не превышает ваш исторический срок выполнения (85-й процентиль). Плохо — когда задачи стареют и переходят эту красную линию.\n\n"
+	columnCounts := make(map[string]int)
+	for _, p := range points {
+		columnCounts[p.ColumnName]++
+	}
+	topColumn := ""
+	topColumnCount := 0
+	for col, count := range columnCounts {
+		if count > topColumnCount {
+			topColumn = col
+			topColumnCount = count
+		}
+	}
 
-	result += fmt.Sprintf("Сейчас в работе находится %d задач. ", wipCount)
+	oldestCount := 3
+	if oldestCount > len(points) {
+		oldestCount = len(points)
+	}
+	oldest := points[:oldestCount]
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("На диаграмме возраста в работе сейчас %d %s, и это формирует текущий активный WIP команды.\n", wipCount, pluralForm(wipCount, "задача", "задачи", "задач")))
+	if topColumn != "" {
+		b.WriteString(fmt.Sprintf(
+			"Наибольшая концентрация задач находится в «%s» — %d %s.\n",
+			topColumn,
+			topColumnCount,
+			pluralForm(topColumnCount, "задача", "задачи", "задач"),
+		))
+	}
+	b.WriteString("Если смотреть на верхнюю часть диаграммы, самые «старые» элементы сейчас такие: ")
+	for i, p := range oldest {
+		part := fmt.Sprintf("%s (%s дн., %s)", p.TaskKey, formatValue(p.AgeDays), p.ColumnName)
+		if i == 0 {
+			b.WriteString(part)
+		} else {
+			b.WriteString("; " + part)
+		}
+	}
+	b.WriteString(".\n")
+	if len(points) > 1 {
+		b.WriteString(fmt.Sprintf(
+			"Разница между самой молодой и самой старой задачей составляет %s дн., и по ней можно оценить, насколько равномерно движется текущий WIP.\n",
+			formatValue(points[0].AgeDays-points[len(points)-1].AgeDays),
+		))
+	}
 
 	if p85 > 0 {
-		result += fmt.Sprintf("Наша историческая норма (85-й процентиль) составляет %s дн.\n", formatValue(p85))
-
+		b.WriteString(fmt.Sprintf("В качестве исторического ориентира верхняя граница нормального возраста сейчас около %s дн.\n", formatValue(p85)))
 		if alertCount > 0 {
-			result += fmt.Sprintf("\n🚨 ВНИМАНИЕ: Возраст %d задач уже превысил нашу норму!\n", alertCount)
-			result += "\n💡 **Что делать прямо сейчас:** На ближайшем собрании (Daily) перестаньте обсуждать новые задачи. Откройте эти «старые» карточки и решите всей командой, как их разблокировать и довести до конца."
+			b.WriteString(fmt.Sprintf(
+				"%d %s уже вышли за эту границу, поэтому на графике заметны длинные полосы, которые постепенно повышают общий возраст WIP.\n",
+				alertCount, pluralForm(alertCount, "задача", "задачи", "задач"),
+			))
+			b.WriteString("Рекомендация: на daily полезно начинать обсуждение именно с этих задач и помогать им сдвинуться; новые задачи в перегруженную стадию лучше добавлять только после заметного прогресса по «старым» элементам.")
 		} else {
-			result += "\n✅ Возраст всех текущих задач в норме (никто не превысил границу риска).\n"
-			result += "\n💡 Отличная работа! Продолжайте следить за тем, чтобы задачи не застревали."
+			b.WriteString("Пока все текущие задачи остаются в рабочем диапазоне возраста, без признаков устойчивого зависания.\n")
+			b.WriteString("Рекомендация: можно удерживать текущий WIP и следить, чтобы верхние полосы регулярно продвигались по доске.")
 		}
 	} else {
-		result += "\nПока недостаточно исторических данных для расчета вашей нормы времени выполнения."
+		b.WriteString("Исторических данных пока недостаточно, поэтому ориентир здесь в первую очередь визуальный: чем дольше верхние полосы остаются без движения, тем выше риск застревания.\n")
+		b.WriteString("Рекомендация: полезно удерживать фокус на 2-3 самых старых задачах до их явного продвижения или завершения.")
 	}
 
-	return result
+	return b.String()
 }
 
 // ========== GetWipHistory ==========
@@ -902,35 +1143,89 @@ func (s *KanbanAnalyticsService) GetWipHistory(ctx context.Context, projectID uu
 func (s *KanbanAnalyticsService) generateWipInterpretation(points []wipHistoryPoint, limit *int) string {
 	n := len(points)
 	if n == 0 {
-		return "Нет данных о WIP."
+		return "Нет данных о незавершённой работе."
 	}
-
-	result := "ℹ️ **О графике:** Показывает динамику количества задач в работе по дням за последний месяц в сравнении с установленными WIP-лимитами. Хорошо — когда график живет под линией лимита. Плохо — частые пробития лимита, ведущие к перегрузке команды и замедлению работы.\n\n"
 
 	last := points[n-1]
 	maxWip := 0
+	maxStartIdx := 0
+	maxEndIdx := 0
 	exceedCount := 0
+	exceedStart := -1
+	longestExceedStart := -1
+	longestExceedEnd := -1
 	for _, p := range points {
 		if p.Wip > maxWip {
 			maxWip = p.Wip
 		}
-		if limit != nil && p.Wip > *limit {
-			exceedCount++
+	}
+	for i, p := range points {
+		if p.Wip == maxWip {
+			start := i
+			end := i
+			for end+1 < len(points) && points[end+1].Wip == maxWip {
+				end++
+			}
+			if end-start > maxEndIdx-maxStartIdx {
+				maxStartIdx = start
+				maxEndIdx = end
+			}
+			i = end
+		}
+	}
+	if limit != nil {
+		for i, p := range points {
+			if p.Wip > *limit {
+				exceedCount++
+				if exceedStart == -1 {
+					exceedStart = i
+				}
+			} else if exceedStart != -1 {
+				if longestExceedStart == -1 || i-1-exceedStart > longestExceedEnd-longestExceedStart {
+					longestExceedStart = exceedStart
+					longestExceedEnd = i - 1
+				}
+				exceedStart = -1
+			}
+		}
+		if exceedStart != -1 && (longestExceedStart == -1 || len(points)-1-exceedStart > longestExceedEnd-longestExceedStart) {
+			longestExceedStart = exceedStart
+			longestExceedEnd = len(points) - 1
 		}
 	}
 
-	result += fmt.Sprintf("Сейчас в работе: %d задач (Максимум за месяц достигал %d).\n", last.Wip, maxWip)
+	result := fmt.Sprintf(
+		"Текущий WIP составляет %d %s, а максимальная загрузка за период наблюдалась %s–%s и достигала %d %s.\n",
+		last.Wip,
+		pluralForm(last.Wip, "задача", "задачи", "задач"),
+		points[maxStartIdx].Date,
+		points[maxEndIdx].Date,
+		maxWip,
+		pluralForm(maxWip, "задача", "задачи", "задач"),
+	)
+	minWip := points[0].Wip
+	for _, p := range points {
+		if p.Wip < minWip {
+			minWip = p.Wip
+		}
+	}
+	result += fmt.Sprintf("В целом диапазон колебаний за период — от %d до %d задач в работе, и это показывает амплитуду рабочей нагрузки.\n", minWip, maxWip)
 
 	if limit != nil {
 		if exceedCount == 0 {
-			result += fmt.Sprintf("✅ WIP-лимит (%d) ни разу не превышался — отличная дисциплина потока!\n", *limit)
+			result += fmt.Sprintf("Линия лимита (%d) не пересекалась, поэтому нагрузка удерживалась в договорённой зоне.\n", *limit)
+			result += "Рекомендация: можно сохранять текущий режим и пересматривать лимит только при устойчивом дефиците пропускной способности."
 		} else {
 			pct := math.Round(float64(exceedCount) / float64(n) * 100)
-			result += fmt.Sprintf("⚠️ Внимание: WIP-лимит (%d) был пробит в %.0f%% дней.\n\n", *limit, pct)
-			result += "💡 **Что с этим делать:** Команда систематически берет на себя больше, чем может «переварить». Либо начните строже соблюдать лимит (не берите новые задачи, пока не закончите старые), либо честно пересмотрите сам лимит в сторону увеличения."
+			result += fmt.Sprintf("Лимит WIP (%d) превышался в %.0f%% дней.", *limit, pct)
+			if longestExceedStart >= 0 {
+				result += fmt.Sprintf(" Самый длинный непрерывный период превышения: %s–%s.", points[longestExceedStart].Date, points[longestExceedEnd].Date)
+			}
+			result += "\nРекомендация: в периоды пересечения лимита полезно сначала закрывать начатые задачи и только затем расширять входящий поток новыми элементами."
 		}
 	} else {
-		result += "\n💡 **Что с этим делать:** У вас не установлены WIP-лимиты! Обязательно задайте ограничения в настройках колонок, иначе вы не сможете контролировать скорость работы."
+		result += "Лимит не задан, поэтому график фиксирует колебания, но не показывает, где начинается перегрузка.\n"
+		result += "Рекомендация: стоит задать WIP-лимит хотя бы для ключевых рабочих колонок, чтобы пики воспринимались как управляемый сигнал, а не как случайные колебания."
 	}
 
 	return result
@@ -982,38 +1277,61 @@ func (s *KanbanAnalyticsService) generateCycleTimeDistInterpretation(values []fl
 	copy(sorted, values)
 	sort.Float64s(sorted)
 
-	n := len(sorted)
-	var sum float64
-	for _, v := range sorted {
-		sum += v
+	if len(sorted) == 0 {
+		return "Недостаточно данных для интерпретации распределения."
 	}
-	avg := sum / float64(n)
+
+	buckets := buildDistribution(sorted, 0)
 	median := computePercentile(sorted, 50)
-	p85 := computePercentile(sorted, wipRiskPercentile)
-
-	var cv float64
-	if avg > 0 && n > 1 {
-		var sqSum float64
-		for _, v := range sorted {
-			d := v - avg
-			sqSum += d * d
+	q1 := computePercentile(sorted, 25)
+	q3 := computePercentile(sorted, 75)
+	iqr := q3 - q1
+	upperFence := q3 + 1.5*iqr
+	tailCount := 0
+	for _, v := range sorted {
+		if v > upperFence {
+			tailCount++
 		}
-		stddev := math.Sqrt(sqSum / float64(n))
-		cv = stddev / avg
+	}
+	visibleTail := false
+	if iqr > 0 && tailCount >= 4 {
+		share := float64(tailCount) / float64(len(sorted))
+		visibleTail = share >= 0.08 && sorted[len(sorted)-1] > q3+2*iqr
 	}
 
-	result := "ℹ️ **О графике:** Показывает, какие сроки выполнения встречаются чаще всего среди завершенных задач. Хорошо — когда график похож на узкую гору слева. Плохо — когда есть «длинный правый хвост» (гора слева, а вправо тянутся единичные, но экстремально долгие задачи, ломающие планирование).\n\n"
+	modeIdx := 0
+	for i := range buckets {
+		if buckets[i].Count > buckets[modeIdx].Count {
+			modeIdx = i
+		}
+	}
 
-	result += fmt.Sprintf("Большинство ваших задач (Медиана) закрывается за %s дн. При этом 85-й процентиль (наша граница безопасности) составляет %s дн.\n\n", formatValue(median), formatValue(p85))
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(
+		"Пик гистограммы находится в диапазоне %s, то есть этот срок выполнения встречается чаще всего. Центр распределения расположен около %s дн.\n",
+		buckets[modeIdx].RangeLabel,
+		formatValue(median),
+	))
+	b.WriteString(fmt.Sprintf(
+		"Основная масса задач лежит в интервале %s–%s дн., поэтому именно этот диапазон лучше всего описывает обычный ритм выполнения.\n",
+		formatValue(q1),
+		formatValue(q3),
+	))
 
-	if cv >= cycleTimeUnpredictableCVThreshold {
-		result += "⚠️ Диагностирован длинный правый хвост! Основная масса задач делается быстро, но регулярно попадаются «задачи-монстры», которые делаются аномально долго.\n"
-		result += "\n💡 **Что с этим делать:** Внедрите жесткое правило: если задача при взятии в работу кажется большой, принудительно разбивайте ее на две-три маленькие."
+	if visibleTail {
+		b.WriteString(fmt.Sprintf(
+			"В правой части гистограммы есть заметная группа более длинных задач: %d %s, при этом максимум достигает %s дн.\n",
+			tailCount,
+			pluralForm(tailCount, "задача", "задачи", "задач"),
+			formatValue(sorted[len(sorted)-1]),
+		))
+		b.WriteString("Рекомендация: полезно разобрать задачи из этой группы по причинам задержки и заранее обозначить мягкий триггер эскалации для похожих случаев.")
 	} else {
-		result += "✅ Распределение выглядит здоровым. Аномально долгих задач (хвоста) не наблюдается, молодцы!"
+		b.WriteString("Сильного отрыва правой части не видно, поэтому распределение остаётся ровным и контролируемым.\n")
+		b.WriteString("Рекомендация: можно сохранить текущий уровень декомпозиции и регулярный контроль блокировок.")
 	}
 
-	return result
+	return b.String()
 }
 
 // ========== GetThroughputDistribution ==========
@@ -1069,45 +1387,51 @@ func (s *KanbanAnalyticsService) generateThroughputDistInterpretation(values []f
 	sort.Float64s(sorted)
 
 	n := len(sorted)
-	var sum float64
-	for _, v := range sorted {
-		sum += v
+	if n == 0 {
+		return "Недостаточно данных для интерпретации распределения пропускной способности."
 	}
-	avg := sum / float64(n)
-	p15 := computePercentile(sorted, throughputConservativePercentile)
 
-	var cvPct float64
-	if avg > 0 && n > 1 {
-		var sqSum float64
-		for _, v := range sorted {
-			d := v - avg
-			sqSum += d * d
+	buckets := buildDistribution(sorted, 0)
+	modeIdx := 0
+	for i := range buckets {
+		if buckets[i].Count > buckets[modeIdx].Count {
+			modeIdx = i
 		}
-		stddev := math.Sqrt(sqSum / float64(n))
-		cvPct = (stddev / avg) * 100
 	}
 
-	result := "ℹ️ **О графике:** Показывает, насколько равномерно команда выдает результат по неделям. Хорошо — когда гистограмма узкая (вы работаете стабильно). Плохо — когда гистограмма размазана (вы работаете рывками: то пусто, то густо).\n\n"
-
-	result += fmt.Sprintf("Наш гарантированный минимум (15-й процентиль) составляет %s задач в неделю.\n\n", formatValue(p15))
-
-	switch {
-	case cvPct == 0:
-		result += "Стабильность темпа оценить нельзя: либо средняя пропускная способность нулевая, либо в выборке всего одно ненулевое значение.\n\n"
-	case cvPct < throughputLowVariationPct:
-		result += fmt.Sprintf("✅ Темп поставки очень стабилен (коэффициент вариации %.1f%% — незначительный разброс): команда выдает примерно одинаковое число задач каждую неделю.\n\n", cvPct)
-	case cvPct < throughputModerateVariationPct:
-		result += fmt.Sprintf("✅ Темп поставки стабилен (коэффициент вариации %.1f%% — умеренный разброс): отдельные недели колеблются вокруг среднего, но без срывов.\n\n", cvPct)
-	case cvPct <= throughputHighVariationPct:
-		result += fmt.Sprintf("⚠️ Темп поставки заметно колеблется (коэффициент вариации %.1f%% — выраженный разброс при сохранении однородности выборки): отдельные недели существенно отклоняются от среднего, имеет смысл проверить причины «провальных» недель.\n\n", cvPct)
-	default:
-		result += fmt.Sprintf("⚠️ Темп поставки нестабилен (коэффициент вариации %.1f%% — выборка неоднородна): команда работает рывками, среднее значение перестаёт быть надёжной оценкой; при планировании опирайтесь на консервативный 15-й процентиль.\n\n", cvPct)
+	zeroWeeks := 0
+	for _, v := range sorted {
+		if v == 0 {
+			zeroWeeks++
+		}
 	}
 
-	result += "💡 **Что с этим делать:** "
-	result += fmt.Sprintf("Для надежного и консервативного планирования используйте показатель **%s задач в неделю** — с вероятностью %d%% команда сделает не меньше этого объема.", formatValue(p15), throughputConservativeConfidencePct)
+	q1 := computePercentile(sorted, 25)
+	q3 := computePercentile(sorted, 75)
+	median := computePercentile(sorted, 50)
 
-	return result
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(
+		"На гистограмме самый частый недельный диапазон — %s, а центр распределения находится около %s задач.\n",
+		buckets[modeIdx].RangeLabel,
+		formatValue(median),
+	))
+	b.WriteString(fmt.Sprintf(
+		"Основной рабочий диапазон по неделям — %s–%s задач, и именно здесь лежит типичная недельная отдача команды.\n",
+		formatValue(q1), formatValue(q3),
+	))
+	if zeroWeeks > 0 {
+		b.WriteString(fmt.Sprintf(
+			"Также есть %d %s без завершений, из-за чего левая часть распределения выглядит просаженной.\n",
+			zeroWeeks, pluralForm(zeroWeeks, "неделя", "недели", "недель"),
+		))
+		b.WriteString("Рекомендация: имеет смысл отдельно разобрать такие недели и проверить, не были ли они связаны с блокировками, ожиданиями или смещением фокуса на незавершённые задачи.")
+	} else {
+		b.WriteString("Нулевых недель нет, поэтому распределение стартует выше нуля и выглядит рабочим по всей шкале.\n")
+		b.WriteString("Рекомендация: можно удерживать текущий ритм и разбирать только те недели, которые заметно выпадают ниже основного диапазона.")
+	}
+
+	return b.String()
 }
 
 // ========== GetMonteCarlo ==========
