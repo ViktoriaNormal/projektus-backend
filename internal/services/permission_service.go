@@ -2,22 +2,20 @@ package services
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/google/uuid"
 
-	"projektus-backend/internal/db"
 	"projektus-backend/internal/domain"
 	"projektus-backend/internal/repositories"
 )
 
 type PermissionService struct {
 	roleService *RoleService
-	queries     *db.Queries
+	repo        repositories.PermissionRepository
 }
 
-func NewPermissionService(roleService *RoleService, queries *db.Queries) *PermissionService {
-	return &PermissionService{roleService: roleService, queries: queries}
+func NewPermissionService(roleService *RoleService, repo repositories.PermissionRepository) *PermissionService {
+	return &PermissionService{roleService: roleService, repo: repo}
 }
 
 func (s *PermissionService) HasPermission(ctx context.Context, userID uuid.UUID, permission string, projectID *uuid.UUID) (bool, error) {
@@ -27,8 +25,10 @@ func (s *PermissionService) HasPermission(ctx context.Context, userID uuid.UUID,
 // GetMyPermissions returns effective project permissions for the user.
 // Logic: system.projects.manage = full → all areas full; view → all view; none → project role.
 func (s *PermissionService) GetMyPermissions(ctx context.Context, userID, projectID uuid.UUID) ([]domain.ProjectRolePermission, error) {
-	// Check system-level access for projects.
-	sysAccess := s.GetProjectManageAccess(ctx, userID)
+	sysAccess, err := s.repo.GetSystemProjectManageAccess(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 
 	// system.projects.manage = full → полный доступ ко всем areas.
 	if sysAccess == "full" {
@@ -47,25 +47,19 @@ func (s *PermissionService) GetMyPermissions(ctx context.Context, userID, projec
 		sysMinAccess = "view"
 	}
 
-	// Get permissions from the user's project role.
-	rows, err := s.queries.GetMemberProjectPermissions(ctx, db.GetMemberProjectPermissionsParams{
-		ProjectID: projectID,
-		UserID:    userID,
-	})
+	rolePerms, err := s.repo.ListMemberProjectPermissions(ctx, userID, projectID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build result: merge permissions (highest access wins if multiple roles).
 	permMap := make(map[string]string)
-	for _, r := range rows {
-		existing, ok := permMap[r.PermissionCode]
-		if !ok || accessRank(r.Access.String) > accessRank(existing) {
-			permMap[r.PermissionCode] = r.Access.String
+	for _, p := range rolePerms {
+		existing, ok := permMap[p.Area]
+		if !ok || accessRank(p.Access) > accessRank(existing) {
+			permMap[p.Area] = p.Access
 		}
 	}
 
-	// Return all areas. Apply system minimum if set, then project role override.
 	areas := repositories.ProjectPermissionAreas
 	result := make([]domain.ProjectRolePermission, len(areas))
 	for i, a := range areas {
@@ -81,38 +75,48 @@ func (s *PermissionService) GetMyPermissions(ctx context.Context, userID, projec
 	return result, nil
 }
 
-// UserCanAccessProject сообщает, вправе ли пользователь видеть данные проекта.
-// Доступ открыт, если пользователь — участник проекта либо обладает системным
-// правом system.projects.manage на уровне view/full. Используется для эндпоинтов
-// выборки задач/досок/аналитики, где контент ограничен рамками одного проекта.
-func (s *PermissionService) UserCanAccessProject(ctx context.Context, userID, projectID uuid.UUID) (bool, error) {
-	if access := s.GetProjectManageAccess(ctx, userID); access == "full" || access == "view" {
-		return true, nil
+// GetEffectiveAreaAccess returns the effective access level for a single project permission area.
+func (s *PermissionService) GetEffectiveAreaAccess(ctx context.Context, userID, projectID uuid.UUID, area string) (string, error) {
+	sysAccess, err := s.repo.GetSystemProjectManageAccess(ctx, userID)
+	if err != nil {
+		return "", err
 	}
-	_, err := s.queries.GetMemberByProjectAndUser(ctx, db.GetMemberByProjectAndUserParams{
-		ProjectID: projectID,
-		UserID:    userID,
-	})
-	if err == nil {
-		return true, nil
+	if sysAccess == "full" {
+		return "full", nil
 	}
-	if err == sql.ErrNoRows {
-		return false, nil
+
+	roleAccess, err := s.repo.GetMemberAreaMaxAccess(ctx, userID, projectID, area)
+	if err != nil {
+		return "", err
 	}
-	return false, err
+
+	access := "none"
+	if sysAccess == "view" && accessRank("view") > accessRank(access) {
+		access = "view"
+	}
+	if accessRank(roleAccess) > accessRank(access) {
+		access = roleAccess
+	}
+	return access, nil
+}
+
+// HasProjectAreaAccess reports whether the user's effective access to area is at least minAccess.
+func (s *PermissionService) HasProjectAreaAccess(ctx context.Context, userID, projectID uuid.UUID, area, minAccess string) (bool, error) {
+	effective, err := s.GetEffectiveAreaAccess(ctx, userID, projectID, area)
+	if err != nil {
+		return false, err
+	}
+	return accessRank(effective) >= accessRank(minAccess), nil
 }
 
 // GetProjectManageAccess returns the user's system-level access for system.projects.manage.
 // Returns "full", "view", or "none".
 func (s *PermissionService) GetProjectManageAccess(ctx context.Context, userID uuid.UUID) string {
-	access, err := s.queries.GetSystemPermissionAccess(ctx, db.GetSystemPermissionAccessParams{
-		UserID:         userID,
-		PermissionCode: repositories.SystemPermissionManageProjects,
-	})
-	if err != nil || !access.Valid {
+	access, err := s.repo.GetSystemProjectManageAccess(ctx, userID)
+	if err != nil {
 		return "none"
 	}
-	return access.String
+	return access
 }
 
 func accessRank(access string) int {

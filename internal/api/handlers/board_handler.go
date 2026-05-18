@@ -40,15 +40,12 @@ func (h *BoardHandler) ListBoards(c *gin.Context) {
 		return
 	}
 
-	perms, _ := h.permissionSvc.GetMyPermissions(c.Request.Context(), userID, projectID)
-	hasAccess := false
-	for _, p := range perms {
-		if p.Area == "project.boards" && p.Access != "none" {
-			hasAccess = true
-			break
-		}
+	allowed, err := h.permissionSvc.HasProjectAreaAccess(c.Request.Context(), userID, projectID, "project.boards", "view")
+	if err != nil {
+		respondInternal(c, err, "Не удалось проверить права доступа")
+		return
 	}
-	if !hasAccess {
+	if !allowed {
 		writeError(c, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав для работы с досками проекта")
 		return
 	}
@@ -78,15 +75,12 @@ func (h *BoardHandler) CreateBoard(c *gin.Context) {
 		return
 	}
 
-	perms, _ := h.permissionSvc.GetMyPermissions(c.Request.Context(), userID, req.ProjectID)
-	hasAccess := false
-	for _, p := range perms {
-		if p.Area == "project.boards" && p.Access == "full" {
-			hasAccess = true
-			break
-		}
+	allowed, err := h.permissionSvc.HasProjectAreaAccess(c.Request.Context(), userID, req.ProjectID, "project.boards", "full")
+	if err != nil {
+		respondInternal(c, err, "Не удалось проверить права доступа")
+		return
 	}
-	if !hasAccess {
+	if !allowed {
 		writeError(c, http.StatusForbidden, "FORBIDDEN", "Недостаточно прав для работы с досками проекта")
 		return
 	}

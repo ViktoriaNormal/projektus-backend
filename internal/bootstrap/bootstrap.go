@@ -23,6 +23,7 @@ type Repositories struct {
 	Notification     repositories.NotificationRepository
 	Meeting          repositories.MeetingRepository
 	Role             repositories.RoleRepository
+	Permission       repositories.PermissionRepository
 	Project          repositories.ProjectRepository
 	ProjectMember    repositories.ProjectMemberRepository
 	ProjectRole      repositories.ProjectRoleRepository
@@ -57,6 +58,7 @@ func BuildRepositories(q *db.Queries) *Repositories {
 		Notification:     repositories.NewNotificationRepository(q),
 		Meeting:          repositories.NewMeetingRepository(q),
 		Role:             repositories.NewRoleRepository(q),
+		Permission:       repositories.NewPermissionRepository(q),
 		Project:          repositories.NewProjectRepository(q),
 		ProjectMember:    repositories.NewProjectMemberRepository(q),
 		ProjectRole:      repositories.NewProjectRoleRepository(q),
@@ -114,7 +116,7 @@ type Services struct {
 // BuildServices создаёт все сервисы от набора repositories + cfg + conn + queries.
 func BuildServices(cfg *config.Config, repos *Repositories, conn *sql.DB, q *db.Queries) *Services {
 	roleSvc := services.NewRoleService(repos.Role)
-	permissionSvc := services.NewPermissionService(roleSvc, q)
+	permissionSvc := services.NewPermissionService(roleSvc, repos.Permission)
 	passwordSvc := services.NewPasswordService()
 	passwordPolicySvc := services.NewPasswordPolicyService(repos.PasswordPolicy)
 	rateLimitSvc := services.NewRateLimitService(cfg, repos.Auth)

@@ -116,6 +116,29 @@ func (q *Queries) DeleteProjRoleDefinitionByID(ctx context.Context, id uuid.UUID
 	return err
 }
 
+const getMemberAreaMaxAccess = `-- name: GetMemberAreaMaxAccess :one
+SELECT rp.access
+FROM members m
+JOIN member_roles mr ON mr.member_id = m.id
+JOIN role_permissions rp ON rp.role_id = mr.role_id
+WHERE m.project_id = $1 AND m.user_id = $2 AND rp.permission_code = $3
+ORDER BY CASE rp.access WHEN 'full' THEN 1 WHEN 'view' THEN 2 ELSE 3 END
+LIMIT 1
+`
+
+type GetMemberAreaMaxAccessParams struct {
+	ProjectID      uuid.UUID `json:"project_id"`
+	UserID         uuid.UUID `json:"user_id"`
+	PermissionCode string    `json:"permission_code"`
+}
+
+func (q *Queries) GetMemberAreaMaxAccess(ctx context.Context, arg GetMemberAreaMaxAccessParams) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getMemberAreaMaxAccess, arg.ProjectID, arg.UserID, arg.PermissionCode)
+	var access sql.NullString
+	err := row.Scan(&access)
+	return access, err
+}
+
 const getMemberProjectPermissions = `-- name: GetMemberProjectPermissions :many
 SELECT rp.permission_code, rp.access
 FROM members m

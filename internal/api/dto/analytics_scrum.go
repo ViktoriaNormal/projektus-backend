@@ -22,9 +22,9 @@ type VelocityResponse struct {
 }
 
 type BurndownDayData struct {
-	Day       string  `json:"day"`
-	Remaining float64 `json:"remaining"`
-	Ideal     float64 `json:"ideal"`
+	Day       string   `json:"day"`
+	Remaining *float64 `json:"remaining"`
+	Ideal     float64  `json:"ideal"`
 }
 
 type BurndownResponse struct {

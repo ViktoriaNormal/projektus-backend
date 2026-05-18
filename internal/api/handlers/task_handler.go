@@ -56,16 +56,15 @@ func (h *TaskHandler) SearchTasks(c *gin.Context) {
 	//   * без project_id → персональная выборка «мои задачи»
 	//     (автор / исполнитель / наблюдатель). Без исключений для админа —
 	//     системные права не расширяют личный список.
-	//   * с project_id → все задачи проекта при условии, что у пользователя
-	//     есть доступ (участник проекта или system.projects.manage ≥ view).
+	//   * с project_id → все задачи проекта при условии project.tasks ≥ view.
 	var tasks []domain.Task
 	var err error
 	if projectID == nil {
 		tasks, err = h.service.SearchTasks(c.Request.Context(), userID, nil, columnID)
 	} else {
-		allowed, accessErr := h.permissionSvc.UserCanAccessProject(c.Request.Context(), userID, *projectID)
+		allowed, accessErr := h.permissionSvc.HasProjectAreaAccess(c.Request.Context(), userID, *projectID, "project.tasks", "view")
 		if accessErr != nil {
-			respondInternal(c, accessErr, "Не удалось проверить доступ к проекту")
+			respondInternal(c, accessErr, "Не удалось проверить права доступа")
 			return
 		}
 		if !allowed {

@@ -5459,7 +5459,10 @@ components:
       type: object
       properties:
         day: { type: string }
-        remaining: { type: number }
+        remaining:
+          type: number
+          nullable: true
+          description: Фактический остаток на конец дня; null для будущих дней спринта
         ideal: { type: number }
 
     # ── Kanban Analytics ──
