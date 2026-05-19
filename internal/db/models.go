@@ -133,6 +133,49 @@ type MemberRole struct {
 	RoleID   uuid.UUID `json:"role_id"`
 }
 
+type Migration045HistoryBackup struct {
+	ID        uuid.UUID    `json:"id"`
+	TaskID    uuid.UUID    `json:"task_id"`
+	ColumnID  uuid.UUID    `json:"column_id"`
+	EnteredAt time.Time    `json:"entered_at"`
+	LeftAt    sql.NullTime `json:"left_at"`
+}
+
+type Migration046HistoryBackup struct {
+	ID        uuid.UUID    `json:"id"`
+	TaskID    uuid.UUID    `json:"task_id"`
+	ColumnID  uuid.UUID    `json:"column_id"`
+	EnteredAt time.Time    `json:"entered_at"`
+	LeftAt    sql.NullTime `json:"left_at"`
+}
+
+type Migration047HistoryBackup struct {
+	ID        uuid.UUID    `json:"id"`
+	TaskID    uuid.UUID    `json:"task_id"`
+	ColumnID  uuid.UUID    `json:"column_id"`
+	EnteredAt time.Time    `json:"entered_at"`
+	LeftAt    sql.NullTime `json:"left_at"`
+}
+
+type Migration049DeadlineBackup struct {
+	TaskID   uuid.UUID    `json:"task_id"`
+	Deadline sql.NullTime `json:"deadline"`
+}
+
+type Migration049HistoryBackup struct {
+	ID        uuid.UUID    `json:"id"`
+	TaskID    uuid.UUID    `json:"task_id"`
+	ColumnID  uuid.UUID    `json:"column_id"`
+	EnteredAt time.Time    `json:"entered_at"`
+	LeftAt    sql.NullTime `json:"left_at"`
+}
+
+type Migration050SprintBackup struct {
+	ID        uuid.UUID `json:"id"`
+	EndDate   time.Time `json:"end_date"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Note struct {
 	ID         uuid.UUID     `json:"id"`
 	ColumnID   uuid.NullUUID `json:"column_id"`

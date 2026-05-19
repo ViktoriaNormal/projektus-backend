@@ -4,6 +4,7 @@ package dto
 
 // --- Cumulative Flow ---
 type CumulativeFlowResponse struct {
+	Columns        []string                   `json:"columns"`
 	Data           []map[string]interface{} `json:"data"`
 	Interpretation string                   `json:"interpretation"`
 }

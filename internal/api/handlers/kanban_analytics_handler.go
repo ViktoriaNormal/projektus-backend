@@ -81,6 +81,7 @@ func (h *KanbanAnalyticsHandler) GetCumulativeFlow(c *gin.Context) {
 	}
 
 	writeSuccess(c, dto.CumulativeFlowResponse{
+		Columns:        report.ColumnNames,
 		Data:           data,
 		Interpretation: report.Interpretation,
 	})

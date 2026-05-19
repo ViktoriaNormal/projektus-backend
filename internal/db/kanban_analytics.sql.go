@@ -17,7 +17,7 @@ const getBoardColumnsForAnalytics = `-- name: GetBoardColumnsForAnalytics :many
 SELECT id, name, system_type, wip_limit, sort_order
 FROM columns
 WHERE board_id = $1
-ORDER BY sort_order
+ORDER BY sort_order ASC, id ASC
 `
 
 type GetBoardColumnsForAnalyticsRow struct {
@@ -229,13 +229,6 @@ SELECT
     t.key AS task_key,
     c.name AS column_name,
     COALESCE(
-        (SELECT h.entered_at
-         FROM task_status_history h
-         WHERE h.task_id = t.id
-           AND h.column_id = t.column_id
-           AND h.left_at IS NULL
-         ORDER BY h.entered_at DESC
-         LIMIT 1),
         (SELECT MIN(h2.entered_at)
          FROM task_status_history h2
          JOIN columns c2 ON c2.id = h2.column_id
@@ -263,8 +256,8 @@ type GetWipAgeTasksForKanbanRow struct {
 	WorkStartedAt time.Time `json:"work_started_at"`
 }
 
-// Возраст отсчитываем от входа в текущую рабочую колонку (открытая запись в истории);
-// при отсутствии открытой записи — от первого попадания в любую колонку in_progress/paused.
+// Возраст отсчитываем от первого попадания в любую колонку in_progress/paused
+// (время в предыдущих рабочих колонках входит в возраст).
 func (q *Queries) GetWipAgeTasksForKanban(ctx context.Context, arg GetWipAgeTasksForKanbanParams) ([]GetWipAgeTasksForKanbanRow, error) {
 	rows, err := q.db.QueryContext(ctx, getWipAgeTasksForKanban, arg.ProjectID, arg.BoardID)
 	if err != nil {

@@ -263,16 +263,19 @@ func (s *ScrumAnalyticsService) generateVelocityInterpretation(report *VelocityR
 	}
 
 	if report.SprintCount == 1 {
+		// Для одного спринта не делаем строгих выводов, только эмодзи
 		startMsg := ""
 		if report.CompletionRate >= velocityLowCompletionPct {
-			startMsg = "Отличный старт! "
+			startMsg = "✅ Отличный старт! "
+		} else {
+			startMsg = "⚠️ "
 		}
 		return fmt.Sprintf(
-			"За 1 спринт команда выполнила %s из %s запланированных (%.0f%%). %sДля выявления тенденции нужно завершить ещё 2–3 спринта.",
+			"%sЗа 1 спринт команда выполнила %s из %s запланированных (%.0f%%). Для выявления тенденции нужно завершить ещё 2–3 спринта.",
+			startMsg,
 			formatWithUnit(report.AverageVelocity, metricType),
 			formatWithUnit(report.AverageSprintScope, metricType),
 			report.CompletionRate,
-			startMsg,
 		)
 	}
 
@@ -302,35 +305,37 @@ func (s *ScrumAnalyticsService) generateVelocityInterpretation(report *VelocityR
 		if metricType == MetricTaskCount {
 			trendUnit = pluralForm(int(math.Round(report.VelocityTrend)), "задача", "задачи", "задач")
 		}
-		builder.WriteString(fmt.Sprintf("📈 Скорость стабильно растёт (+%s %s за спринт).\n", formatValue(report.VelocityTrend), trendUnit))
+		builder.WriteString(fmt.Sprintf("📈 Скорость стабильно растёт (+%s %s за спринт, тренд выше 5%% от средней).\n", formatValue(report.VelocityTrend), trendUnit))
 	} else if report.VelocityTrend < -trendThreshold {
 		trendUnit := unit
 		if metricType == MetricTaskCount {
 			trendUnit = pluralForm(int(math.Round(-report.VelocityTrend)), "задача", "задачи", "задач")
 		}
-		builder.WriteString(fmt.Sprintf("📉 Скорость снижается (%s %s за спринт).\n", formatValue(report.VelocityTrend), trendUnit))
+		builder.WriteString(fmt.Sprintf("📉 Скорость снижается (%s %s за спринт, тренд ниже -5%% от средней).\n", formatValue(report.VelocityTrend), trendUnit))
+	} else {
+		builder.WriteString("➡️ Тренд стабильный (изменение менее 5% от средней скорости).\n")
 	}
 
 	builder.WriteString("\n")
 	if cv >= velocityHighVariationPct {
-		builder.WriteString("⚠️ Результаты нестабильны (высокий разброс). Среднее значение мало надёжно для прогнозирования.\n")
+		builder.WriteString(fmt.Sprintf("⚠️ Результаты нестабильны: высокий разброс (коэффициент вариации ≥%.0f%%). Среднее значение мало надёжно для прогнозирования.\n", velocityHighVariationPct))
 	} else if cv >= velocityModerateVariationPct {
-		builder.WriteString("📊 Разброс выраженный, но среднее всё ещё пригодно для планирования.\n")
+		builder.WriteString(fmt.Sprintf("📊 Разброс выраженный (коэффициент вариации %.0f–%.0f%%), но среднее всё ещё пригодно для планирования.\n", velocityModerateVariationPct, velocityHighVariationPct))
 	} else if cv >= velocityLowVariationPct {
-		builder.WriteString("✅ Разброс умеренный — результаты достаточно стабильны.\n")
+		builder.WriteString(fmt.Sprintf("✅ Разброс умеренный (коэффициент вариации %.0f–%.0f%%) — результаты достаточно стабильны.\n", velocityLowVariationPct, velocityModerateVariationPct))
 	} else {
-		builder.WriteString("✅ Разброс минимальный — результаты очень стабильны.\n")
+		builder.WriteString(fmt.Sprintf("✅ Разброс минимальный (коэффициент вариации <%.0f%%) — результаты очень стабильны.\n", velocityLowVariationPct))
 	}
 
 	builder.WriteString("\nРекомендация: ")
 	if report.CompletionRate < velocityLowCompletionPct {
-		builder.WriteString("Команда систематически переоценивает объём. Сократите планирование следующего спринта на 20–30% и постепенно наращивайте.")
+		builder.WriteString("команда систематически переоценивает объём; сократите планирование следующего спринта на 20–30% и постепенно наращивайте.")
 	} else if cv >= velocityHighVariationPct {
-		builder.WriteString("Скорость нестабильна. Проверьте, не слишком ли различаются задачи по сложности, и старайтесь декомпозировать их равномернее.")
+		builder.WriteString("скорость нестабильна; проверьте, не слишком ли различаются задачи по сложности, и старайтесь декомпозировать их равномернее.")
 	} else if report.VelocityTrend < -trendThreshold {
-		builder.WriteString("Скорость падает — возможны технический долг, неясные требования или перегрузка. Обсудите это на ретроспективе.")
+		builder.WriteString("скорость падает — возможны технический долг, неясные требования или перегрузка; обсудите это на ретроспективе.")
 	} else {
-		builder.WriteString("Команда работает стабильно и предсказуемо. Используйте среднюю скорость для планирования будущих спринтов.")
+		builder.WriteString("команда работает стабильно и предсказуемо; используйте среднюю скорость для планирования будущих спринтов.")
 	}
 
 	return builder.String()
@@ -421,10 +426,11 @@ func (s *ScrumAnalyticsService) GetBurndown(ctx context.Context, projectID uuid.
 		history = filterSprintHistoryRows(history, filterSet)
 	}
 
-	// Полный календарный период спринта: от start_date до end_date (включительно).
-	startDate := burndownDateOnly(sprint.StartDate)
-	sprintEndDate := burndownDateOnly(sprint.EndDate)
-	today := burndownDateOnly(time.Now())
+	// Полный календарный период спринта: от start_date до end_date (включительно),
+	// приведённый к локальному времени сервера, чтобы избежать расхождений с time.Now().
+	startDate := burndownDateOnly(sprint.StartDate.In(time.Local))
+	sprintEndDate := burndownDateOnly(sprint.EndDate.In(time.Local))
+	today := burndownDateOnly(time.Now().In(time.Local))
 
 	totalDays := int(sprintEndDate.Sub(startDate).Hours()/24) + 1
 	if totalDays < 1 {
@@ -549,7 +555,7 @@ func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownR
 		builder.WriteString("✅ Команда идёт по графику или с опережением.\n")
 	} else {
 		diff := *last.Remaining - last.Ideal
-		builder.WriteString(fmt.Sprintf("📉 Отставание от идеального графика: %s.\n", formatWithUnit(diff, metricType)))
+		builder.WriteString(fmt.Sprintf("📉 Отставание от идеального графика на текущий день: %s.\n", formatWithUnit(diff, metricType)))
 	}
 
 	scopeChanges := 0
@@ -565,7 +571,7 @@ func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownR
 	}
 	if scopeChanges > 0 {
 		scopeNote := pluralForm(scopeChanges, "раз", "раза", "раз")
-		builder.WriteString(fmt.Sprintf("\n⚠️ Объём работы увеличивался %d %s (добавлялись новые задачи).\n", scopeChanges, scopeNote))
+		builder.WriteString(fmt.Sprintf("\n⚠️ Объём работы спринта увеличивался %d %s (добавлялись новые задачи).\n", scopeChanges, scopeNote))
 	}
 
 	criticalLag := totalWork * burndownCriticalLagPct / 100
@@ -576,17 +582,17 @@ func (s *ScrumAnalyticsService) generateBurndownInterpretation(report *BurndownR
 			actualDays++
 		}
 	}
-	builder.WriteString("\nДействие: ")
+	builder.WriteString("\nРекомендация: ")
 	if *last.Remaining <= last.Ideal {
-		builder.WriteString("Продолжайте в том же темпе. Спринт, скорее всего, будет завершён в срок.")
+		builder.WriteString("продолжайте в том же темпе; спринт, скорее всего, будет завершён в срок.")
 	} else if lag > criticalLag && actualDays > burndownCriticalProgressMinDays {
-		builder.WriteString("Прогресс критически низкий. На ежедневной встрече выявите блокеры и рассмотрите возможность исключения второстепенных задач из спринта.")
+		builder.WriteString(fmt.Sprintf("прогресс критически низкий (отставание >%.0f%% от объёма спринта); на ежедневной встрече выявите блокеры и рассмотрите возможность исключения второстепенных задач из спринта.", burndownCriticalLagPct))
 	} else {
-		builder.WriteString("Сфокусируйтесь на завершении начатых задач. Не берите новые, пока не закончите текущие.")
+		builder.WriteString("сфокусируйтесь на завершении начатых задач; не берите новые, пока не закончите текущие.")
 	}
 
 	if scopeChanges > 1 {
-		builder.WriteString(" По возможности избегайте добавления новых задач в середине спринта — это снижает предсказуемость.")
+		builder.WriteString(" по возможности избегайте добавления новых задач в середине спринта — это снижает предсказуемость.")
 	}
 
 	return builder.String()
