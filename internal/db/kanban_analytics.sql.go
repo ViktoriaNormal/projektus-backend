@@ -66,10 +66,12 @@ SELECT
     MAX(CASE WHEN c.system_type = 'completed' THEN h.entered_at END)::timestamptz AS completed_at
 FROM task_status_history h
 JOIN tasks t ON t.id = h.task_id
+JOIN columns current_col ON current_col.id = t.column_id
 JOIN columns c ON h.column_id = c.id
 WHERE t.project_id = $1
   AND t.board_id = $2
   AND t.deleted_at IS NULL
+  AND current_col.system_type = 'completed'
 GROUP BY t.id, t.key, t.estimation
 HAVING MAX(CASE WHEN c.system_type = 'completed' THEN h.entered_at END) IS NOT NULL
   AND MIN(CASE WHEN c.system_type IN ('in_progress', 'paused') THEN h.entered_at END) IS NOT NULL
